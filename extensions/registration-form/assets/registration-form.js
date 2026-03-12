@@ -216,6 +216,8 @@
   // Config caching: short TTL so backend updates show on frontend quickly (real-time feel).
   var CONFIG_CACHE_KEY = 'customer_approval_config_' + shop + '_' + (embedFormId || '') + '_' + locale;
   var CONFIG_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+  var CONFIG_REFRESH_MIN_INTERVAL_MS = 2 * 60 * 1000; // avoid repeated tab-switch refetches
+  var lastConfigRefreshAt = 0;
 
   function readCachedConfig() {
     try {
@@ -241,15 +243,26 @@
     }
   }
 
-  // Start config fetch immediately (no wait for DOM) so response is ready sooner.
+  // Config request (prefer local cache first to reduce backend traffic).
   var configUrl = '/apps/customer-approval/config?shop=' + encodeURIComponent(shop) + '&locale=' + encodeURIComponent(locale) + formIdParam;
-  var configPromise = fetch(configUrl)
-    .then(function(r) { return r.json(); })
-    .then(function(cfg) { writeCachedConfig(cfg); return cfg; });
+  var initialCachedConfig = readCachedConfig();
+  var configPromise = initialCachedConfig
+    ? Promise.resolve(initialCachedConfig)
+    : fetch(configUrl)
+        .then(function(r) { return r.json(); })
+        .then(function(cfg) { writeCachedConfig(cfg); return cfg; });
+  if (!initialCachedConfig) {
+    lastConfigRefreshAt = Date.now();
+  }
 
   function fetchFreshConfig() {
+    var now = Date.now();
+    if ((now - lastConfigRefreshAt) < CONFIG_REFRESH_MIN_INTERVAL_MS) {
+      return configPromise;
+    }
     try { if (window.localStorage) localStorage.removeItem(CONFIG_CACHE_KEY); } catch (e) { void 0; }
-    configPromise = fetch(configUrl + '&_t=' + Date.now())
+    lastConfigRefreshAt = now;
+    configPromise = fetch(configUrl + '&force=1', { cache: 'no-store' })
       .then(function(r) { return r.json(); })
       .then(function(cfg) { writeCachedConfig(cfg); return cfg; });
     return configPromise;
@@ -257,6 +270,8 @@
 
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState !== 'visible') return;
+    // Skip refetch while local cache is still fresh.
+    if (readCachedConfig()) return;
     fetchFreshConfig().then(function() { init(shop); });
   });
 
@@ -313,7 +328,7 @@
     COUNTRY_PHONES.forEach(function(cp) {
       var activeClass = cp.c === selected.c ? ' active' : '';
       var codeLower = cp.c.toLowerCase();
-      listHtml += '<div class="custom-phone-country-item' + activeClass + '" data-dial="' + escapeHtml(cp.d) + '" data-code="' + cp.c + '" data-name="' + escapeHtml(cp.n) + '" data-search="' + escapeHtml((cp.d + ' ' + cp.c + ' ' + cp.n).toLowerCase()) + '"><span class="custom-phone-country-flag-wrap"><img src="' + FLAG_CDN + codeLower + '.png" alt="" class="custom-phone-country-flag" role="presentation"></span>' + cp.d + ' ' + cp.n + '</div>';
+      listHtml += '<div class="custom-phone-country-item' + activeClass + '" data-dial="' + escapeHtml(cp.d) + '" data-code="' + cp.c + '" data-name="' + escapeHtml(cp.n) + '" data-search="' + escapeHtml((cp.d + ' ' + cp.c + ' ' + cp.n).toLowerCase()) + '"><span class="custom-phone-country-flag-wrap"><img src="' + FLAG_CDN + codeLower + '.png" alt="" class="custom-phone-country-flag" role="presentation" loading="lazy" decoding="async"></span>' + cp.d + ' ' + cp.n + '</div>';
     });
     return '<div class="custom-phone-country-dropdown" data-unique="' + uniqueId + '">' +
       '<div class="custom-phone-country-trigger" tabindex="0" role="combobox" aria-expanded="false" aria-haspopup="listbox">' +
@@ -701,7 +716,7 @@
         var activeClass = cp.c === (selectedCountry && selectedCountry.c) ? ' active' : '';
         var searchText = (cp.c + ' ' + cp.n).toLowerCase();
         var codeLower = cp.c.toLowerCase();
-        listItemsHtml += '<div class="custom-country-select-item' + activeClass + '" data-value="' + escapeHtml(cp.c) + '" data-name="' + escapeHtml(cp.n) + '" data-search="' + escapeHtml(searchText) + '"><span class="custom-country-select-flag-wrap"><img src="' + FLAG_CDN + codeLower + '.png" alt="" class="custom-country-select-flag" role="presentation"></span>' + escapeHtml(cp.n) + '</div>';
+        listItemsHtml += '<div class="custom-country-select-item' + activeClass + '" data-value="' + escapeHtml(cp.c) + '" data-name="' + escapeHtml(cp.n) + '" data-search="' + escapeHtml(searchText) + '"><span class="custom-country-select-flag-wrap"><img src="' + FLAG_CDN + codeLower + '.png" alt="" class="custom-country-select-flag" role="presentation" loading="lazy" decoding="async"></span>' + escapeHtml(cp.n) + '</div>';
       });
       var triggerFlagSrc = selectedCountry ? FLAG_CDN + selectedCountry.c.toLowerCase() + '.png' : '';
       return '<div class="custom-form-field ' + widthClass + '">' +

@@ -1,9 +1,90 @@
 import type { LoaderFunctionArgs } from "react-router";
+import { createHash } from "node:crypto";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { DEFAULT_TRANSLATIONS_EN, DEFAULT_TRANSLATIONS_BY_LANG } from "../lib/translations.server";
 import { CORE_LANGUAGES, normalizeLangCode } from "../lib/languages";
 import { buildThemeCss, getGoogleFontName, normalizeThemeSettings } from "../lib/theme-settings";
+
+const CONFIG_MEMORY_CACHE_TTL_MS = 60 * 1000;
+const CONFIG_CACHE_LIMIT = 500;
+const CONFIG_CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=600";
+
+type CachedConfigResponse = {
+    payload: string;
+    etag: string;
+    expiresAt: number;
+};
+
+const configResponseCache = new Map<string, CachedConfigResponse>();
+
+function makeConfigCacheKey(shop: string, locale: string, formId: string | null, formType: string | null): string {
+    return [shop, locale, formId ?? "", formType ?? ""].join("|");
+}
+
+function makeEtag(payload: string): string {
+    return `"${createHash("sha1").update(payload).digest("hex")}"`;
+}
+
+function makeJsonHeaders(etag: string, cacheControl = CONFIG_CACHE_CONTROL): HeadersInit {
+    return {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": cacheControl,
+        ETag: etag,
+        Vary: "Accept-Encoding",
+    };
+}
+
+function pruneConfigCache(now: number): void {
+    for (const [key, value] of configResponseCache.entries()) {
+        if (value.expiresAt <= now) {
+            configResponseCache.delete(key);
+        }
+    }
+    while (configResponseCache.size > CONFIG_CACHE_LIMIT) {
+        const oldestKey = configResponseCache.keys().next().value;
+        if (!oldestKey) break;
+        configResponseCache.delete(oldestKey);
+    }
+}
+
+function getCachedConfigResponse(cacheKey: string, request: Request): Response | null {
+    const now = Date.now();
+    const cached = configResponseCache.get(cacheKey);
+    if (!cached || cached.expiresAt <= now) {
+        if (cached) configResponseCache.delete(cacheKey);
+        return null;
+    }
+
+    const ifNoneMatch = request.headers.get("if-none-match");
+    if (ifNoneMatch && ifNoneMatch === cached.etag) {
+        return new Response(null, {
+            status: 304,
+            headers: makeJsonHeaders(cached.etag),
+        });
+    }
+
+    return new Response(cached.payload, {
+        status: 200,
+        headers: makeJsonHeaders(cached.etag),
+    });
+}
+
+function cacheAndRespond(cacheKey: string, payload: string): Response {
+    const now = Date.now();
+    pruneConfigCache(now);
+    const etag = makeEtag(payload);
+    configResponseCache.set(cacheKey, {
+        payload,
+        etag,
+        expiresAt: now + CONFIG_MEMORY_CACHE_TTL_MS,
+    });
+    return new Response(payload, {
+        status: 200,
+        headers: makeJsonHeaders(etag),
+    });
+}
 
 function getLangTranslations(
     formTranslations: Record<string, Record<string, string>>,
@@ -36,6 +117,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         let config: { fields: unknown[]; formType?: string; name?: string } = { fields: [] };
         const formId = url.searchParams.get("formId");
         const formType = url.searchParams.get("formType");
+        const forceRefresh = url.searchParams.get("force") === "1";
+
+        const cacheKey = makeConfigCacheKey(shop, locale, formId, formType);
+        if (!forceRefresh) {
+            const cachedResponse = getCachedConfigResponse(cacheKey, request);
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+        }
 
         const formConfigPromise = shop
             ? (async () => {
@@ -81,7 +171,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             if (savedCountry && typeof savedCountry === "string" && savedCountry.trim().length === 2) {
                 shopCountryCode = savedCountry.trim().toUpperCase();
             }
-            if (admin) {
+            // Avoid expensive Shopify API call on every config request.
+            // Refresh only when we do not already have a valid country code.
+            if (admin && (!savedCountry || savedCountry.trim().length !== 2)) {
                 const shopRes = await admin.graphql(
                     `#graphql
                     query getShopCountry { shop { billingAddress { countryCodeV2 } } }`
@@ -200,14 +292,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             googleFont,
             customerApprovalSettings,
         };
+        const payloadJson = JSON.stringify(payload);
+        if (forceRefresh) {
+            const etag = makeEtag(payloadJson);
+            // Force refresh bypasses edge cache, but we still update memory cache for the next request.
+            const now = Date.now();
+            pruneConfigCache(now);
+            configResponseCache.set(cacheKey, {
+                payload: payloadJson,
+                etag,
+                expiresAt: now + CONFIG_MEMORY_CACHE_TTL_MS,
+            });
+            return new Response(payloadJson, {
+                status: 200,
+                headers: makeJsonHeaders(etag, "no-store"),
+            });
+        }
 
-        return new Response(JSON.stringify(payload), {
-            status: 200,
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-        });
+        return cacheAndRespond(cacheKey, payloadJson);
     } catch (error) {
         console.error("Config fetch error:", error);
         return new Response(
@@ -220,6 +322,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 headers: {
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*",
+                    "Cache-Control": "no-store",
                 },
             }
         );

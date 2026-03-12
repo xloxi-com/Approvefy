@@ -306,6 +306,12 @@ export default function Index() {
   const [exportScope, setExportScope] = useState<"current" | "all" | "selected">("all");
   const [singleDeleteCustomerId, setSingleDeleteCustomerId] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState(initialAnalytics);
+  const shouldAutoRefresh =
+    initialPage === 1 &&
+    initialStatus === "all" &&
+    !initialQuery &&
+    !initialFrom &&
+    !initialTo;
 
   const analyticsFetcher = useFetcher<{
     total?: number;
@@ -332,16 +338,17 @@ export default function Index() {
 
   // Periodically revalidate loader data so new registrations from the storefront
   // show up in this list without requiring a manual refresh.
-  // Only poll while the tab is visible, and use a slightly longer interval to
-  // reduce backend/database load.
+  // Poll only on the default list view (page 1, no filters) and while visible
+  // to reduce backend load in production.
   useEffect(() => {
+    if (!shouldAutoRefresh) return;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const start = () => {
       if (intervalId != null) return;
       intervalId = setInterval(() => {
         revalidator.revalidate();
-      }, 15000);
+      }, 45000);
     };
 
     const stop = () => {
@@ -369,7 +376,7 @@ export default function Index() {
       }
       stop();
     };
-  }, [revalidator]);
+  }, [revalidator, shouldAutoRefresh]);
 
   useEffect(() => {
     setVisibleColumns(loadColumnPrefs());
