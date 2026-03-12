@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import { checkPhoneExists } from "../models/approval.server";
+import { consumeRateLimit, getClientAddress } from "../lib/rate-limit.server";
 
 /**
  * GET /api/check-phone?shop=xxx&phone=yyy
@@ -17,6 +18,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
+    const clientAddress = getClientAddress(request);
+    const phoneCheckRate = consumeRateLimit({
+      key: `api.check-phone:${session.shop}:${clientAddress}`,
+      limit: 100,
+      windowMs: 60 * 1000,
+    });
+    if (!phoneCheckRate.allowed) {
+      return new Response(
+        JSON.stringify({ taken: false, error: "Too many requests" }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Retry-After": String(phoneCheckRate.retryAfterSeconds),
           },
         }
       );

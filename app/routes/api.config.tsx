@@ -5,6 +5,7 @@ import prisma from "../db.server";
 import { DEFAULT_TRANSLATIONS_EN, DEFAULT_TRANSLATIONS_BY_LANG } from "../lib/translations.server";
 import { CORE_LANGUAGES, normalizeLangCode } from "../lib/languages";
 import { buildThemeCss, getGoogleFontName, normalizeThemeSettings } from "../lib/theme-settings";
+import { consumeRateLimit, getClientAddress } from "../lib/rate-limit.server";
 
 const CONFIG_MEMORY_CACHE_TTL_MS = 60 * 1000;
 const CONFIG_CACHE_LIMIT = 500;
@@ -125,6 +126,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             if (cachedResponse) {
                 return cachedResponse;
             }
+        }
+
+        const clientAddress = getClientAddress(request);
+        const configRate = consumeRateLimit({
+            key: `api.config:${shop}:${clientAddress}`,
+            limit: forceRefresh ? 30 : 180,
+            windowMs: 60 * 1000,
+        });
+        if (!configRate.allowed) {
+            return new Response(
+                JSON.stringify({ fields: [], error: "Too many requests. Please retry shortly." }),
+                {
+                    status: 429,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*",
+                        "Retry-After": String(configRate.retryAfterSeconds),
+                        "Cache-Control": "no-store",
+                    },
+                }
+            );
         }
 
         const formConfigPromise = shop

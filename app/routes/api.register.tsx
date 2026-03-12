@@ -7,6 +7,7 @@ import { saveRegistration, checkEmailExists, checkPhoneExists, approveCustomer }
 import { uploadFileToSupabase } from "../lib/supabase.server";
 import { sendApprovalEmail } from "../lib/approval-email.server";
 import { getShopDisplayName, parseShopFromGraphqlResponse } from "../lib/liquid-placeholders";
+import { consumeRateLimit, getClientAddress } from "../lib/rate-limit.server";
 
 function getEncryptionKey(): Buffer {
     const secret = process.env.SHOPIFY_API_SECRET || "fallback-secret-key";
@@ -40,6 +41,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
 
         const shop = session?.shop || "";
+        const clientAddress = getClientAddress(request);
+        const registrationRate = consumeRateLimit({
+            key: `api.register:${shop}:${clientAddress}`,
+            limit: 25,
+            windowMs: 60 * 1000,
+        });
+        if (!registrationRate.allowed) {
+            return new Response(
+                JSON.stringify({
+                    error: "Too many registration attempts. Please wait a moment and try again.",
+                }),
+                {
+                    status: 429,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*",
+                        "Retry-After": String(registrationRate.retryAfterSeconds),
+                    },
+                }
+            );
+        }
+
         const formData = await request.formData();
 
         // Extract customer data
@@ -190,8 +213,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             });
         }
 
-        // Check if email already exists in DB or Shopify
-        const emailExists = await checkEmailExists(shop, email, admin);
+        const phoneTrimmed = (phone && typeof phone === "string") ? phone.trim() : "";
+
+        // Check duplicate email/phone in parallel to reduce submit latency.
+        const [emailExists, phoneExists] = await Promise.all([
+            checkEmailExists(shop, email, admin),
+            phoneTrimmed ? checkPhoneExists(shop, phoneTrimmed, admin) : Promise.resolve(false),
+        ]);
         if (emailExists) {
             return new Response(JSON.stringify({
                 error: "This email is already registered. Please use a different email or log in."
@@ -204,21 +232,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             });
         }
 
-        // Check if phone already exists in DB or Shopify (avoid duplicate on register)
-        const phoneTrimmed = (phone && typeof phone === "string") ? phone.trim() : "";
-        if (phoneTrimmed) {
-            const phoneExists = await checkPhoneExists(shop, phoneTrimmed, admin);
-            if (phoneExists) {
-                return new Response(JSON.stringify({
-                    error: "This phone number is already registered. Please use a different number."
-                }), {
-                    status: 400,
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Access-Control-Allow-Origin": "*"
-                    }
-                });
-            }
+        if (phoneExists) {
+            return new Response(JSON.stringify({
+                error: "This phone number is already registered. Please use a different number."
+            }), {
+                status: 400,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                }
+            });
         }
 
         const mergedCustomData: Record<string, string> = { ...customFields };
@@ -234,7 +257,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             email,
             firstName,
             lastName,
-            phone: phone || undefined,
+            phone: phoneTrimmed || undefined,
             note: customFieldsNote,
             company: company || undefined,
             passwordHash: encryptPassword(password),

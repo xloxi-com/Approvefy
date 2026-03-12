@@ -845,17 +845,76 @@ export async function saveRegistration(
 
 // ─── Check if email already exists ───
 
+type ExistsCacheEntry = {
+  value: boolean;
+  expiresAt: number;
+};
+
+const EXISTS_TRUE_TTL_MS = 5 * 60 * 1000;
+const EXISTS_FALSE_TTL_MS = 60 * 1000;
+const EXISTS_CACHE_LIMIT = 20000;
+const emailExistsCache = new Map<string, ExistsCacheEntry>();
+const phoneExistsCache = new Map<string, ExistsCacheEntry>();
+
+function pruneExistsCache(cache: Map<string, ExistsCacheEntry>, now: number): void {
+  for (const [key, entry] of cache.entries()) {
+    if (entry.expiresAt <= now) cache.delete(key);
+  }
+  while (cache.size > EXISTS_CACHE_LIMIT) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
+  }
+}
+
+function getExistsCacheValue(cache: Map<string, ExistsCacheEntry>, key: string): boolean | null {
+  const now = Date.now();
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= now) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setExistsCacheValue(cache: Map<string, ExistsCacheEntry>, key: string, value: boolean): void {
+  const now = Date.now();
+  pruneExistsCache(cache, now);
+  cache.set(key, {
+    value,
+    expiresAt: now + (value ? EXISTS_TRUE_TTL_MS : EXISTS_FALSE_TTL_MS),
+  });
+}
+
+function normalizeEmailForLookup(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function normalizePhoneForLookup(phone: string): string {
+  return phone.trim();
+}
+
 export async function checkEmailExists(
   shop: string,
   email: string,
   admin: AdminGraphQL
 ): Promise<boolean> {
+  const normalizedEmail = normalizeEmailForLookup(email);
+  if (!normalizedEmail) return false;
+  const cacheKey = `${shop}|${normalizedEmail}`;
+  const cached = getExistsCacheValue(emailExistsCache, cacheKey);
+  if (cached != null) return cached;
+
   // 1. Check app DB
   const dbRecord = await prisma.registration.findFirst({
-    where: { shop, email: { equals: email, mode: "insensitive" } },
+    where: { shop, email: { equals: normalizedEmail, mode: "insensitive" } },
     select: { id: true },
   });
-  if (dbRecord) return true;
+  if (dbRecord) {
+    setExistsCacheValue(emailExistsCache, cacheKey, true);
+    return true;
+  }
 
   // 2. Check Shopify
   try {
@@ -866,10 +925,14 @@ export async function checkEmailExists(
           edges { node { id } }
         }
       }`,
-      { variables: { query: `email:${email}` } }
+      { variables: { query: `email:${normalizedEmail}` } }
     );
     const data = await res.json();
-    if ((data.data?.customers?.edges?.length ?? 0) > 0) return true;
+    if ((data.data?.customers?.edges?.length ?? 0) > 0) {
+      setExistsCacheValue(emailExistsCache, cacheKey, true);
+      return true;
+    }
+    setExistsCacheValue(emailExistsCache, cacheKey, false);
   } catch {
     /* if Shopify check fails, allow registration to proceed */
   }
@@ -884,8 +947,11 @@ export async function checkPhoneExists(
   phone: string,
   admin: AdminGraphQL
 ): Promise<boolean> {
-  const normalized = phone.trim();
+  const normalized = normalizePhoneForLookup(phone);
   if (!normalized) return false;
+  const cacheKey = `${shop}|${normalized}`;
+  const cached = getExistsCacheValue(phoneExistsCache, cacheKey);
+  if (cached != null) return cached;
 
   // 1. Check app DB (pending + approved registrations)
   const dbRecord = await prisma.registration.findFirst({
@@ -895,7 +961,10 @@ export async function checkPhoneExists(
     },
     select: { id: true },
   });
-  if (dbRecord) return true;
+  if (dbRecord) {
+    setExistsCacheValue(phoneExistsCache, cacheKey, true);
+    return true;
+  }
 
   // 2. Check Shopify (customers by phone)
   try {
@@ -909,7 +978,11 @@ export async function checkPhoneExists(
       { variables: { query: `phone:${normalized}` } }
     );
     const data = await res.json();
-    if ((data.data?.customers?.edges?.length ?? 0) > 0) return true;
+    if ((data.data?.customers?.edges?.length ?? 0) > 0) {
+      setExistsCacheValue(phoneExistsCache, cacheKey, true);
+      return true;
+    }
+    setExistsCacheValue(phoneExistsCache, cacheKey, false);
   } catch {
     /* if Shopify check fails, allow registration to proceed */
   }
