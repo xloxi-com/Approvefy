@@ -33,5 +33,5 @@ redirect_urls = [ "https://approvefy.vercel.app/auth/callback", "https://approve
 
 [app_proxy]
 url = "https://approvefy.vercel.app/api"
-subpath = "customer-approvals"
+subpath = "customer-approval"
 prefix = "apps"
