@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
-import { useLoaderData, useSubmit, useNavigation, useActionData, useNavigate } from "react-router";
+import { Link, useLoaderData, useFetcher, useNavigate } from "react-router";
 import { Page, LegacyCard, Select, Banner, Toast, Frame, Tabs, TextField, BlockStack, InlineStack, Box, Text, Popover, OptionList, Button, EmptySearchResult, Icon, ChoiceList, Divider, Checkbox, RangeSlider, Collapsible, Modal } from "@shopify/polaris";
 import { SearchIcon, LanguageIcon, PaintBrushFlatIcon, CheckCircleIcon, EmailIcon, ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -261,16 +261,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             approvalTemplate = approvalTemplateResult;
             smtpSettings = smtp;
             try {
-                const shopInfoRes = await admin.graphql(`#graphql query getShopInfo { shop { name contactEmail } }`);
-                const parsed = await parseShopFromGraphqlResponse(shopInfoRes);
-                storeName = getShopDisplayName(shop, parsed.shopName);
-                if (parsed.shopEmail) storeEmail = parsed.shopEmail;
-            } catch (e) {
-                console.warn("[Settings] Shop info fetch failed:", e instanceof Error ? e.message : String(e));
-                storeName = getShopDisplayName(shop, "Store");
-            }
-            try { /* ignore - Admin API may not support shop.brand in this version */
-                const brandRes = await admin.graphql(`#graphql query getShopBrandLogo { shop { brand { logo { image { url } } } } }`);
+                const [shopInfoRes, brandRes, shopCountryRes] = await Promise.all([
+                    admin.graphql(`#graphql query getShopInfo { shop { name contactEmail } }`),
+                    admin.graphql(`#graphql query getShopBrandLogo { shop { brand { logo { image { url } } } } }`),
+                    admin.graphql(`#graphql query getShopCountry { shop { billingAddress { countryCodeV2 } } }`),
+                ]);
+                try {
+                    const parsed = await parseShopFromGraphqlResponse(shopInfoRes);
+                    storeName = getShopDisplayName(shop, parsed.shopName);
+                    if (parsed.shopEmail) storeEmail = parsed.shopEmail;
+                } catch (e) {
+                    console.warn("[Settings] Shop info parse failed:", e instanceof Error ? e.message : String(e));
+                    storeName = getShopDisplayName(shop, "Store");
+                }
                 try {
                     const brandData = (await brandRes.json()) as { errors?: unknown; data?: { shop?: { brand?: { logo?: { image?: { url?: string } } } } } };
                     if (!brandData.errors && brandData?.data?.shop?.brand?.logo?.image?.url) {
@@ -280,15 +283,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 } catch {
                     // ignore
                 }
-            } catch {
-                // ignore - Admin API may not support shop.brand in this version
+                try {
+                    const shopData = (await shopCountryRes.json()) as { data?: { shop?: { billingAddress?: { countryCodeV2?: string } } } };
+                    const code = shopData?.data?.shop?.billingAddress?.countryCodeV2;
+                    if (code && typeof code === "string") shopCountryCode = code.toUpperCase();
+                } catch {
+                    // ignore
+                }
+            } catch (e) {
+                console.warn("[Settings] GraphQL fetch failed:", e instanceof Error ? e.message : String(e));
+                storeName = getShopDisplayName(shop, "Store");
             }
-            try {
-                const shopCountryRes = await admin.graphql(`#graphql query getShopCountry { shop { billingAddress { countryCodeV2 } } }`);
-                const shopData = (await shopCountryRes.json()) as { data?: { shop?: { billingAddress?: { countryCodeV2?: string } } } };
-                const code = shopData?.data?.shop?.billingAddress?.countryCodeV2;
-                if (code && typeof code === "string") shopCountryCode = code.toUpperCase();
-            } catch { /* ignore */ }
             if (shopCountryCode && settings) {
                 prisma.appSettings.update({ where: { shop }, data: { shopCountryCode } }).catch(() => {});
             } else if (shopCountryCode) {
@@ -823,9 +828,8 @@ export default function Settings() {
         storeEmail: initialStoreEmail,
         storeDomain: initialStoreDomain,
     } = useLoaderData<typeof loader>();
-    const actionData = useActionData<typeof action>();
-    const submit = useSubmit();
-    const navigation = useNavigation();
+    const saveFetcher = useFetcher<typeof action>();
+    const translationsFetcher = useFetcher<typeof action>();
     const navigate = useNavigate();
     const [selectedDefault, setSelectedDefault] = useState(defaultLanguage);
     const [enabledCodes, setEnabledCodes] = useState<Set<string>>(
@@ -1042,7 +1046,7 @@ export default function Settings() {
     }, [enabledCodes, selectedDefault]);
 
     useEffect(() => {
-        const data = actionData as
+        const data = translationsFetcher.data as
             | {
                   success?: boolean;
                   translationsSaved?: boolean;
@@ -1057,27 +1061,27 @@ export default function Settings() {
             });
             setTranslations(init);
         }
-    }, [actionData, defaultTranslationsEn, defaultTranslationsByLang]);
+    }, [translationsFetcher.data, defaultTranslationsEn, defaultTranslationsByLang]);
 
     const [showToast, setShowToast] = useState(false);
     const [translationsSavedToast, setTranslationsSavedToast] = useState(false);
     const [langDropdownActive, setLangDropdownActive] = useState(false);
     const [langSearchQuery, setLangSearchQuery] = useState("");
 
-    const isSaving = navigation.state === "submitting";
+    const isSaving = saveFetcher.state !== "idle" || translationsFetcher.state !== "idle";
 
     useEffect(() => {
-        if (actionData && (actionData as { success?: boolean }).success) {
+        if (saveFetcher.data && (saveFetcher.data as { success?: boolean }).success) {
             setShowToast(true);
         }
-    }, [actionData]);
+    }, [saveFetcher.data]);
 
     useEffect(() => {
-        const data = actionData as { translationsSaved?: boolean } | undefined;
+        const data = translationsFetcher.data as { translationsSaved?: boolean } | undefined;
         if (data?.translationsSaved) {
             setTranslationsSavedToast(true);
         }
-    }, [actionData]);
+    }, [translationsFetcher.data]);
 
     const handleAddCustomLanguage = () => {
         const code = newLangCode.trim().toLowerCase();
@@ -1107,7 +1111,7 @@ export default function Settings() {
     const skipSyncAfterSaveRef = useRef(false);
     // Sync email/SMTP and rejection-email state from loader so saved data appears on refresh or when not just saved
     useEffect(() => {
-        const justSaved = actionData && (actionData as { success?: boolean }).success;
+        const justSaved = saveFetcher.data && (saveFetcher.data as { success?: boolean }).success;
         if (justSaved) {
             skipSyncAfterSaveRef.current = true;
             return;
@@ -1170,7 +1174,7 @@ export default function Settings() {
         // Reload/revalidation: keep template modals closed so "Choose a template" does not appear after refresh
         setRejectionTemplatePopoverActive(false);
         setApprovalTemplatePopoverActive(false);
-    }, [initialSmtpSettings, initialCustomerApprovalSettings, actionData]);
+    }, [initialSmtpSettings, initialCustomerApprovalSettings, saveFetcher.data]);
 
     /** After a successful save, we use this as the baseline so Discard hides until the user edits again. */
     const lastSavedBaselineRef = useRef<{
@@ -1188,7 +1192,7 @@ export default function Settings() {
     // Only update baseline when we receive a new success from the server (Save clicked).
     // Do NOT depend on themeSettings etc., or Reset would re-run this and overwrite baseline with reset state, hiding Discard.
     useEffect(() => {
-        const data = actionData as { success?: boolean } | undefined;
+        const data = saveFetcher.data as { success?: boolean } | undefined;
         if (data?.success) {
             lastSavedBaselineRef.current = {
                 themeSettings: { ...themeSettings },
@@ -1213,8 +1217,8 @@ export default function Settings() {
             };
             setBaselineVersion((v) => v + 1);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on actionData so Reset doesn't overwrite baseline
-    }, [actionData]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on saveFetcher.data so Reset doesn't overwrite baseline
+    }, [saveFetcher.data]);
 
     const hasUnsavedChanges = useMemo(() => {
         const base = lastSavedBaselineRef.current;
@@ -1364,7 +1368,7 @@ export default function Settings() {
             formData.append("languageEnabled[]", "en");
         }
         formData.set("formTranslations", JSON.stringify(translations));
-        submit(formData, { method: "POST" });
+        saveFetcher.submit(formData, { method: "POST" });
     };
 
     const mainTabs = [
@@ -1378,7 +1382,7 @@ export default function Settings() {
         const formData = new FormData();
         formData.set("intent", "saveTranslations");
         formData.set("formTranslations", JSON.stringify(translations));
-        submit(formData, { method: "POST" });
+        translationsFetcher.submit(formData, { method: "POST" });
     };
 
     const updateTranslation = (lang: string, key: string, value: string) => {
@@ -1430,15 +1434,15 @@ export default function Settings() {
                 <div className="app-nav-tabs-mobile">
                 <Box paddingBlockEnd="200">
                     <InlineStack gap="100" wrap>
-                        <Button size="slim" onClick={() => navigate("/app")}>
-                            Approvefy
-                        </Button>
-                        <Button size="slim" onClick={() => navigate("/app/customers")}>
-                            Customers
-                        </Button>
-                        <Button size="slim" onClick={() => navigate("/app/form-config")}>
-                            Form Builder
-                        </Button>
+                        <Link to="/app" prefetch="render">
+                            <Button size="slim">Approvefy</Button>
+                        </Link>
+                        <Link to="/app/customers" prefetch="render">
+                            <Button size="slim">Customers</Button>
+                        </Link>
+                        <Link to="/app/form-config" prefetch="render">
+                            <Button size="slim">Form Builder</Button>
+                        </Link>
                         <Button size="slim" variant="primary">
                             Settings
                         </Button>
@@ -1497,9 +1501,9 @@ export default function Settings() {
                         onDismiss={() => setTranslationsSavedToast(false)}
                     />
                 )}
-                {(actionData as { error?: string })?.error && (
+                {((saveFetcher.data || translationsFetcher.data) as { error?: string })?.error && (
                     <Banner tone="critical" onDismiss={() => {}}>
-                        {(actionData as { error?: string }).error}
+                        {((saveFetcher.data || translationsFetcher.data) as { error?: string }).error}
                     </Banner>
                 )}
 

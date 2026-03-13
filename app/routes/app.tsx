@@ -18,10 +18,8 @@ export default function App() {
   const navigation = useNavigation();
   const fetchers = useFetchers();
 
-  const isLoading =
-    navigation.state === "loading" ||
-    navigation.state === "submitting" ||
-    fetchers.some((f) => f.state === "loading" || f.state === "submitting");
+  const isNavigating = navigation.state === "loading" || navigation.state === "submitting";
+  const isLoading = isNavigating;
 
   return (
     <>

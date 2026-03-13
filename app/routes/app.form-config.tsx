@@ -380,15 +380,15 @@ export default function FormConfig() {
                         <Link to="/app">
                             <Button size="slim">Overview</Button>
                         </Link>
-                        <Button size="slim" onClick={() => navigate("/app/customers")}>
-                            Customers
-                        </Button>
+                        <Link to="/app/customers" prefetch="render">
+                            <Button size="slim">Customers</Button>
+                        </Link>
                         <Button size="slim" variant="primary">
                             Form Builder
                         </Button>
-                        <Button size="slim" onClick={() => navigate("/app/settings")}>
-                            Settings
-                        </Button>
+                        <Link to="/app/settings" prefetch="render">
+                            <Button size="slim">Settings</Button>
+                        </Link>
                     </InlineStack>
                 </Box>
                 </div>
