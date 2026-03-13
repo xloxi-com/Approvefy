@@ -39,7 +39,7 @@ import {
 } from "@shopify/polaris";
 import { LayoutColumns2Icon, EditIcon, DeleteIcon, CheckIcon, SearchIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
-import { getCustomers, getApprovedTags, approveCustomer, denyCustomer, deleteCustomer, getCustomerEmailForRejection, getCustomerFirstNameForEmail } from "../models/approval.server";
+import { getCustomers, getAnalytics, getApprovedTags, approveCustomer, denyCustomer, deleteCustomer, getCustomerEmailForRejection, getCustomerFirstNameForEmail } from "../models/approval.server";
 import { getCustomDataLabelsForShopWithAdmin } from "../lib/form-config-labels.server";
 import { getShopDisplayName, parseShopFromGraphqlResponse } from "../lib/liquid-placeholders";
 import { sendRejectionEmail } from "../lib/rejection-email.server";
@@ -129,24 +129,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
   const { limitParam, pageSize } = parseLimitParam(url.searchParams.get("limit"));
 
-  const customersData = await getCustomers(
-    shop,
-    query,
-    status,
-    from || null,
-    to || null,
-    pageSize,
-    page
-  );
+  const [customersData, analytics] = await Promise.all([
+    getCustomers(shop, query, status, from || null, to || null, pageSize, page),
+    getAnalytics(shop),
+  ]);
 
   return {
     customers: customersData.customers,
     error: customersData.error,
-    analytics: {
-      total: 0,
-      pending: 0,
-      denied: 0,
-    },
+    analytics,
     query,
     status,
     from,
@@ -305,36 +296,13 @@ export default function Index() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportScope, setExportScope] = useState<"current" | "all" | "selected">("all");
   const [singleDeleteCustomerId, setSingleDeleteCustomerId] = useState<string | null>(null);
-  const [analytics, setAnalytics] = useState(initialAnalytics);
+  const analytics = initialAnalytics;
   const shouldAutoRefresh =
     initialPage === 1 &&
     initialStatus === "all" &&
     !initialQuery &&
     !initialFrom &&
     !initialTo;
-
-  const analyticsFetcher = useFetcher<{
-    total?: number;
-    pending?: number;
-    denied?: number;
-    error?: string;
-  }>();
-
-  useEffect(() => {
-    if (analyticsFetcher.state === "idle" && !analyticsFetcher.data) {
-      analyticsFetcher.load("/app/api/analytics");
-    }
-  }, [analyticsFetcher]);
-
-  useEffect(() => {
-    if (analyticsFetcher.data && !analyticsFetcher.data.error) {
-      setAnalytics({
-        total: analyticsFetcher.data.total ?? 0,
-        pending: analyticsFetcher.data.pending ?? 0,
-        denied: analyticsFetcher.data.denied ?? 0,
-      });
-    }
-  }, [analyticsFetcher.data]);
 
   // Periodically revalidate loader data so new registrations from the storefront
   // show up in this list without requiring a manual refresh.

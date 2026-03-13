@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
 import { useLoaderData, useSubmit, useNavigation, useActionData, useNavigate } from "react-router";
@@ -15,7 +15,8 @@ import {
     THEME_DEFAULTS,
     type ThemeSettings,
 } from "../lib/theme-settings";
-import { RichTextEditor } from "../components/RichTextEditor";
+const RichTextEditor = lazy(() => import("../components/RichTextEditor").then((m) => ({ default: m.RichTextEditor })));
+const RteFallback = () => <div style={{ minHeight: 80, background: "var(--p-color-bg-surface-secondary, #f6f6f7)", borderRadius: 8 }} aria-hidden />;
 import { getShopDisplayName, parseShopFromGraphqlResponse, replaceLiquidPlaceholders } from "../lib/liquid-placeholders";
 import { REJECTION_EMAIL_PRESETS, getRejectionPresetById } from "../lib/rejection-email-presets";
 import { APPROVAL_EMAIL_PRESETS, getApprovalPresetById } from "../lib/approval-email-presets";
@@ -2586,17 +2587,19 @@ export default function Settings() {
                                                                 placeholder={DEFAULT_APPROVE_SUBJECT}
                                                                 autoComplete="off"
                                                             />
-                                                            <RichTextEditor
-                                                                label="Body"
-                                                                value={customerApprovalSettings.approveEmailBody}
-                                                                onChange={(html) => {
-                                                                    setSelectedApprovalPresetId("");
-                                                                    setCustomerApprovalSettings((prev) => ({ ...prev, approveEmailBody: html }));
-                                                                }}
-                                                                placeholder={DEFAULT_APPROVE_BODY}
-                                                                minHeight={160}
-                                                                helpText="Liquid: {{ shop.name }}, {{ shop.url }}, {{ customer.first_name }}, {{ activation_url }} (set-password link). Click Save to apply."
-                                                            />
+                                                            <Suspense fallback={<RteFallback />}>
+                                                                <RichTextEditor
+                                                                    label="Body"
+                                                                    value={customerApprovalSettings.approveEmailBody}
+                                                                    onChange={(html) => {
+                                                                        setSelectedApprovalPresetId("");
+                                                                        setCustomerApprovalSettings((prev) => ({ ...prev, approveEmailBody: html }));
+                                                                    }}
+                                                                    placeholder={DEFAULT_APPROVE_BODY}
+                                                                    minHeight={160}
+                                                                    helpText="Liquid: {{ shop.name }}, {{ shop.url }}, {{ customer.first_name }}, {{ activation_url }} (set-password link). Click Save to apply."
+                                                                />
+                                                            </Suspense>
                                                             <InlineStack gap="300" blockAlign="start" wrap>
                                                                 <TextField
                                                                     label="Button text"
@@ -2653,16 +2656,18 @@ export default function Settings() {
                                                                     }}
                                                                 />
                                                             </InlineStack>
-                                                            <RichTextEditor
-                                                                label="Footer text"
-                                                                value={customerApprovalSettings.approveEmailFooterText || ""}
-                                                                onChange={(html) => {
-                                                                    setSelectedApprovalPresetId("");
-                                                                    setCustomerApprovalSettings((prev) => ({ ...prev, approveEmailFooterText: html }));
-                                                                }}
-                                                                placeholder="Company name or legal text"
-                                                                minHeight={72}
-                                                            />
+                                                            <Suspense fallback={<RteFallback />}>
+                                                                <RichTextEditor
+                                                                    label="Footer text"
+                                                                    value={customerApprovalSettings.approveEmailFooterText || ""}
+                                                                    onChange={(html) => {
+                                                                        setSelectedApprovalPresetId("");
+                                                                        setCustomerApprovalSettings((prev) => ({ ...prev, approveEmailFooterText: html }));
+                                                                    }}
+                                                                    placeholder="Company name or legal text"
+                                                                    minHeight={72}
+                                                                />
+                                                            </Suspense>
                                                             <Checkbox
                                                                 label={`Show "Powered by ${APP_DISPLAY_NAME}" in email footer`}
                                                                 checked={customerApprovalSettings.approveEmailShowPoweredBy}
@@ -3073,17 +3078,19 @@ export default function Settings() {
                                                     placeholder={DEFAULT_REJECT_SUBJECT}
                                                     autoComplete="off"
                                                 />
-                                                <RichTextEditor
-                                                    label="Body"
-                                                    value={customerApprovalSettings.rejectEmailBody}
-                                                    onChange={(html) => {
-                                                        setSelectedRejectionPresetId("");
-                                                        setCustomerApprovalSettings((prev) => ({ ...prev, rejectEmailBody: html }));
-                                                    }}
-                                                    placeholder={DEFAULT_REJECT_BODY}
-                                                    minHeight={160}
-                                                    helpText={"Liquid: {{ shop.name }}, {{ shop.email }}, {{ shop.domain }}, {{ shop.url }}, {{ customer.first_name }}, {{ customer.email }}, {{ email }}, {{ 'now' | date: \"%Y\" }}. Toolbar: bold, italic, underline."}
-                                                />
+                                                <Suspense fallback={<RteFallback />}>
+                                                    <RichTextEditor
+                                                        label="Body"
+                                                        value={customerApprovalSettings.rejectEmailBody}
+                                                        onChange={(html) => {
+                                                            setSelectedRejectionPresetId("");
+                                                            setCustomerApprovalSettings((prev) => ({ ...prev, rejectEmailBody: html }));
+                                                        }}
+                                                        placeholder={DEFAULT_REJECT_BODY}
+                                                        minHeight={160}
+                                                        helpText={"Liquid: {{ shop.name }}, {{ shop.email }}, {{ shop.domain }}, {{ shop.url }}, {{ customer.first_name }}, {{ customer.email }}, {{ email }}, {{ 'now' | date: \"%Y\" }}. Toolbar: bold, italic, underline."}
+                                                    />
+                                                </Suspense>
                                                 <InlineStack gap="300" blockAlign="start" wrap>
                                                     <TextField
                                                         label="Button text"
@@ -3139,17 +3146,19 @@ export default function Settings() {
                                                         }}
                                                     />
                                                 </InlineStack>
-                                                <RichTextEditor
-                                                    label="Footer text"
-                                                    value={customerApprovalSettings.rejectEmailFooterText || ""}
-                                                    onChange={(html) => {
-                                                        setSelectedRejectionPresetId("");
-                                                        setCustomerApprovalSettings((prev) => ({ ...prev, rejectEmailFooterText: html }));
-                                                    }}
-                                                    placeholder="Company name or legal text"
-                                                    minHeight={72}
-                                                    helpText="Bold, italic, underline."
-                                                />
+                                                <Suspense fallback={<RteFallback />}>
+                                                    <RichTextEditor
+                                                        label="Footer text"
+                                                        value={customerApprovalSettings.rejectEmailFooterText || ""}
+                                                        onChange={(html) => {
+                                                            setSelectedRejectionPresetId("");
+                                                            setCustomerApprovalSettings((prev) => ({ ...prev, rejectEmailFooterText: html }));
+                                                        }}
+                                                        placeholder="Company name or legal text"
+                                                        minHeight={72}
+                                                        helpText="Bold, italic, underline."
+                                                    />
+                                                </Suspense>
                                                 <Checkbox
                                                     label={`Show "Powered by ${APP_DISPLAY_NAME}" in email footer`}
                                                     checked={customerApprovalSettings.rejectEmailShowPoweredBy}
