@@ -1,6 +1,6 @@
 // Form Configuration page - lists forms (example UI: Form ID, Name, Form type, Status, Actions)
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { Link, useLoaderData, useNavigate, useSubmit, useRevalidator, useActionData } from "react-router";
+import { Link, PrefetchPageLinks, useLoaderData, useNavigate, useSubmit, useRevalidator, useActionData } from "react-router";
 import {
     Badge,
     Box,
@@ -171,14 +171,6 @@ export default function FormConfig() {
     }, []);
     const { selectedResources, allResourcesSelected, handleSelectionChange } = useIndexResourceState(forms);
 
-    const handleCreateForm = useCallback(
-        (formType: string) => {
-            setCreateModalOpen(false);
-            navigate(`/app/form-builder?new=1&formType=${encodeURIComponent(formType)}`);
-        },
-        [navigate]
-    );
-
     const handleSetDefaultForm = useCallback(
         (form: FormConfigItem) => {
             const fd = new FormData();
@@ -270,6 +262,7 @@ export default function FormConfig() {
                     <Link
                         to={`/app/form-builder?formId=${encodeURIComponent(form.id)}`}
                         className="form-config-name-link"
+                        prefetch="render"
                     >
                         {form.name}
                     </Link>
@@ -329,6 +322,12 @@ export default function FormConfig() {
                 title="Create form"
                 size="large"
             >
+                {createModalOpen && (
+                    <>
+                        <PrefetchPageLinks page="/app/form-builder?new=1&formType=wholesale" />
+                        <PrefetchPageLinks page="/app/form-builder?new=1&formType=multi_step" />
+                    </>
+                )}
                 <Modal.Section>
                     <BlockStack gap="400">
                         <Text as="p" tone="subdued">
@@ -345,9 +344,11 @@ export default function FormConfig() {
                                             {t.description}
                                         </Text>
                                         <Box paddingBlockStart="200">
-                                            <Button fullWidth variant="primary" onClick={() => handleCreateForm(t.value)}>
-                                                Create form
-                                            </Button>
+                                            <Link to={`/app/form-builder?new=1&formType=${encodeURIComponent(t.value)}`} prefetch="render">
+                                                <Button fullWidth variant="primary">
+                                                    Create form
+                                                </Button>
+                                            </Link>
                                         </Box>
                                         <Text as="p" variant="bodySm" tone="subdued">
                                             {t.displayCondition}

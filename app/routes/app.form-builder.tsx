@@ -599,7 +599,7 @@ function suggestedNameForFormType(formType: string): string {
 
 async function resolveShopCountryCode(
     admin: { graphql: (query: string) => Promise<Response> },
-    timeoutMs = 2500
+    timeoutMs = 500
 ): Promise<string> {
     try {
         const response = await Promise.race([
@@ -614,7 +614,7 @@ async function resolveShopCountryCode(
             return code.toUpperCase();
         }
     } catch (e) {
-        console.warn("Shop country lookup failed, using US fallback:", e);
+        // Use US fallback immediately - don't block page load for country display
     }
     return "US";
 }
@@ -639,9 +639,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     let themeSettings: ThemeSettings = THEME_DEFAULTS;
 
     if (isNew) {
-        const [resolvedShopCountryCode, existingCount] = await Promise.all([
+        const [resolvedShopCountryCode, existingCount, settingsForTheme] = await Promise.all([
             shopCountryCodePromise,
             prisma.formConfig.count({ where: { shop } }),
+            prisma.appSettings.findUnique({ where: { shop }, select: { themeSettings: true } }),
         ]);
         shopCountryCode = resolvedShopCountryCode;
         config = { fields: [...DEFAULT_FIELDS] };
@@ -649,11 +650,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         formType = ["wholesale", "multi_step"].includes(formTypeParam) ? formTypeParam : "wholesale";
         isDefault = existingCount === 0;
         enabled = true;
+        const raw = (settingsForTheme as { themeSettings?: unknown } | null)?.themeSettings;
+        if (raw) themeSettings = normalizeThemeSettings(raw);
     } else if (formIdParam) {
         try {
-            const [resolvedShopCountryCode, dbForm] = await Promise.all([
+            const [resolvedShopCountryCode, dbForm, settingsForTheme] = await Promise.all([
                 shopCountryCodePromise,
                 prisma.formConfig.findFirst({ where: { id: formIdParam, shop } }),
+                prisma.appSettings.findUnique({ where: { shop }, select: { themeSettings: true } }),
             ]);
             shopCountryCode = resolvedShopCountryCode;
             if (!dbForm) {
@@ -666,6 +670,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             isDefault = r.isDefault ?? false;
             enabled = r.enabled !== false;
             config = { fields: (dbForm.fields ?? []) as unknown as FormField[] };
+            const raw = (settingsForTheme as { themeSettings?: unknown } | null)?.themeSettings;
+            if (raw) themeSettings = normalizeThemeSettings(raw);
         } catch (e) {
             console.warn("Form load failed:", e);
             return new Response(null, { status: 302, headers: { Location: "/app/form-config" } });
@@ -717,18 +723,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         config.fields = config.fields.map((f) =>
             defaultTypes.includes(f.type) ? { ...f, isDefault: true, required: true } : f
         );
-    }
-
-    if (isNew || formIdParam) {
-        try {
-            const settings = await prisma.appSettings.findUnique({ where: { shop }, select: { themeSettings: true } });
-            const raw = (settings as { themeSettings?: unknown } | null)?.themeSettings;
-            if (raw) {
-                themeSettings = normalizeThemeSettings(raw);
-            }
-        } catch (e) {
-            console.warn("Form builder themeSettings load failed:", e);
-        }
     }
 
     return { config, shopCountryCode, themeSettings, formId, name, formType, isDefault, enabled, isNew };
