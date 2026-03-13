@@ -53,7 +53,10 @@ export default defineConfig({
     tsconfigPaths(),
   ],
   build: {
-    assetsInlineLimit: 0,
+    assetsInlineLimit: 4096,
+    minify: "esbuild",
+    target: "es2020",
+    cssMinify: true,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -61,6 +64,7 @@ export default defineConfig({
             if (id.includes("@shopify/polaris") || id.includes("@shopify/polaris-icons")) return "polaris";
             if (id.includes("@shopify/app-bridge") || id.includes("@shopify/shopify-app")) return "shopify";
             if (id.includes("@dnd-kit")) return "dnd-kit";
+            if (id.includes("@mui") || id.includes("@emotion")) return "mui";
           }
         },
       },
