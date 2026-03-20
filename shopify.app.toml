@@ -29,7 +29,7 @@ api_version = "2026-01"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,write_customers,write_app_proxy,read_locales"
+scopes = "write_app_proxy,read_customers,write_customers,read_locales,customer_write_customers,customer_read_customers"
 
 [auth]
 redirect_urls = [ "https://approvefy.xloxi.com/api/auth" ]
