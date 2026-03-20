@@ -1,0 +1,41 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "413942cc5a37489ff893894c4af4ca72"
+name = "Approvefy"
+application_url = "https://approvefy.xloxi.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "customers/create" ]
+  uri = "/webhooks/customers_create"
+
+  # Mandatory GDPR compliance webhooks (required for App Store)
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,read_customers,write_customers,write_app_proxy,read_locales"
+
+[auth]
+redirect_urls = [ "https://approvefy.xloxi.com/auth/callback", "https://approvefy.xloxi.com/api/auth", "https://approvefy.xloxi.com", "https://approvefy.xloxi.com/app", "https://approvefy.xloxi.com/app/customers" ]
+
+[app_proxy]
+url = "https://approvefy.xloxi.com/api"
+subpath = "customer-approval"
+prefix = "apps"

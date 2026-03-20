@@ -1,0 +1,24 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "7caa3373f48c4f4029c01b4cecec3345"
+name = "Approvefy"
+application_url = "https://approvefy.xloxi.com"
+embedded = true
+
+[webhooks]
+api_version = "2026-01"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,read_locales,write_app_proxy,write_customers"
+
+[auth]
+redirect_urls = [ "https://approvefy.xloxi.com/auth/callback", "https://approvefy.xloxi.com/api/auth" ]
+
+[app_proxy]
+url = "https://approvefy.xloxi.com/api"
+subpath = "customer-approval"
+prefix = "apps"
+
+[build]
+automatically_update_urls_on_dev = true

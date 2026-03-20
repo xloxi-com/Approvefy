@@ -1,0 +1,103 @@
+APPROVEFY – BASIC vs PRO PLAN FEATURES
+=======================================
+Use this when creating/editing plans in Shopify Partner Dashboard (Managed Pricing).
+Copy the feature lists into your plan descriptions or listing.
+
+-----------------------------------------
+BASIC PLAN
+-----------------------------------------
+Monthly Price: Lower tier
+
+FEATURES:
+• Customer Registrations: Up to 100 / month
+• Customer Approval System: Manual approval
+• Customer Status Management: Pending / Approved / Denied
+• Customer Search & Filters: Basic search
+• Customer Analytics Dashboard: Basic metrics
+• CSV Export: Not included
+• B2B Registration Form Builder: 1 form
+• Multi-Step Registration Forms: Not included
+• Drag & Drop Form Builder: Yes
+• Custom Fields: Limited fields
+• File Upload Fields: Not included
+• Newsletter Opt-In Detection: Not included
+• Default Form Selection: Not included
+• Form Cloning: Not included
+• Form Translations / Multi-Language: Not included
+• Theme Styling Controls: Basic styling
+• Email Templates (Approval / Rejection): Basic templates
+• Email Branding (Logo, Colors): Not included
+• Approval Email with Activation Link: Not included
+• SMTP Email Support: Not included
+• Resend Approval / Rejection Emails: Not included
+• Customer Detail Editing: Basic fields
+• Shopify Customer Tags: 1 approved tag
+• Shopify Address Sync: Not included
+• Delete Customer Options: Not included
+• Priority Support: Not included
+
+-----------------------------------------
+PRO PLAN
+-----------------------------------------
+Monthly Price: Higher tier
+
+FEATURES:
+• Customer Registrations: Unlimited
+• Customer Approval System: Manual + Auto approval
+• Customer Status Management: Pending / Approved / Denied
+• Customer Search & Filters: Advanced search + filters
+• Customer Analytics Dashboard: Advanced analytics
+• CSV Export: Full export
+• B2B Registration Form Builder: Unlimited forms
+• Multi-Step Registration Forms: Included
+• Drag & Drop Form Builder: Yes
+• Custom Fields: Unlimited fields
+• File Upload Fields: Included
+• Newsletter Opt-In Detection: Included
+• Default Form Selection: Included
+• Form Cloning: Included
+• Form Translations / Multi-Language: Included
+• Theme Styling Controls: Advanced styling + Custom CSS
+• Email Templates (Approval / Rejection): Fully customizable templates
+• Email Branding (Logo, Colors): Included
+• Approval Email with Activation Link: Included
+• SMTP Email Support: Custom SMTP
+• Resend Approval / Rejection Emails: Included
+• Customer Detail Editing: Full editing + sync with Shopify
+• Shopify Customer Tags: Multiple tags
+• Shopify Address Sync: Included
+• Delete Customer Options: Delete from Shopify / App / Both
+• Priority Support: Included
+
+-----------------------------------------
+FEATURE COMPARISON TABLE (for copy-paste)
+-----------------------------------------
+
+Feature                              | Basic Plan              | Pro Plan
+-------------------------------------|-------------------------|---------------------------
+Customer Registrations               | Up to 100 / month       | Unlimited
+Customer Approval System             | Manual approval         | Manual + Auto approval
+Customer Status Management           | Pending/Approved/Denied | Pending/Approved/Denied
+Customer Search & Filters            | Basic search            | Advanced search + filters
+Customer Analytics Dashboard         | Basic metrics           | Advanced analytics
+CSV Export                           | Not included            | Full export
+B2B Registration Form Builder        | 1 form                  | Unlimited forms
+Multi-Step Registration Forms        | Not included            | Included
+Drag & Drop Form Builder             | Yes                     | Yes
+Custom Fields                        | Limited fields          | Unlimited fields
+File Upload Fields                   | Not included            | Included
+Newsletter Opt-In Detection          | Not included            | Included
+Default Form Selection               | Not included            | Included
+Form Cloning                         | Not included            | Included
+Form Translations / Multi-Language   | Not included            | Included
+Theme Styling Controls               | Basic styling           | Advanced + Custom CSS
+Email Templates (Approval/Rejection)  | Basic templates         | Fully customizable
+Email Branding (Logo, Colors)        | Not included            | Included
+Approval Email with Activation Link  | Not included            | Included
+SMTP Email Support                   | Not included            | Custom SMTP
+Resend Approval/Rejection Emails     | Not included            | Included
+Customer Detail Editing              | Basic fields            | Full + sync with Shopify
+Shopify Customer Tags                | 1 approved tag          | Multiple tags
+Shopify Address Sync                 | Not included            | Included
+Delete Customer Options              | Not included            | Delete from Shopify/App/Both
+Priority Support                     | Not included            | Included

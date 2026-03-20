@@ -1,0 +1,658 @@
+/* Settings page - Fixed header (Settings title + Discard/Save) when scrolling */
+.settings-page-wrapper .Polaris-Page-Header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--p-color-bg-surface, #fff);
+  box-shadow: 0 1px 0 var(--p-color-border-subdued, #e1e3e5);
+}
+
+/* Settings page - Left sidebar (Shopify default UI style) */
+.settings-sidebar-nav {
+  width: 220px;
+  flex-shrink: 0;
+  padding: var(--p-space-200, 8px) 0;
+}
+.settings-sidebar-nav button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 10px var(--p-space-400, 16px);
+  text-align: left;
+  border: none;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--p-color-text-subdued, #6d7175);
+  font-weight: 400;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 0;
+  margin: 0;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.settings-sidebar-nav button .Polaris-InlineStack,
+.settings-sidebar-nav button .settings-tab-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-300, 12px);
+  justify-content: flex-start;
+}
+.settings-sidebar-nav button .settings-tab-label {
+  font-size: 14px;
+}
+.settings-sidebar-nav button:hover {
+  background: var(--p-color-bg-surface-hover, #f6f6f7);
+  color: var(--p-color-text, #202223);
+}
+.settings-sidebar-nav button.settings-sidebar-nav--selected {
+  background: var(--p-color-bg-surface-selected, #f1f2f4);
+  color: var(--p-color-text, #202223);
+  font-weight: 600;
+  border-left-color: var(--p-color-border-info, #5c6ac4);
+}
+.settings-sidebar-nav button.settings-sidebar-nav--parent-selected {
+  background: var(--p-color-bg-surface-selected, #f1f2f4);
+  color: var(--p-color-text, #202223);
+  font-weight: 600;
+  border-left-color: transparent;
+}
+.settings-sidebar-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: calc(var(--p-space-400, 16px) + 20px);
+}
+.settings-sidebar-sub button {
+  padding: 8px var(--p-space-400, 16px);
+  font-size: 13px;
+}
+
+/* Email templates – collapsible section (clean user-friendly layout) */
+.settings-email-collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-300, 12px);
+  padding: var(--p-space-200, 8px) var(--p-space-300, 12px) var(--p-space-200, 8px) 0;
+  min-height: 48px;
+}
+.settings-email-collapsible-header .settings-email-collapsible-trigger {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: var(--p-space-300, 12px) var(--p-space-400, 16px);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--p-border-radius-200, 8px);
+  transition: background 0.15s ease;
+}
+.settings-email-collapsible-header .settings-email-collapsible-trigger:hover {
+  background: var(--p-color-bg-surface-hover, #f6f6f7);
+}
+.settings-email-collapsible-header .settings-email-collapsible-trigger .Polaris-Icon {
+  margin: 0;
+  flex-shrink: 0;
+}
+.settings-email-send-toggle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-200, 8px);
+}
+.settings-email-send-toggle .Polaris-Checkbox {
+  margin: 0;
+}
+.settings-email-send-toggle .Polaris-Text {
+  white-space: nowrap;
+}
+
+/* Choose a template popover: default width */
+.settings-template-chooser-popover {
+  width: 960px;
+  max-width: 90vw;
+  min-width: 720px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+  display: flex !important;
+}
+/* Polaris Popover wrapper: use default width when it contains template chooser */
+.Polaris-Popover__ContentContainer:has(.settings-template-chooser-popover),
+.Polaris-Popover__Content:has(.settings-template-chooser-popover) {
+  max-width: 90vw !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+:has(> .settings-template-chooser-popover) {
+  max-width: 90vw !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+.Polaris-Popover:has(.settings-template-chooser-popover) {
+  max-width: 90vw !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+/* Template: customize left, email preview right */
+.settings-template-layout {
+  display: flex;
+  gap: var(--p-space-600, 24px);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.settings-template-customize {
+  flex: 1;
+  min-width: 0;
+}
+.settings-template-preview {
+  flex: 0 0 360px;
+  position: sticky;
+  top: calc(var(--p-space-400, 16px) + 60px);
+}
+@media (max-width: 900px) {
+  .settings-template-preview {
+    flex: 1 1 100%;
+    position: static;
+  }
+}
+
+/* Email preview body: isolate from Polaris so inline text colors (e.g. span style="color: red") show */
+.settings-email-preview-body {
+  all: initial;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  color: #374151;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.settings-email-preview-body *,
+.settings-email-preview-body *::before,
+.settings-email-preview-body *::after {
+  box-sizing: inherit;
+}
+
+/* Headings in email preview */
+.settings-email-preview-body h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+.settings-email-preview-body h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+.settings-email-preview-body h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+.settings-email-preview-body h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+
+/* Links in preview */
+.settings-email-preview-body a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Settings page - Main content (best UI width) */
+.settings-content-container {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  max-width: 1200px;
+  padding-block-start: var(--p-space-100, 4px);
+  padding-inline-end: var(--p-space-400, 16px);
+}
+
+/* Settings page - Default language dropdown emphasis */
+
+.settings-default-language {
+  padding: 20px;
+  background: #f8fafc;
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.settings-default-language:focus-within {
+  border-color: #5c6ac4;
+  box-shadow: 0 0 0 3px rgba(92, 106, 196, 0.15);
+.settings-default-language .Polaris-Select__Backdrop {
+  border-radius: 8px;
+}
+
+  background: #fff;
+}
+
+.settings-default-language-selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5b21b6;
+  margin-top: 12px;
+  padding: 8px 12px;
+  font-weight: 500;
+  background: #ede9fe;
+  color: #6d7175;
+  font-size: 13px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.settings-default-language-selected .settings-default-language-value {
+  color: #5b21b6;
+  font-weight: 600;
+}
+
+/* --- Mobile-responsive: Settings page --- */
+@media (max-width: 1024px) {
+  .settings-page-wrapper .settings-layout-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .settings-sidebar-nav {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    padding: 0;
+    gap: 0;
+    border-bottom: 1px solid var(--p-color-border-subdued, #e1e3e5);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .settings-sidebar-nav .Polaris-BlockStack {
+    flex-direction: row;
+    gap: 0;
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+  .settings-sidebar-nav button {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    padding: 12px var(--p-space-200, 8px);
+    white-space: nowrap;
+  }
+  /* Mobile: icon above label, clearly visible */
+  .settings-sidebar-nav button .settings-tab-inner {
+    flex-direction: column;
+    gap: var(--p-space-100, 4px);
+    justify-content: center;
+    min-width: 0;
+  }
+  .settings-sidebar-nav button .settings-tab-inner .Polaris-Icon,
+  .settings-sidebar-nav button .settings-tab-inner svg {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px;
+    min-height: 22px;
+    flex-shrink: 0;
+  }
+  .settings-sidebar-nav button .settings-tab-label {
+    font-size: 12px;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .settings-sidebar-nav button.settings-sidebar-nav--selected {
+    border-left: none;
+    border-bottom-color: var(--p-color-border-info, #5c6ac4);
+  }
+  /* Match main dashboard width/padding on mobile */
+  .settings-content-container {
+    padding-inline: 0;
+    margin-inline: 0;
+    width: 100%;
+    max-width: none;
+  }
+}
+
+/* Appearance tab: stack settings + preview on small viewports */
+.settings-appearance-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--p-space-500);
+  align-items: start;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .settings-appearance-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-appearance-grid .settings-appearance-preview-wrap {
+    position: static;
+    top: auto;
+  }
+}
+
+/* Appearance: prevent truncation — allow content to wrap and shrink */
+.settings-appearance-card .Polaris-LegacyCard {
+  min-width: 0;
+  overflow: visible;
+}
+.settings-appearance-card .Polaris-LegacyCard__Header,
+.settings-appearance-card .Polaris-LegacyCard__Section {
+  min-width: 0;
+}
+.settings-appearance-font-section .Polaris-InlineStack {
+  flex-wrap: wrap;
+}
+.settings-appearance-font-section .Polaris-Box {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+@media (max-width: 640px) {
+  .settings-appearance-font-section .Polaris-Box {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+.settings-appearance-slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-200);
+  min-width: 0;
+}
+.settings-appearance-slider-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.settings-appearance-slider-value {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Allow description and labels to wrap instead of truncating */
+.settings-appearance-card .Polaris-LegacyCard__Section,
+.settings-appearance-card .Polaris-LegacyCard__Section p,
+.settings-appearance-card .Polaris-Text {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+.settings-content-container {
+  min-width: 0;
+  overflow: visible;
+}
+
+/* Language settings: keep inputs and dropdowns a consistent, compact font size */
+.settings-content-container .Polaris-TextField__Input,
+.settings-content-container .Polaris-Select__Input {
+  font-size: 14px;
+}
+
+/* Match labels and selected value text to same size */
+.settings-content-container .Polaris-Label__Text,
+.settings-content-container .Polaris-Select__SelectedOption {
+  font-size: 14px;
+}
+
+/* ─── Rich text editor: Shopify product description style ─── */
+.rich-text-editor {
+  --rte-border: var(--p-color-border, #c9cccf);
+  --rte-bg: var(--p-color-bg-surface, #fff);
+  --rte-bg-subdued: var(--p-color-bg-surface-secondary, #f6f6f7);
+  --rte-radius: var(--p-border-radius-200, 8px);
+  --rte-text: var(--p-color-text, #202223);
+  --rte-text-subdued: var(--p-color-text-subdued, #6d7175);
+  font-family: var(--p-font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+}
+
+.rich-text-editor .Polaris-Labelled__Label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--p-color-text, #202223);
+  margin-bottom: 4px;
+}
+
+.rich-text-editor-wrapper {
+  border: 1px solid var(--rte-border);
+  border-radius: var(--rte-radius);
+  background: var(--rte-bg);
+  overflow: hidden;
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+.rich-text-editor-wrapper:focus-within {
+  border-color: var(--p-color-border-info, #5c6ac4);
+  box-shadow: 0 0 0 1px var(--p-color-border-info, #5c6ac4);
+}
+
+.rich-text-editor .rich-text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--rte-bg-subdued);
+  border-bottom: 1px solid var(--rte-border);
+  min-height: 40px;
+}
+
+.rich-text-editor .rich-text-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rte-text-subdued);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.rich-text-editor .rich-text-toolbar-btn:hover {
+  background: var(--p-color-bg-surface-hover, rgba(0, 0, 0, 0.05));
+  color: var(--rte-text);
+}
+
+.rich-text-editor .rich-text-toolbar-btn:active {
+  background: var(--p-color-bg-surface-active, rgba(0, 0, 0, 0.08));
+}
+
+.rich-text-editor .rich-text-toolbar-btn .Polaris-Icon,
+.rich-text-editor .rich-text-toolbar-btn .rich-text-toolbar-icon-svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.rich-text-editor .rich-text-toolbar-btn .rich-text-toolbar-icon-svg svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+  color: var(--rte-text-subdued);
+}
+
+.rich-text-editor .rich-text-toolbar-btn:hover .rich-text-toolbar-icon-svg svg {
+  color: var(--rte-text);
+}
+
+.rich-text-editor .rich-text-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--rte-border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Format dropdown: Polaris Button as activator - blue text like Shopify description editor */
+.rich-text-editor .rich-text-toolbar .Polaris-Button--plain {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--p-color-text-interactive, #2c6ecb);
+}
+
+.rich-text-editor .rich-text-toolbar .Polaris-Button--plain:hover {
+  color: var(--p-color-text-interactive-hovered, #1f5199);
+  background: var(--p-color-bg-surface-hover, rgba(0, 0, 0, 0.05));
+}
+
+.rich-text-editor .rich-text-body,
+.rich-text-editor .rich-text-source {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 16px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--rte-text);
+  background: var(--rte-bg);
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.rich-text-editor .rich-text-body {
+  overflow-y: auto;
+}
+
+/* Headings in editor so h1–h4 are visually distinct */
+.rich-text-editor .rich-text-body h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0.5em 0 0.25em;
+}
+.rich-text-editor .rich-text-body h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.5em 0 0.25em;
+}
+.rich-text-editor .rich-text-body h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.5em 0 0.25em;
+}
+.rich-text-editor .rich-text-body h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.5em 0 0.25em;
+}
+
+.rich-text-editor .rich-text-body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--rte-text-subdued);
+}
+
+.rich-text-editor .rich-text-source {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.rich-text-editor .rich-text-help {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--rte-text-subdued);
+}
+
+.rich-text-editor .rich-text-color-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  padding: 8px;
+  background: var(--rte-bg);
+  border: 1px solid var(--rte-border);
+  border-radius: var(--rte-radius);
+  box-shadow: var(--p-shadow-400, 0 4px 12px rgba(0, 0, 0, 0.1));
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.rich-text-editor .rich-text-color-swatches {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.rich-text-editor .rich-text-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid var(--rte-bg);
+  box-shadow: 0 0 0 1px var(--rte-border);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.rich-text-editor .rich-text-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.rich-text-editor .rich-text-color-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rte-border);
+}
+
+.rich-text-editor .rich-text-color-custom-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--rte-text-subdued);
+  white-space: nowrap;
+}
+
+.rich-text-editor .rich-text-color-input {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--rte-border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.rich-text-editor .rich-text-color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.rich-text-editor .rich-text-color-input::-webkit-color-swatch {
+  border-radius: 3px;
+  border: none;
+}
+
+.rich-text-editor .rich-text-color-hex {
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: var(--rte-text-subdued);
+}

@@ -1,0 +1,6 @@
+# Theme Check config: extension snippet is referenced by blocks/app-embed.liquid
+extends: theme-check:theme-app-extension
+
+OrphanedSnippet:
+  ignore:
+    - extensions/registration-form/snippets/registration-form-embed.liquid
