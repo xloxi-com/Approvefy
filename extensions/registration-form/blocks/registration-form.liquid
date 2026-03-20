@@ -1,23 +1,21 @@
 {% comment %}
-  Registration Form (Section Block)
-  This block previously rendered a hard-coded form.
-
-  The dynamic, configurable form is now handled entirely by the
-  App Embed block `app-embed.liquid`, which reads your backend
-  Form Builder configuration.
-
-  To avoid confusion and duplicate fields, this block intentionally
-  renders nothing on the storefront. Please enable the app embed
-  "Approvefy" instead of relying on this block.
+  App block for any page (e.g. Contact). Renders the same Form Builder experience as the
+  app embed; `registration-form.js` mounts inside `[data-approvefy-app-block]` when not on /account/register.
 {% endcomment %}
 
-<div class="custom-registration-form">
+<div
+  class="custom-registration-form"
+  data-approvefy-app-block="true"
+  data-block-heading="{{ block.settings.heading | escape }}"
+  data-block-description="{{ block.settings.description | escape }}"
+>
   {% if request.design_mode %}
-    <p style="padding:16px;border:1px dashed #d1d5db;border-radius:8px;background:#f9fafb;font-size:14px;">
-      This block is a placeholder only. The actual B2B registration form is rendered by the
-      <strong>Approvefy</strong> app embed using your backend Form Builder fields.
-    </p>
+    <div class="approvefy-theme-editor-placeholder" style="padding:16px;border:1px dashed #d1d5db;border-radius:8px;background:#f9fafb;font-size:14px;margin-bottom:12px;">
+      <strong>Approvefy</strong> — registration form loads here on the live storefront (Contact, Pages, etc.).
+      For the customer account register page, you can use the <strong>Custom registration</strong> app embed instead.
+    </div>
   {% endif %}
+  {% render 'registration-form-embed', block: block %}
 </div>
 
 {% schema %}
@@ -36,6 +34,25 @@
       "id": "description",
       "label": "Form Description",
       "default": "Please fill out the information below to create your account."
+    },
+    {
+      "type": "text",
+      "id": "form_id",
+      "label": "Form to display",
+      "placeholder": "Leave blank for default form",
+      "info": "Optional. Paste a Form ID from Approvefy → Form Builder to use a specific form."
+    },
+    {
+      "type": "text",
+      "id": "pending_message",
+      "label": "Pending approval message (English)",
+      "default": "Thank you for registering! Your account is pending approval. You will receive an email once approved."
+    },
+    {
+      "type": "text",
+      "id": "pending_message_fr",
+      "label": "Pending approval message (French)",
+      "default": "Merci pour votre inscription ! Votre compte est en attente d'approbation. Vous recevrez un e-mail une fois approuvé."
     }
   ]
 }

@@ -11,3 +11,7 @@ handle = "registration-form"
 name = "Approvefy Form Embed"
 file = "blocks/app-embed.liquid"
 
+[[extensions.blocks]]
+name = "Registration Form"
+file = "blocks/registration-form.liquid"
+

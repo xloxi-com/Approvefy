@@ -1,6 +1,9 @@
 (function() {
-  // Only run on registration page
-  if (!window.location.pathname.includes('/account/register')) return;
+  // Customer account register: replace native form. Any other page: mount inside Approvefy app block only.
+  var path = window.location.pathname || '';
+  var isRegisterPage = path.indexOf('/account/register') !== -1;
+  var inlineAppBlockMount = document.querySelector('[data-approvefy-app-block="true"]');
+  if (!isRegisterPage && !inlineAppBlockMount) return;
 
   // Detect locale: from html lang attribute or URL path (e.g. /fr/, /de/, /es/)
   var locale = (document.documentElement.lang || '').toLowerCase().split('-')[0];
@@ -800,12 +803,19 @@
   }
   
   async function init(shopDomain) {
+    var pathNow = window.location.pathname || '';
+    var isRegister = pathNow.indexOf('/account/register') !== -1;
+    var inlineMount = document.querySelector('[data-approvefy-app-block="true"]');
+    var useInlineMount = Boolean(inlineMount && !isRegister);
+
     // Find the main content area and the existing Shopify registration form
     const mainContent = document.querySelector('#MainContent') || document.querySelector('main') || document.body;
     const existingRegisterForm = mainContent.querySelector('form[action*="/account"]');
 
     // Optional existing container if we've already rendered once
-    let container = document.getElementById('custom-registration-container');
+    let container = useInlineMount && inlineMount
+      ? inlineMount.querySelector('#custom-registration-container')
+      : document.getElementById('custom-registration-container');
 
     let formFieldsHTML = '';
     let hasConfig = false;
@@ -852,10 +862,16 @@
     const stepNavHTML = stepCount > 1 ? '<div class="form-step-nav" style="display:flex;justify-content:space-between;align-items:center;margin:20px 0;flex-wrap:wrap;gap:12px"><button type="button" class="step-prev-btn custom-submit-btn" style="max-width:140px" id="step-prev-btn" disabled>' + escapeHtml(t('previous')) + '</button><span id="step-indicator">' + escapeHtml(t('stepOf')) + ' 1 ' + t('of') + ' ' + stepCount + '</span><button type="button" class="step-next-btn custom-submit-btn" style="max-width:140px" id="step-next-btn">' + escapeHtml(t('next')) + '</button></div>' : '';
     
     const pendingMsg = backendTranslations ? t('success_message') : ((locale === 'fr' ? PENDING_MESSAGE.fr : PENDING_MESSAGE.en) || PENDING_MESSAGE.en);
+    var blockHeadingAttr = useInlineMount && inlineMount ? (inlineMount.getAttribute('data-block-heading') || '').trim() : '';
+    var blockDescriptionAttr = useInlineMount && inlineMount ? (inlineMount.getAttribute('data-block-description') || '').trim() : '';
+    var titleHtml = blockHeadingAttr ? escapeHtml(blockHeadingAttr) : escapeHtml(t('createYourAccount'));
+    var descHtml = blockDescriptionAttr
+      ? escapeHtml(blockDescriptionAttr).replace(/\n/g, '<br>')
+      : escapeHtml(t('formDescription'));
     const formHTML = `
       <div id="custom-registration-container">
-        <h2>${escapeHtml(t('createYourAccount'))}</h2>
-        <p class="form-description">${escapeHtml(t('formDescription'))}</p>
+        <h2>${titleHtml}</h2>
+        <p class="form-description">${descHtml}</p>
         <form id="custom-registration-form" novalidate>
           ${formFieldsHTML}
           ${stepNavHTML}
@@ -880,8 +896,11 @@
     // If no container exists yet, create one now at the right place
     if (!container) {
       container = document.createElement('div');
-      container.id = 'custom-registration-container';
-      if (existingRegisterForm && existingRegisterForm.parentNode) {
+      if (useInlineMount && inlineMount) {
+        var ph = inlineMount.querySelector('.approvefy-theme-editor-placeholder');
+        if (ph) ph.remove();
+        inlineMount.appendChild(container);
+      } else if (existingRegisterForm && existingRegisterForm.parentNode) {
         existingRegisterForm.parentNode.insertBefore(container, existingRegisterForm);
       } else {
         mainContent.insertBefore(container, mainContent.firstChild);
@@ -932,8 +951,9 @@
       document.head.appendChild(override);
     })();
     
-    /* Hide only duplicate heading/description inside the same content container, not the global site header */
+    /* Hide only duplicate heading/description on the account register template, not on arbitrary pages */
     (function hideThemeDuplicateHeading() {
+      if (!isRegister) return;
       var container = document.getElementById('custom-registration-container');
       if (!container || !container.parentElement) return;
       var parent = container.parentElement;
