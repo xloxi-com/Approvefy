@@ -21,7 +21,7 @@ The extension is automatically included with the B2B Customer Validation app.
    - Click **Customize** on your active theme
 3. **Enable App Embed**:
    - Click on **App embeds** in the left sidebar (bottom section)
-   - Find **"Approvefy"**
+   - Find **"Custom registration"** (listed under **Approvefy**)
    - Toggle it **ON**
 4. **Configure Settings**:
    - **Enable Custom Registration Form**: Toggle to enable/disable

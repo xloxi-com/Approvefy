@@ -12,6 +12,7 @@ import {
   Icon,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
+import { registrationAppEmbedThemeEditorUrl } from "../registration-app-embed-theme-url.server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
@@ -24,8 +25,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     prisma.appSettings.findUnique({ where: { shop }, select: { id: true } }).then((r) => !!r),
   ]);
 
-  const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
-  const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?context=apps`;
+  const themeEditorUrl = registrationAppEmbedThemeEditorUrl(shop);
 
   const setupTasksTotal = 3;
   const setupTasksComplete = (formsCount > 0 ? 1 : 0) + (hasSettings ? 1 : 0);
@@ -109,7 +109,7 @@ export default function Index() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Text as="p" fontWeight="semibold">Enable app embed block</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      Turn on the Approvefy app embed in your theme so the registration form appears on the Customer register page. Click the button below to open the theme editor (App embeds). Enable the Approvefy toggle, then click Save at the top right.
+                      Turn on the <strong>Custom registration</strong> embed (under Approvefy in App embeds) so the registration form appears on the Customer register page. Click the button below to open the theme editor with that embed selected, then enable the toggle and click Save at the top right.
                     </Text>
                     <Box paddingBlockStart="200">
                       <Button url={themeEditorUrl} target="_blank" variant="primary">

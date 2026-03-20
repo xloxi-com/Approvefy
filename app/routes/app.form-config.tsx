@@ -21,6 +21,7 @@ import {
     Toast,
 } from "@shopify/polaris";
 import { EditIcon, DeleteIcon, PlusIcon, ClipboardIcon, DuplicateIcon } from "@shopify/polaris-icons";
+import { registrationAppEmbedThemeEditorUrl } from "../registration-app-embed-theme-url.server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { useState, useCallback, useEffect } from "react";
@@ -68,10 +69,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         console.warn("Form config fetch failed:", e);
     }
 
-    const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
-    // Direct link to the theme editor on the Customer register page
-    // so merchants land where they can enable the Approvefy app embed.
-    const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?template=customers/register&context=apps`;
+    const themeEditorUrl = registrationAppEmbedThemeEditorUrl(shop);
 
     return { forms, themeEditorUrl };
 };
@@ -354,7 +352,7 @@ export default function FormConfig() {
                                             Use the Form ID in your theme: add the <strong>Approvefy</strong> app embed on the Customer register page, then paste a Form ID into &quot;Form to display&quot; to show that form. Leave it blank to use your default form.
                                         </Text>
                                         <Text as="p">
-                                            In the theme editor, go to <strong>App embeds</strong> → enable <strong>Approvefy</strong> → then click <strong>Save</strong> to apply.
+                                            In the theme editor, go to <strong>App embeds</strong> → enable <strong>Custom registration</strong> (Approvefy) → then click <strong>Save</strong> to apply.
                                         </Text>
                                         <InlineStack gap="200">
                                             <Button url={themeEditorUrl} target="_blank">
