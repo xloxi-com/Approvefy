@@ -109,7 +109,7 @@ export default function Index() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Text as="p" fontWeight="semibold">Enable app embed block</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      Turn on the <strong>Custom registration</strong> embed (under Approvefy in App embeds) so the registration form appears on the Customer register page. Click the button below to open the theme editor with that embed selected, then enable the toggle and click Save at the top right.
+                      Turn on the <strong>Custom registration</strong> embed (under Approvefy in App embeds), then click Save. If Approvefy is not listed, publish an app update that includes the theme app extension—for example run <strong>shopify app deploy</strong> for the same Partner app as the API key configured on your server, then refresh the theme editor.
                     </Text>
                     <Box paddingBlockStart="200">
                       <Button url={themeEditorUrl} target="_blank" variant="primary">

@@ -11,7 +11,9 @@ This theme app extension adds a custom registration form with manual approval wo
 
 ## Installation
 
-The extension is automatically included with the B2B Customer Validation app.
+The extension is bundled with Approvefy. It only appears under **App embeds** after you release an app version that contains this extension (`shopify app deploy` for the same Partner app the store installed). Your hosted app’s `SHOPIFY_API_KEY` must match that app’s Client ID.
+
+Optional: set `SHOPIFY_APP_EMBED_ACTIVATE_DEEPLINK=1` on the server to append `activateAppId` to theme-editor links (only use after deploy; otherwise Shopify shows “App embed does not exist”).
 
 ## How to Enable
 
