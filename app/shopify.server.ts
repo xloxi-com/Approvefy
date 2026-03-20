@@ -9,7 +9,7 @@ import prisma from "./db.server";
 
 /** Keep in sync with `scopes` in shopify.app.toml — used if SCOPES is unset in production. */
 const DEFAULT_SCOPES =
-  "write_products,read_customers,write_customers,write_app_proxy,read_locales";
+  "read_customers,write_customers,write_app_proxy,read_locales";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY?.trim(),
