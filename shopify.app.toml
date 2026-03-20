@@ -7,7 +7,6 @@ embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-04"
@@ -20,9 +19,12 @@ api_version = "2026-04"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
-  [[webhooks.subscriptions]]
-  topics = [ "customers/create" ]
-  uri = "/webhooks/customers_create"
+  # customers/create is NOT declared here: Shopify blocks creating new app versions (including the
+  # theme app extension) until the app is approved for Protected Customer Data. See docs/WEBHOOKS.md
+  # After approval, add:
+  #   [[webhooks.subscriptions]]
+  #   topics = [ "customers/create" ]
+  #   uri = "/webhooks/customers_create"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
