@@ -1,0 +1,235 @@
+{% comment %}
+  Registration Form (Section Block)
+  This block previously rendered a hard-coded form.
+
+  The dynamic, configurable form is now handled entirely by the
+  App Embed block `app-embed.liquid`, which reads your backend
+  Form Builder configuration.
+
+  To avoid confusion and duplicate fields, this block intentionally
+  renders nothing on the storefront. Please enable the app embed
+  "Approvefy" instead of relying on this block.
+{% endcomment %}
+
+<div class="custom-registration-form">
+  {% if request.design_mode %}
+    <p style="padding:16px;border:1px dashed #d1d5db;border-radius:8px;background:#f9fafb;font-size:14px;">
+      This block is a placeholder only. The actual B2B registration form is rendered by the
+      <strong>Approvefy</strong> app embed using your backend Form Builder fields.
+    </p>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "Registration Form",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Form Heading",
+      "default": "Create Account"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Form Description",
+      "default": "Please fill out the information below to create your account."
+    }
+  ]
+}
+{% endschema %}
+
+<style>
+.custom-registration-form {
+  max-width: 600px;
+  margin: 40px auto;
+  padding: 20px;
+}
+
+.registration-form h2 {
+  margin-bottom: 10px;
+  font-size: 28px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.form-description {
+  margin-bottom: 30px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.form-field {
+  margin-bottom: 20px;
+}
+
+.form-field label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.required {
+  color: #e53e3e;
+}
+
+.form-field input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 15px;
+  transition: all 0.2s;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-field select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 15px;
+  background: #fff;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.form-notice {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: #eff6ff;
+  border-left: 4px solid #3b82f6;
+  border-radius: 6px;
+  margin-bottom: 24px;
+}
+
+.form-notice svg {
+  flex-shrink: 0;
+  color: #3b82f6;
+  margin-top: 2px;
+}
+
+.form-notice p {
+  margin: 0;
+  color: #1e40af;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.form-actions {
+  margin-top: 24px;
+}
+
+.btn {
+  width: 100%;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.form-message {
+  margin-top: 20px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.form-message--success {
+  background: #d1fae5;
+  color: #065f46;
+  border-left: 4px solid #10b981;
+}
+
+.form-message--error {
+  background: #fee2e2;
+  color: #991b1b;
+  border-left: 4px solid #ef4444;
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .custom-registration-form {
+    padding: 15px;
+  }
+}
+
+/* Address autocomplete (Photon API - free, no key) */
+.address-autocomplete-wrap {
+  position: relative;
+}
+.address-autocomplete-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 100;
+}
+.address-autocomplete-list li {
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+.address-autocomplete-list li:last-child {
+  border-bottom: none;
+}
+.address-autocomplete-list li:hover {
+  background: #f0f4ff;
+}
+</style>

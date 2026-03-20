@@ -1,0 +1,46 @@
+{% # theme-check-disable MissingTemplate, UndefinedObject %}
+{% comment %}
+  App Embed Block - Approvefy
+  This automatically injects the custom registration form on /account/register
+{% endcomment %}
+
+{% schema %}
+{
+  "name": "Approvefy",
+  "target": "body",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "enable_custom_registration",
+      "label": "Enable Custom Registration Form",
+      "default": true,
+      "info": "Replaces the default registration form with custom fields and approval workflow"
+    },
+    {
+      "type": "text",
+      "id": "pending_message",
+      "label": "Pending Approval Message",
+      "default": "Thank you for registering! Your account is pending approval. You will receive an email once approved.",
+      "info": "Message shown after successful registration"
+    },
+    {
+      "type": "text",
+      "id": "pending_message_fr",
+      "label": "Pending Approval Message (French)",
+      "default": "Merci pour votre inscription ! Votre compte est en attente d'approbation. Vous recevrez un e-mail une fois approuvé.",
+      "info": "Message shown after successful registration when store language is French"
+    },
+    {
+      "type": "text",
+      "id": "form_id",
+      "label": "Form to display",
+      "placeholder": "Leave blank for default form",
+      "info": "Leave blank to show your default form. To show a specific form, paste its Form ID from the app (Form configuration page). Each form you create has a unique ID."
+    }
+  ]
+}
+{% endschema %}
+
+{% if block.settings.enable_custom_registration %}
+  {% render 'registration-form-embed', block: block %}
+{% endif %}

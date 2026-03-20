@@ -1,0 +1,11 @@
+{% # theme-check-disable OrphanedSnippet, UndefinedObject, MissingAsset, ParserBlockingScript %}
+{{ 'registration-form.css' | asset_url | stylesheet_tag }}
+<script>
+window.__REGISTRATION_FORM_CONFIG__ = {
+  embedFormId: {{ block.settings.form_id | default: '' | json }},
+  pendingMessage: { en: {{ block.settings.pending_message | json }}, fr: {{ block.settings.pending_message_fr | default: block.settings.pending_message | json }} },
+  shop: {{ shop.permanent_domain | json }},
+  shopCountryCode: {{ shop.address.country_code | default: localization.country.iso_code | default: "US" | json }}
+};
+</script>
+<script src="{{ 'registration-form.js' | asset_url }}" defer></script>

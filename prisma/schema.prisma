@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Registration {
+  id           String    @id @default(cuid())
+  shop         String
+  customerId   String?
+  email        String
+  firstName    String
+  lastName     String
+  phone        String?
+  company      String?
+  status       String    @default("pending")
+  customData   Json?
+  note         String?
+  reviewedAt   DateTime?
+  reviewedBy   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  passwordHash String?
+
+  @@index([shop])
+  @@index([status])
+  @@index([email])
+  @@index([shop, status])
+  @@index([shop, createdAt])
+  @@index([status, createdAt])
+  @@index([shop, status, createdAt])
+}
+
+model AppSettings {
+  id                       String   @id @default(cuid())
+  shop                     String   @unique
+  defaultLanguage          String   @default("en")
+  languageOptions          Json     @default("[]")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  formTranslations         Json?
+  translationInProgress    String?
+  customCss                String?
+  themeSettings            Json?
+  customerApprovalSettings Json?
+  shopCountryCode          String?
+}
+
+model B2BSettings {
+  id           String   @id @default(cuid())
+  shop         String   @unique
+  approvalTag  String   @default("wholesale")
+  orderMinimum String?
+  orderMaximum String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model FormConfig {
+  id        String   @id @default(cuid())
+  shop      String
+  fields    Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String
+  formType  String
+  isDefault Boolean  @default(false)
+  enabled   Boolean  @default(true)
+
+  @@index([shop])
+}
+
+model SmtpSettings {
+  id               String   @id @default(cuid())
+  shop             String   @unique
+  host             String
+  port             Int      @default(587)
+  secure           Boolean  @default(false)
+  user             String?
+  passwordEncrypted String?
+  fromEmail        String
+  fromName         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([shop])
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  shop      String
+  slug      String
+  name      String
+  subject   String
+  bodyHtml  String   @default("")
+  bodyText  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, slug])
+  @@index([shop])
+}

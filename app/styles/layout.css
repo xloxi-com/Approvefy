@@ -1,0 +1,146 @@
+/* Override Polaris base.css .placeholder so it doesn't add a background */
+.placeholder {
+  background-color: transparent !important;
+  background: none !important;
+}
+
+/* Slightly widen embedded admin content area on large screens */
+@media (min-width: 1280px) {
+  .Polaris-Page {
+    max-width: 1440px !important;
+  }
+}
+
+/* ─── Global backend app mobile responsiveness ─── */
+.Polaris-Page__Content,
+.Polaris-Page-MainContent {
+  min-width: 0;
+}
+.Polaris-Layout__Section {
+  min-width: 0;
+}
+.Polaris-LegacyCard {
+  min-width: 0;
+}
+
+/* Toolbar / filter rows: allow wrapping and prevent truncation on narrow viewports */
+.app-index-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.app-index-toolbar .app-index-toolbar-search {
+  flex: 1;
+  min-width: 0;
+}
+/* Make search input text a bit smaller and compact */
+.app-index-toolbar .Polaris-TextField__Input {
+  font-size: 14px;
+  padding-block: 6px;
+}
+@media (max-width: 640px) {
+  .app-index-toolbar .app-index-toolbar-search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .app-index-toolbar .app-index-toolbar-actions {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
+/* IndexTable: allow horizontal scroll on small screens instead of squashing */
+@media (max-width: 768px) {
+  /* The scroll container in Polaris IndexTable */
+  .Polaris-IndexTable__Wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Ensure the table itself is wider than the viewport so horizontal scroll appears */
+  .Polaris-IndexTable__Table {
+    min-width: 720px;
+  }
+
+  /* On mobile: disable sticky columns so entire table scrolls */
+  .Polaris-IndexTable__TableHeading--firstColumn,
+  .Polaris-IndexTable__TableCell--firstColumn,
+  .Polaris-IndexTable__TableHeading--sticky,
+  .Polaris-IndexTable__TableCell--sticky {
+    position: static !important;
+    left: auto !important;
+    right: auto !important;
+    box-shadow: none !important;
+    z-index: auto !important;
+  }
+}
+
+/* Form config table: force non-sticky cells inside wrapper (all breakpoints) */
+.form-config-table-wrapper .Polaris-IndexTable__TableHeading,
+.form-config-table-wrapper .Polaris-IndexTable__TableCell {
+  position: static !important;
+  left: auto !important;
+  right: auto !important;
+  box-shadow: none !important;
+  z-index: auto !important;
+}
+
+/* Form config table: form name link color */
+.form-config-table-wrapper .form-config-name-link {
+  color: rgb(48 48 48);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* Modal form rows (e.g. date filter): stack on small screens */
+.app-modal-form-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.app-modal-form-row .app-modal-form-field {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 400px) {
+  .app-modal-form-row .app-modal-form-field {
+    flex: 1 1 100%;
+  }
+}
+
+/* In-page nav tabs (Overview, Customers, Form Builder, Settings): hide on desktop, show only on mobile */
+.app-nav-tabs-mobile {
+  display: none;
+}
+@media (max-width: 768px) {
+  .app-nav-tabs-mobile {
+    display: block;
+  }
+}
+
+/* Mobile: add comfortable side padding for dashboard/content */
+@media (max-width: 768px) {
+  /* Inset the whole embedded app page slightly from screen edges */
+  .Polaris-Page {
+    padding-inline: 16px !important;
+    box-sizing: border-box;
+  }
+
+  /* Avoid double padding inside the main content area */
+  .Polaris-Page__Content,
+  .Polaris-Page-MainContent {
+    padding-inline: 0 !important;
+  }
+
+  /* Analytics header cards (Total / Pending / Rejected): make them look like clean tiles */
+  .Polaris-LegacyCard {
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .Polaris-LegacyCard__Section {
+    padding-block: 12px;
+  }
+}
+
