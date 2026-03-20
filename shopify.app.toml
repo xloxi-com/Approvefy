@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "413942cc5a37489ff893894c4af4ca72"
+client_id = "4624c0e998f2642b76a59760e9ab3905"
 name = "Approvefy"
 application_url = "https://approvefy.xloxi.com"
 embedded = true
