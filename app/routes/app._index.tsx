@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useNavigate, Link } from "react-router";
+import { useCallback, useState } from "react";
 import {
   Page,
   Text,
@@ -11,11 +12,17 @@ import {
   InlineStack,
   Icon,
   Banner,
+  Toast,
+  Divider,
 } from "@shopify/polaris";
-import { CheckIcon } from "@shopify/polaris-icons";
+import { CheckIcon, ClipboardIcon } from "@shopify/polaris-icons";
 import { registrationAppEmbedThemeEditorUrl } from "../registration-app-embed-theme-url.server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+
+const PARTNERS_DASHBOARD_URL = "https://partners.shopify.com";
+const APP_EMBEDS_HELP_URL =
+  "https://help.shopify.com/manual/online-store/themes/theme-structure/extend/apps#app-embeds";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -52,6 +59,14 @@ export default function Index() {
     setupTasksTotal,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const [clientIdCopied, setClientIdCopied] = useState(false);
+
+  const copyClientId = useCallback(() => {
+    if (!shopifyClientId) return;
+    void navigator.clipboard.writeText(shopifyClientId).then(() => {
+      setClientIdCopied(true);
+    });
+  }, [shopifyClientId]);
 
   return (
     <Frame>
@@ -113,32 +128,99 @@ export default function Index() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Text as="p" fontWeight="semibold">Enable app embed block</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      Turn on the <strong>Custom registration</strong> embed (under Approvefy in App embeds), then click Save.
+                      Approvefy adds a theme app extension. You turn it on under{' '}
+                      <strong>Online Store → Themes → Customize → App embeds</strong>, then enable{' '}
+                      <strong>Custom registration</strong> and Save.
                     </Text>
                     {shopifyClientId ? (
-                      <Box paddingBlockStart="200">
-                        <Banner tone="info" title="If Approvefy is missing under App embeds">
-                          <BlockStack gap="200">
+                      <Box paddingBlockStart="300">
+                        <Banner tone="warning" title="App embeds list is empty? Fix it in this order">
+                          <BlockStack gap="300">
                             <Text as="p" variant="bodySm">
-                              This admin session uses Partner app Client ID <strong>{shopifyClientId}</strong>. In{' '}
-                              <strong>Partners → Apps → Approvefy → Client credentials</strong>, the ID must match exactly.
-                              If you have a second Approvefy app (different Client ID), deploy the theme extension for that app too:{' '}
-                              <strong>npm run deploy:customer-b2b</strong>, then release the version (see <strong>docs/APP_EMBEDS.md</strong>).
+                              The theme editor only lists apps whose <strong>released</strong> version includes a{' '}
+                              <strong>Theme app extension</strong>. Your hosting app (this session) uses this Client ID — it must match{' '}
+                              <strong>Partners → Apps → Approvefy → Client credentials</strong> exactly (compare character by character).
                             </Text>
-                            <Text as="p" variant="bodySm">
-                              After deploy, open the <strong>active</strong> app version in Partners and confirm a <strong>Theme app extension</strong> is listed. Then try uninstalling and reinstalling Approvefy on this store, wait a few minutes, and open App embeds again.
-                            </Text>
+                            <Box
+                              padding="300"
+                              background="bg-surface-secondary"
+                              borderWidth="025"
+                              borderColor="border"
+                              borderRadius="200"
+                            >
+                              <InlineStack gap="200" blockAlign="center" wrap>
+                                <Text as="span" variant="bodySm" fontWeight="semibold">
+                                  Client ID
+                                </Text>
+                                <code
+                                  style={{
+                                    fontSize: 13,
+                                    flex: 1,
+                                    minWidth: 0,
+                                    wordBreak: "break-all",
+                                    fontFamily: "ui-monospace, monospace",
+                                  }}
+                                >
+                                  {shopifyClientId}
+                                </code>
+                                <Button
+                                  icon={ClipboardIcon}
+                                  size="slim"
+                                  onClick={copyClientId}
+                                  accessibilityLabel="Copy Client ID"
+                                >
+                                  Copy
+                                </Button>
+                              </InlineStack>
+                            </Box>
+                            <BlockStack gap="150">
+                              <Text as="p" variant="bodySm" fontWeight="semibold">
+                                Checklist
+                              </Text>
+                              <Text as="p" variant="bodySm">
+                                1. In Partners, open <strong>Versions</strong> → select the <strong>Active</strong> version → confirm{' '}
+                                <strong>Theme app extension</strong> (e.g. Approvefy Registration Form) is listed. If not, run{' '}
+                                <code style={{ fontSize: "0.85em" }}>shopify app deploy</code> and <strong>release</strong> the new version.
+                              </Text>
+                              <Text as="p" variant="bodySm">
+                                2. If you use a <strong>second</strong> Approvefy app (another Client ID), deploy extensions for that app:{' '}
+                                <code style={{ fontSize: "0.85em" }}>npm run deploy:customer-b2b</code> then release (see repo{' '}
+                                <code style={{ fontSize: "0.85em" }}>docs/APP_EMBEDS.md</code>).
+                              </Text>
+                              <Text as="p" variant="bodySm">
+                                3. On this store: <strong>Settings → Apps and sales channels → Approvefy → Uninstall</strong>, then install again from the correct install link. Wait a few minutes, then open App embeds.
+                              </Text>
+                            </BlockStack>
+                            <InlineStack gap="200" wrap>
+                              <Button url={PARTNERS_DASHBOARD_URL} target="_blank" variant="secondary">
+                                Open Partner Dashboard
+                              </Button>
+                              <Button url={APP_EMBEDS_HELP_URL} target="_blank" variant="plain">
+                                Shopify: App embeds help
+                              </Button>
+                            </InlineStack>
                           </BlockStack>
                         </Banner>
                       </Box>
-                    ) : null}
+                    ) : (
+                      <Box paddingBlockStart="200">
+                        <Banner tone="critical" title="SHOPIFY_API_KEY is not set">
+                          <Text as="p" variant="bodySm">
+                            Your server is missing <strong>SHOPIFY_API_KEY</strong>. The app cannot match a Partner app until it is configured on hosting.
+                          </Text>
+                        </Banner>
+                      </Box>
+                    )}
                     <Box paddingBlockStart="200">
-                      <Button url={themeEditorUrl} target="_blank" variant="primary">
-                        Enable app embed
-                      </Button>
+                      <InlineStack gap="200" wrap>
+                        <Button url={themeEditorUrl} target="_blank" variant="primary">
+                          Open theme editor (App embeds)
+                        </Button>
+                      </InlineStack>
                     </Box>
                   </div>
                 </div>
+                <Divider />
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                   <span style={{ flexShrink: 0, marginTop: 2 }}>
                     {formsCount > 0 ? (
@@ -211,6 +293,9 @@ export default function Index() {
             </BlockStack>
           </LegacyCard>
         )}
+        {clientIdCopied ? (
+          <Toast content="Client ID copied to clipboard" onDismiss={() => setClientIdCopied(false)} />
+        ) : null}
       </Page>
     </Frame>
   );
