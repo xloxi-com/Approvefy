@@ -7,6 +7,7 @@
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
+    "deploy:customer-b2b": "shopify app deploy --config shopify.app.customer-b2b.toml",
     "config:use": "shopify app config use",
     "env": "shopify app env",
     "start": "react-router-serve ./build/server/index.js",

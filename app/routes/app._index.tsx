@@ -10,6 +10,7 @@ import {
   Box,
   InlineStack,
   Icon,
+  Banner,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 import { registrationAppEmbedThemeEditorUrl } from "../registration-app-embed-theme-url.server";
@@ -26,12 +27,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   ]);
 
   const themeEditorUrl = registrationAppEmbedThemeEditorUrl(shop);
+  const shopifyClientId = process.env.SHOPIFY_API_KEY ?? "";
 
   const setupTasksTotal = 3;
   const setupTasksComplete = (formsCount > 0 ? 1 : 0) + (hasSettings ? 1 : 0);
 
   return {
     themeEditorUrl,
+    shopifyClientId,
     formsCount,
     hasSettings,
     setupTasksComplete,
@@ -42,6 +45,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Index() {
   const {
     themeEditorUrl,
+    shopifyClientId,
     formsCount,
     hasSettings,
     setupTasksComplete,
@@ -109,8 +113,25 @@ export default function Index() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Text as="p" fontWeight="semibold">Enable app embed block</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      Turn on the <strong>Custom registration</strong> embed (under Approvefy in App embeds), then click Save. If Approvefy is not listed, publish an app update that includes the theme app extension—for example run <strong>shopify app deploy</strong> for the same Partner app as the API key configured on your server, then refresh the theme editor.
+                      Turn on the <strong>Custom registration</strong> embed (under Approvefy in App embeds), then click Save.
                     </Text>
+                    {shopifyClientId ? (
+                      <Box paddingBlockStart="200">
+                        <Banner tone="info" title="If Approvefy is missing under App embeds">
+                          <BlockStack gap="200">
+                            <Text as="p" variant="bodySm">
+                              This admin session uses Partner app Client ID <strong>{shopifyClientId}</strong>. In{' '}
+                              <strong>Partners → Apps → Approvefy → Client credentials</strong>, the ID must match exactly.
+                              If you have a second Approvefy app (different Client ID), deploy the theme extension for that app too:{' '}
+                              <strong>npm run deploy:customer-b2b</strong>, then release the version (see <strong>docs/APP_EMBEDS.md</strong>).
+                            </Text>
+                            <Text as="p" variant="bodySm">
+                              After deploy, open the <strong>active</strong> app version in Partners and confirm a <strong>Theme app extension</strong> is listed. Then try uninstalling and reinstalling Approvefy on this store, wait a few minutes, and open App embeds again.
+                            </Text>
+                          </BlockStack>
+                        </Banner>
+                      </Box>
+                    ) : null}
                     <Box paddingBlockStart="200">
                       <Button url={themeEditorUrl} target="_blank" variant="primary">
                         Enable app embed

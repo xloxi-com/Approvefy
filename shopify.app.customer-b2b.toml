@@ -6,7 +6,15 @@ application_url = "https://approvefy.xloxi.com"
 embedded = true
 
 [webhooks]
-api_version = "2026-04"
+api_version = "2026-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
@@ -22,3 +30,6 @@ prefix = "apps"
 
 [build]
 automatically_update_urls_on_dev = true
+
+# If stores installed THIS Client ID (545e…) but you only deploy with default shopify.app.toml,
+# the theme extension never ships to them. Run: npm run deploy:customer-b2b (same org as this app).

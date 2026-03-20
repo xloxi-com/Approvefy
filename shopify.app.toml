@@ -2,6 +2,7 @@
 
 client_id = "5a61fbbf762215d2e982285e07869e64"
 name = "Approvefy"
+handle = "approvefy"
 application_url = "https://approvefy.xloxi.com"
 embedded = true
 
@@ -9,7 +10,7 @@ embedded = true
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2026-04"
+api_version = "2026-01"
 
   [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
