@@ -68,9 +68,6 @@ model AppSettings {
   themeSettings            Json?
   customerApprovalSettings Json?
   shopCountryCode          String?
-  /// Optional extra step on /auth/login before Shopify OAuth (embedded + standalone)
-  merchantLoginEmail       String?
-  merchantLoginPasswordHash String?
 }
 
 model B2BSettings {

@@ -67,7 +67,6 @@ function inferApprovalPresetId(body: string, subject?: string): string {
     return "";
 }
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
-import { hashMerchantLoginPassword } from "../lib/merchant-login.server";
 import "../styles/settings.css";
 
 type LanguageOption = CoreLanguageOption;
@@ -242,8 +241,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     let storeLogoUrl: string | null = null;
     let storeName = "Store";
     let storeEmail = "";
-    let merchantLoginEmail = "";
-    let merchantLoginGateEnabled = false;
     if (shop) {
         let settings: Awaited<ReturnType<typeof prisma.appSettings.findUnique>> = null;
         let smtp: Awaited<ReturnType<typeof getSmtpSettings>> = null;
@@ -304,8 +301,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             console.warn("Settings load failed:", dbErr);
         }
         if (settings) {
-                merchantLoginEmail = settings.merchantLoginEmail ?? "";
-                merchantLoginGateEnabled = Boolean(settings.merchantLoginPasswordHash);
                 defaultLanguage = (settings.defaultLanguage as string) || "en";
                 const opts = settings.languageOptions as unknown;
                 if (Array.isArray(opts) && opts.length > 0) {
@@ -505,8 +500,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         storeName,
         storeEmail,
         storeDomain: storeHandle,
-        merchantLoginEmail,
-        merchantLoginGateEnabled,
     };
 };
 
@@ -678,15 +671,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const smtpFromEmail = (formData.get("smtpFromEmail") as string)?.trim() ?? "";
     const smtpFromName = (formData.get("smtpFromName") as string)?.trim() ?? "";
 
-    const merchantLoginEmailForm = ((formData.get("merchantLoginEmail") as string) ?? "").trim();
-    const merchantLoginPasswordNew = (formData.get("merchantLoginPassword") as string) || "";
-    const clearMerchantLogin =
-        formData.get("clearMerchantLogin") === "true" || formData.get("clearMerchantLogin") === "on";
-
-    if (!clearMerchantLogin && merchantLoginPasswordNew && !merchantLoginEmailForm) {
-        return { error: "Enter the login email before setting an app login password." };
-    }
-
     // Infer Gmail SMTP when From email is Gmail but host was not filled (so save is not skipped)
     if (smtpFromEmail && /@gmail\.com$/i.test(smtpFromEmail) && !smtpHost) {
         smtpHost = "smtp.gmail.com";
@@ -710,41 +694,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
         // Store full customerApprovalSettings (subject, body, preset id) so loader can show last-saved template after reload
         updatePayload.customerApprovalSettings = settingsToPersist as unknown as Prisma.InputJsonValue;
-
-        if (clearMerchantLogin) {
-            updatePayload.merchantLoginEmail = null;
-            updatePayload.merchantLoginPasswordHash = null;
-        } else if (merchantLoginPasswordNew) {
-            updatePayload.merchantLoginEmail = merchantLoginEmailForm;
-            updatePayload.merchantLoginPasswordHash = hashMerchantLoginPassword(merchantLoginPasswordNew);
-        } else if (merchantLoginEmailForm) {
-            updatePayload.merchantLoginEmail = merchantLoginEmailForm;
-        }
-
-        const createPayload = {
-            shop,
-            defaultLanguage: safeDefaultLanguage,
-            languageOptions: languageOptions as unknown as Prisma.InputJsonValue,
-            formTranslations: formTranslations ?? undefined,
-            customCss,
-            themeSettings: themeSettings as unknown as Prisma.InputJsonValue,
-            customerApprovalSettings: settingsToPersist as unknown as Prisma.InputJsonValue,
-            ...(clearMerchantLogin
-                ? { merchantLoginEmail: null, merchantLoginPasswordHash: null }
-                : merchantLoginPasswordNew
-                  ? {
-                        merchantLoginEmail: merchantLoginEmailForm,
-                        merchantLoginPasswordHash: hashMerchantLoginPassword(merchantLoginPasswordNew),
-                    }
-                  : merchantLoginEmailForm
-                    ? { merchantLoginEmail: merchantLoginEmailForm }
-                    : {}),
-        } as AppSettingsUpsertCreate;
-
         await prisma.appSettings.upsert({
             where: { shop },
             update: updatePayload,
-            create: createPayload,
+            create: {
+                shop,
+                defaultLanguage: safeDefaultLanguage,
+                languageOptions: languageOptions as unknown as Prisma.InputJsonValue,
+                formTranslations: formTranslations ?? undefined,
+                customCss,
+                themeSettings: themeSettings as unknown as Prisma.InputJsonValue,
+                customerApprovalSettings: settingsToPersist as unknown as Prisma.InputJsonValue,
+            } as AppSettingsUpsertCreate,
         });
         if (smtpHost && smtpFromEmail) {
             await upsertSmtpSettings(shop, {
@@ -860,8 +821,6 @@ export default function Settings() {
         storeName: initialStoreName,
         storeEmail: initialStoreEmail,
         storeDomain: initialStoreDomain,
-        merchantLoginEmail: initialMerchantLoginEmail,
-        merchantLoginGateEnabled: initialMerchantLoginGateEnabled,
     } = useLoaderData<typeof loader>();
     const actionData = useActionData<typeof action>();
     const submit = useSubmit();
@@ -916,12 +875,6 @@ export default function Settings() {
     const [smtpPassword, setSmtpPassword] = useState("");
     const [smtpFromEmail, setSmtpFromEmail] = useState(initialSmtpSettings?.fromEmail ?? "");
     const [smtpFromName, setSmtpFromName] = useState(initialSmtpSettings?.fromName ?? "");
-    const [merchantGateEmail, setMerchantGateEmail] = useState(() => initialMerchantLoginEmail ?? "");
-    const [merchantGatePassword, setMerchantGatePassword] = useState("");
-    const [merchantGateClear, setMerchantGateClear] = useState(false);
-    useEffect(() => {
-        setMerchantGateEmail(initialMerchantLoginEmail ?? "");
-    }, [initialMerchantLoginEmail]);
     const [selectedRejectionPresetId, setSelectedRejectionPresetId] = useState<string | null>(null);
     const [selectedApprovalPresetId, setSelectedApprovalPresetId] = useState<string | null>(null);
     const [isTemplateSelectionLoading, setIsTemplateSelectionLoading] = useState(true);
@@ -1228,7 +1181,6 @@ export default function Settings() {
         customCss: string;
         translations: Record<string, Record<string, string>>;
         smtp: { host: string; port: number; secure: boolean; user: string; fromEmail: string; fromName: string };
-        merchantGate: { email: string };
     } | null>(null);
 
     const [baselineVersion, setBaselineVersion] = useState(0);
@@ -1257,9 +1209,6 @@ export default function Settings() {
                     fromEmail: smtpFromEmail,
                     fromName: smtpFromName,
                 },
-                merchantGate: {
-                    email: merchantGateClear ? "" : merchantGateEmail.trim(),
-                },
             };
             setBaselineVersion((v) => v + 1);
         }
@@ -1284,11 +1233,6 @@ export default function Settings() {
                   fromEmail: initialSmtpSettings?.fromEmail ?? "",
                   fromName: initialSmtpSettings?.fromName ?? "",
               };
-
-        const savedMerchantEmail = (base?.merchantGate.email ?? initialMerchantLoginEmail ?? "").trim();
-        if (merchantGateClear) return true;
-        if (merchantGatePassword.length > 0) return true;
-        if (merchantGateEmail.trim() !== savedMerchantEmail) return true;
 
         if (JSON.stringify(themeSettings) !== JSON.stringify(initialTheme)) return true;
         if (JSON.stringify(customerApprovalSettings) !== JSON.stringify(initialApproval)) return true;
@@ -1318,10 +1262,6 @@ export default function Settings() {
         smtpUser,
         smtpFromEmail,
         smtpFromName,
-        merchantGateEmail,
-        merchantGatePassword,
-        merchantGateClear,
-        initialMerchantLoginEmail,
         initialThemeForCompare,
         initialApprovalForCompare,
         defaultLanguage,
@@ -1349,9 +1289,6 @@ export default function Settings() {
             setSmtpPassword("");
             setSmtpFromEmail(base.smtp.fromEmail);
             setSmtpFromName(base.smtp.fromName);
-            setMerchantGateEmail(base.merchantGate.email);
-            setMerchantGatePassword("");
-            setMerchantGateClear(false);
             setSelectedRejectionPresetId((base.customerApprovalSettings.rejectionEmailPresetId ?? "").trim());
             setSelectedApprovalPresetId((base.customerApprovalSettings.approvalEmailPresetId ?? "").trim());
         } else {
@@ -1371,9 +1308,6 @@ export default function Settings() {
                 setSmtpFromEmail(initialSmtpSettings.fromEmail ?? "");
                 setSmtpFromName(initialSmtpSettings.fromName ?? "");
             }
-            setMerchantGateEmail(initialMerchantLoginEmail ?? "");
-            setMerchantGatePassword("");
-            setMerchantGateClear(false);
             setSelectedRejectionPresetId((initialApprovalForCompare.rejectionEmailPresetId ?? "").trim());
             setSelectedApprovalPresetId((initialApprovalForCompare.approvalEmailPresetId ?? "").trim());
         }
@@ -1381,7 +1315,6 @@ export default function Settings() {
         initialThemeForCompare,
         initialApprovalForCompare,
         defaultLanguage,
-        initialMerchantLoginEmail,
         languageOptions,
         initialCustomCss,
         buildTranslationsFromLoader,
@@ -1430,18 +1363,8 @@ export default function Settings() {
             formData.append("languageEnabled[]", "en");
         }
         formData.set("formTranslations", JSON.stringify(translations));
-        formData.set("merchantLoginEmail", merchantGateEmail);
-        formData.set("merchantLoginPassword", merchantGatePassword);
-        formData.set("clearMerchantLogin", merchantGateClear ? "true" : "false");
         submit(formData, { method: "POST" });
     };
-
-    useEffect(() => {
-        if ((actionData as { success?: boolean })?.success) {
-            setMerchantGatePassword("");
-            setMerchantGateClear(false);
-        }
-    }, [actionData]);
 
     const mainTabs = [
         { id: "language", content: "Language", icon: LanguageIcon },
@@ -1811,47 +1734,6 @@ export default function Settings() {
                                             Save translations
                                         </button>
                                     </div>
-                                </LegacyCard>
-
-                                <LegacyCard title="App login (optional)" sectioned>
-                                    <BlockStack gap="400">
-                                        <Text as="p" variant="bodyMd" tone="subdued">
-                                            Require <strong>email</strong> and <strong>password</strong> on the public{" "}
-                                            <code>/auth/login</code> page <em>before</em> Shopify OAuth. The main admin app
-                                            stays <strong>embedded</strong> in Shopify; this is an extra gate for your
-                                            team. Leave password empty and save to only update the email, or use{" "}
-                                            <strong>Remove app login</strong> to disable.
-                                        </Text>
-                                        {initialMerchantLoginGateEnabled ? (
-                                            <Banner tone="success" title="App login is enabled">
-                                                Staff must enter this email and password plus the shop domain before
-                                                continuing to Shopify.
-                                            </Banner>
-                                        ) : null}
-                                        <TextField
-                                            label="Login email"
-                                            type="email"
-                                            value={merchantGateEmail}
-                                            onChange={setMerchantGateEmail}
-                                            autoComplete="off"
-                                            helpText="Shown on /auth/login when a password is set"
-                                        />
-                                        <TextField
-                                            label="New password"
-                                            type="password"
-                                            value={merchantGatePassword}
-                                            onChange={setMerchantGatePassword}
-                                            autoComplete="new-password"
-                                            helpText="Leave blank to keep the current password. Set a password to enable the gate."
-                                        />
-                                        {initialMerchantLoginGateEnabled ? (
-                                            <Checkbox
-                                                label="Remove app login (email + password gate)"
-                                                checked={merchantGateClear}
-                                                onChange={setMerchantGateClear}
-                                            />
-                                        ) : null}
-                                    </BlockStack>
                                 </LegacyCard>
                             </>
                         )}
