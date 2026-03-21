@@ -3,6 +3,8 @@ import { LoginErrorType } from "@shopify/shopify-app-react-router/server";
 
 export interface LoginErrorMessage {
   shop?: string;
+  email?: string;
+  password?: string;
 }
 
 export function loginErrorMessage(loginErrors: LoginError): LoginErrorMessage {

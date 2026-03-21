@@ -26,6 +26,15 @@ Edit `.env` and set:
 2. Go to **SQL Editor**.
 3. Paste the contents of `schema.sql` and run it.
 
+**SQL Editor timeout (“upstream timeout”)**
+
+If the editor times out (common with the full `schema.sql` or the trigger section):
+
+1. **Prefer Prisma** (below) — it avoids huge paste jobs in the dashboard.
+2. Run **`triggers-updated-at.sql` alone** (small file) after tables exist — or run **one trigger at a time** from that file.
+3. Run the rest of `schema.sql` **without** the bottom “updatedAt triggers” block first, then add triggers.
+4. **You can skip triggers entirely** — Prisma’s `@updatedAt` already updates `updatedAt` in the app.
+
 **Option B – Prisma (recommended)**
 
 Prisma will create/update tables when you run migrations. The schema in `prisma/schema.prisma` is the source of truth; `supabase/schema.sql` is a mirror for reference or manual runs.

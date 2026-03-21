@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS "AppSettings" (
     "customCss"                 TEXT,
     "themeSettings"             JSONB,
     "customerApprovalSettings"  JSONB,
+    "merchantLoginEmail"        TEXT,
+    "merchantLoginPasswordHash" TEXT,
     "createdAt"                 TIMESTAMPTZ NOT NULL DEFAULT now(),
     "updatedAt"                 TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -198,6 +200,8 @@ ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "translationInProgress" TEXT;
 ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "customCss" TEXT;
 ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "themeSettings" JSONB;
 ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "customerApprovalSettings" JSONB;
+ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "merchantLoginEmail" TEXT;
+ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "merchantLoginPasswordHash" TEXT;
 
 -- SmtpSettings and EmailTemplate (if running migrations on existing DB)
 CREATE TABLE IF NOT EXISTS "SmtpSettings" (
@@ -235,6 +239,10 @@ CREATE INDEX IF NOT EXISTS "EmailTemplate_shop_idx" ON "EmailTemplate"("shop");
 -- =============================================
 -- updatedAt triggers
 -- =============================================
+-- Supabase SQL Editor often times out if you paste this whole file at once.
+-- Run triggers separately: copy from supabase/triggers-updated-at.sql (or run that file only).
+-- Prisma @updatedAt already updates these fields — triggers are optional.
+-- =============================================
 
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER
@@ -250,34 +258,34 @@ DROP TRIGGER IF EXISTS "set_updatedAt_Registration" ON "Registration";
 CREATE TRIGGER "set_updatedAt_Registration"
 BEFORE UPDATE ON "Registration"
 FOR EACH ROW
-EXECUTE PROCEDURE public.set_updated_at();
+EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS "set_updatedAt_AppSettings" ON "AppSettings";
 CREATE TRIGGER "set_updatedAt_AppSettings"
 BEFORE UPDATE ON "AppSettings"
 FOR EACH ROW
-EXECUTE PROCEDURE public.set_updated_at();
+EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS "set_updatedAt_B2BSettings" ON "B2BSettings";
 CREATE TRIGGER "set_updatedAt_B2BSettings"
 BEFORE UPDATE ON "B2BSettings"
 FOR EACH ROW
-EXECUTE PROCEDURE public.set_updated_at();
+EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS "set_updatedAt_FormConfig" ON "FormConfig";
 CREATE TRIGGER "set_updatedAt_FormConfig"
 BEFORE UPDATE ON "FormConfig"
 FOR EACH ROW
-EXECUTE PROCEDURE public.set_updated_at();
+EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS "set_updatedAt_SmtpSettings" ON "SmtpSettings";
 CREATE TRIGGER "set_updatedAt_SmtpSettings"
 BEFORE UPDATE ON "SmtpSettings"
 FOR EACH ROW
-EXECUTE PROCEDURE public.set_updated_at();
+EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS "set_updatedAt_EmailTemplate" ON "EmailTemplate";
 CREATE TRIGGER "set_updatedAt_EmailTemplate"
 BEFORE UPDATE ON "EmailTemplate"
 FOR EACH ROW
-EXECUTE PROCEDURE public.set_updated_at();
+EXECUTE FUNCTION public.set_updated_at();
