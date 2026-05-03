@@ -1,4 +1,3 @@
-/// <reference path="../../env.d.ts" />
 import { Suspense, useId, type ReactNode } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { Await, data, useLoaderData, useNavigate, Link } from "react-router";
