@@ -76,7 +76,11 @@ window.__REGISTRATION_FORM_CONFIG__ = {
     void 0;
   }
   window.__approvefyConfigPrefetchUrl = configUrl;
-  window.__approvefyConfigPromise = fetch(configUrl, { cache: 'default', credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (data) {
+  window.__approvefyConfigPromise = fetch(configUrl, { cache: 'default', credentials: 'same-origin' }).then(function (r) {
+    if (!r.ok)
+      throw new Error('Approvefy config failed (HTTP ' + r.status + '). Verify app proxy prefix /apps/customer-approval in Partner Dashboard.');
+    return r.json();
+  }).then(function (data) {
     if (data && typeof data.customCss === 'string') applyThemeCss(data.customCss);
     try {
       if (data && typeof data === 'object') {

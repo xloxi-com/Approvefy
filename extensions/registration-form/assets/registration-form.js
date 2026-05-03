@@ -1,13 +1,14 @@
-(function() {
-  var inlineRootEarly = document.querySelector('[data-approvefy-registration-block]');
-  var isRegisterPageEarly = window.location.pathname.indexOf('/account/register') !== -1;
-  // Register page OR a theme section block that mounts the form inline (e.g. home page)
-  if (!isRegisterPageEarly && !inlineRootEarly) return;
-
-  if (window.__approvefyRegistrationScriptLoaded) {
-    return;
+(function () {
+  /** True when Approvefy should run: register route or Registration Form theme block is (or will be) in DOM. */
+  function hasApprovefyMountOrRegisterPage() {
+    if (window.location.pathname.indexOf('/account/register') !== -1) return true;
+    return !!document.querySelector('[data-approvefy-registration-block]');
   }
-  window.__approvefyRegistrationScriptLoaded = true;
+
+  function bootApprovefyRegistrationRuntime() {
+    if (window.__approvefyRegistrationScriptLoaded) return;
+    if (!hasApprovefyMountOrRegisterPage()) return;
+    window.__approvefyRegistrationScriptLoaded = true;
 
   /** Same rules as app/lib/safe-registration-redirect.ts */
   function isAllowedStorefrontAccountRedirectPath(pathLower) {
@@ -591,6 +592,8 @@
   } else {
     configPromise = wireConfigPromise(
       fetch(configUrl, { cache: 'default', credentials: 'same-origin' }).then(function (r) {
+        if (!r.ok)
+          throw new Error('Approvefy config failed (HTTP ' + r.status + '). Check App proxy URL / deploy.');
         return r.json();
       })
     );
@@ -602,6 +605,8 @@
     clearStoredApprovalConfigCache();
     var fresh = fetch(configUrl + '&_t=' + Date.now(), { cache: 'reload', credentials: 'same-origin' })
       .then(function (r) {
+        if (!r.ok)
+          throw new Error('Approvefy config refresh failed (HTTP ' + r.status + '). Check App proxy URL / deploy.');
         return r.json();
       })
       .then(function (cfg) {
@@ -1364,9 +1369,10 @@
     return true;
   }
 
-  // For inline section blocks, start immediately to avoid perceived delay.
-  // Register page keeps DOM-ready guard to ensure native form/container selectors exist.
-  if (inlineRootEarly) {
+  // For inline section blocks, start immediately when the mount exists; otherwise wait for DOM
+  // so async-loaded scripts don't exit before `[data-approvefy-registration-block]` is parsed.
+  var approvefyInlineMountEarly = document.querySelector('[data-approvefy-registration-block]');
+  if (approvefyInlineMountEarly) {
     init(shop);
   } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() { init(shop); });
@@ -3323,5 +3329,13 @@
       el.className = 'custom-message ' + (type || 'error');
       el.style.display = 'block';
     }
+  }
+
+  }
+
+  if (!hasApprovefyMountOrRegisterPage() && document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootApprovefyRegistrationRuntime, { once: true });
+  } else {
+    bootApprovefyRegistrationRuntime();
   }
 })();

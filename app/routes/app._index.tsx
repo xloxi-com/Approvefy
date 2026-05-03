@@ -15,11 +15,7 @@ import {
   Banner,
   Divider,
 } from "@shopify/polaris";
-import {
-  CheckCircleIcon,
-  RewardIcon,
-  ViewIcon,
-} from "@shopify/polaris-icons";
+import { CheckCircleIcon, ViewIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getAnalytics } from "../models/approval.server";
@@ -405,20 +401,6 @@ export default function Index() {
                 </Suspense>
               </BlockStack>
             </InlineGrid>
-
-            {setupTasksComplete >= 2 ? (
-              <Banner
-                tone="success"
-                icon={RewardIcon}
-                title="Setup complete"
-                action={{
-                  content: "View customers",
-                  onAction: () => navigate("/app/customers"),
-                }}
-              >
-                View and manage your customer registrations.
-              </Banner>
-            ) : null}
 
             <Divider />
 
