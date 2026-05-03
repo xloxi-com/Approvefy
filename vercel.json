@@ -3,12 +3,7 @@
   "framework": "react-router",
   "buildCommand": "npm run vercel-build",
   "installCommand": "npm ci --prefer-offline --no-audit --no-fund --progress=false",
-  "functions": {
-    "build/server/index.js": {
-      "maxDuration": 30,
-      "regions": ["sin1"]
-    }
-  },
+  "regions": ["sin1"],
   "headers": [
     {
       "source": "/assets/(.*)",
