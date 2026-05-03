@@ -1,16 +1,20 @@
 /// <reference path="../../env.d.ts" />
-import { Suspense } from "react";
+import { Suspense, useId, type ReactNode } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { Await, data, useLoaderData, useNavigate, Link } from "react-router";
 import {
   Page,
   Text,
-  LegacyCard,
+  Card,
   BlockStack,
   Button,
   Box,
   InlineStack,
   Icon,
+  ProgressBar,
+  Layout,
+  Divider,
+  Banner,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -27,8 +31,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let hasSettings = false;
   let dbUnavailable = false;
 
-  // Wall-clock for the awaited DB fan-out — emitted as `Server-Timing: db;...`
-  // so we can spot a slow Supabase pool in DevTools without instrumenting client code.
   const t0 = performance.now();
   try {
     [formsCount, hasSettings] = await Promise.all([
@@ -49,9 +51,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const setupTasksTotal = 3;
   const setupTasksComplete = (formsCount > 0 ? 1 : 0) + (hasSettings ? 1 : 0);
 
-  // Analytics (pending/approved/denied counts) is not part of the above-the-fold "Setup guide".
-  // Return the unsettled promise so React Router streams it; <Await> + <Suspense> with a
-  // minimal fallback avoids blocking home paint. .catch keeps a slow DB off the critical path.
   const analyticsPromise: Promise<Analytics | null> = getAnalytics(shop).catch(
     (err: unknown) => {
       console.warn("[Home] analytics fetch failed:", err);
@@ -100,6 +99,48 @@ function AnalyticsSummary({ analytics }: { analytics: Analytics | null }) {
   );
 }
 
+function SetupGuideTask({
+  complete,
+  title,
+  description,
+  action,
+}: {
+  complete: boolean;
+  title: string;
+  description: string;
+  action: ReactNode;
+}) {
+  return (
+    <InlineStack gap="300" blockAlign="start" wrap={false}>
+      <Box width="24px" flex="0 0 auto">
+        <Box paddingBlockStart="050">
+          {complete ? (
+            <Icon source={CheckIcon} tone="success" accessibilityLabel="Completed" />
+          ) : (
+            <Box
+              width="20px"
+              height="20px"
+              borderRadius="full"
+              borderWidth="025"
+              borderColor="border"
+              background="bg-fill-secondary"
+            />
+          )}
+        </Box>
+      </Box>
+      <BlockStack gap="200">
+        <Text as="h3" variant="headingSm">
+          {title}
+        </Text>
+        <Text as="p" variant="bodySm" tone="subdued">
+          {description}
+        </Text>
+        <Box>{action}</Box>
+      </BlockStack>
+    </InlineStack>
+  );
+}
+
 export default function Index() {
   const {
     themeEditorUrl,
@@ -111,176 +152,176 @@ export default function Index() {
     analytics,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const progressLabelId = useId();
+  const progressPercent = setupTasksTotal
+    ? Math.min(100, Math.round((100 * setupTasksComplete) / setupTasksTotal))
+    : 0;
 
   return (
     <Page title="Approvefy" fullWidth>
-        <div className="app-nav-tabs-mobile" style={{ marginBottom: 12 }}>
-        <BlockStack gap="200" inlineAlign="start">
-          <InlineStack gap="100" wrap>
-            <Button size="slim" variant="primary" onClick={() => navigate("/app")}>
-              Approvefy
-            </Button>
-            <Link to="/app/customers" prefetch="render">
-              <Button size="slim">Customers</Button>
-            </Link>
-            <Link to="/app/form-config" prefetch="render">
-              <Button size="slim">Form Builder</Button>
-            </Link>
-            <Link to="/app/settings" prefetch="render">
-              <Button size="slim">Settings</Button>
-            </Link>
-          </InlineStack>
-        </BlockStack>
-        </div>
-
-        <Box paddingBlockEnd="400">
-          {dbUnavailable && (
-            <LegacyCard sectioned>
-              <BlockStack gap="200">
-                <Text as="p" tone="critical" fontWeight="semibold">
-                  Database connection issue detected
-                </Text>
-                <Text as="p" variant="bodySm" tone="subdued">
-                  We could not load setup data from the database. Please verify
-                  your production `DATABASE_URL` (Supabase pooler on port 6543
-                  with `?pgbouncer=true`) and `DIRECT_URL` (direct port 5432),
-                  then redeploy.
-                </Text>
-              </BlockStack>
-            </LegacyCard>
-          )}
-          <LegacyCard sectioned>
-            <BlockStack gap="400">
-              <Text as="h2" variant="headingMd" fontWeight="bold">Setup guide</Text>
-              <Text as="p" tone="subdued">
-                Use this guide to get your store registration form up and running.
-              </Text>
-              <BlockStack gap="200">
-                <Text as="p" variant="bodySm" fontWeight="semibold">
-                  {setupTasksComplete} of {setupTasksTotal} tasks complete
-                </Text>
-                <div
-                  style={{
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: "var(--p-color-bg-fill-secondary)",
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${setupTasksTotal ? (100 * setupTasksComplete) / setupTasksTotal : 0}%`,
-                      backgroundColor: "var(--p-color-bg-fill-success)",
-                      borderRadius: 4,
-                      transition: "width 0.2s ease",
-                    }}
-                  />
-                </div>
-              </BlockStack>
-              <BlockStack gap="400">
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                  <span style={{ flexShrink: 0, marginTop: 2 }}>
-                    <span style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--p-color-border)", display: "inline-block" }} />
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Text as="p" fontWeight="semibold">Enable app embed block</Text>
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      Turn on the Approvefy app embed in your theme so the registration form appears on the Customer register page. Click the button below to open the theme editor (App embeds). Enable the Approvefy toggle, then click Save at the top right.
-                    </Text>
-                    <Box paddingBlockStart="200">
-                      <Button url={themeEditorUrl} target="_blank" variant="primary">
-                        Enable app embed
-                      </Button>
-                    </Box>
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                  <span style={{ flexShrink: 0, marginTop: 2 }}>
-                    {formsCount > 0 ? (
-                      <Icon source={CheckIcon} tone="base" />
-                    ) : (
-                      <span style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--p-color-border)", display: "inline-block" }} />
-                    )}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Text as="p" fontWeight="semibold">Create a registration form</Text>
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      Build your first form in Form Builder and choose which fields to collect.
-                    </Text>
-                    <Box paddingBlockStart="200">
-                      <Link to="/app/form-config" prefetch="render">
-                        <Button variant={formsCount > 0 ? "secondary" : "primary"}>
-                          {formsCount > 0 ? "Form Builder" : "Go to Form Builder"}
-                        </Button>
-                      </Link>
-                    </Box>
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                  <span style={{ flexShrink: 0, marginTop: 2 }}>
-                    {hasSettings ? (
-                      <Icon source={CheckIcon} tone="base" />
-                    ) : (
-                      <span style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--p-color-border)", display: "inline-block" }} />
-                    )}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Text as="p" fontWeight="semibold">Configure settings</Text>
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      Set languages, appearance, and approval rules for new registrations.
-                    </Text>
-                    <Box paddingBlockStart="200">
-                      <Link to="/app/settings" prefetch="render">
-                        <Button variant={hasSettings ? "secondary" : "primary"}>
-                          {hasSettings ? "Settings" : "Go to Settings"}
-                        </Button>
-                      </Link>
-                    </Box>
-                  </div>
-                </div>
-              </BlockStack>
-              <Box paddingBlockStart="200">
-                <Suspense fallback={null}>
-                  <Await
-                    resolve={analytics}
-                    errorElement={
-                      <Text as="p" variant="bodySm" tone="subdued">
-                        Customer counts unavailable.
-                      </Text>
-                    }
-                  >
-                    {(resolved) => <AnalyticsSummary analytics={resolved} />}
-                  </Await>
-                </Suspense>
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="500">
+            <div className="app-nav-tabs-mobile">
+              <Box paddingBlockEnd="200">
+                <BlockStack gap="200" inlineAlign="start">
+                  <InlineStack gap="100" wrap>
+                    <Button size="slim" variant="primary" onClick={() => navigate("/app")}>
+                      Approvefy
+                    </Button>
+                    <Link to="/app/customers" prefetch="render">
+                      <Button size="slim">Customers</Button>
+                    </Link>
+                    <Link to="/app/form-config" prefetch="render">
+                      <Button size="slim">Form Builder</Button>
+                    </Link>
+                    <Link to="/app/settings" prefetch="render">
+                      <Button size="slim">Settings</Button>
+                    </Link>
+                  </InlineStack>
+                </BlockStack>
               </Box>
-            </BlockStack>
-          </LegacyCard>
-        </Box>
+            </div>
 
-        {setupTasksComplete < 2 ? (
-          <LegacyCard sectioned>
-            <BlockStack gap="300">
-              <Text as="p" tone="subdued">
-                Complete the 3 steps above to see and manage your customer registrations.
-              </Text>
-              <Text as="p" variant="bodySm" tone="subdued">
-                After you enable the app embed, create a form, and configure settings, click <strong>Customers</strong> in the nav or the button below to view the list.
-              </Text>
-            </BlockStack>
-          </LegacyCard>
-        ) : (
-          <LegacyCard sectioned>
-            <BlockStack gap="300">
-              <Text as="p" tone="subdued">
-                Setup complete. View and manage your customer registrations.
-              </Text>
-              <Link to="/app/customers" prefetch="render">
-                <Button variant="primary">View customers</Button>
-              </Link>
-            </BlockStack>
-          </LegacyCard>
-        )}
+            {dbUnavailable && (
+              <Banner tone="critical" title="Database connection issue detected">
+                <p style={{ margin: 0 }}>
+                  We could not load setup data from the database. Please verify your production{" "}
+                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                    DATABASE_URL
+                  </Text>{" "}
+                  (Supabase pooler on port 6543 with{" "}
+                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                    ?pgbouncer=true
+                  </Text>
+                  ) and{" "}
+                  <Text as="span" variant="bodyMd" fontWeight="semibold">
+                    DIRECT_URL
+                  </Text>{" "}
+                  (direct port 5432), then redeploy.
+                </p>
+              </Banner>
+            )}
+
+            <div className="app-backend-card">
+              <Card padding="500">
+                <BlockStack gap="500">
+                  <BlockStack gap="200">
+                    <Text as="h2" variant="headingLg">
+                      Setup guide
+                    </Text>
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      Use this guide to get your store registration form up and running.
+                    </Text>
+                  </BlockStack>
+
+                  <BlockStack gap="200">
+                    <Text id={progressLabelId} as="p" variant="bodySm" fontWeight="semibold">
+                      {setupTasksComplete} of {setupTasksTotal} tasks complete
+                    </Text>
+                    <ProgressBar
+                      progress={progressPercent}
+                      tone="success"
+                      size="small"
+                      ariaLabelledBy={progressLabelId}
+                    />
+                  </BlockStack>
+
+                  <Divider />
+
+                  <BlockStack gap="500">
+                    <SetupGuideTask
+                      complete={false}
+                      title="Enable app embed block"
+                      description='Turn on the Approvefy app embed in your theme so the registration form appears on the Customer register page. Click the button below to open the theme editor (App embeds). Enable the Approvefy toggle, then click Save at the top right.'
+                      action={
+                        <Button url={themeEditorUrl} target="_blank" variant="primary">
+                          Enable app embed
+                        </Button>
+                      }
+                    />
+                    <Divider />
+                    <SetupGuideTask
+                      complete={formsCount > 0}
+                      title="Create a registration form"
+                      description="Build your first form in Form Builder and choose which fields to collect."
+                      action={
+                        <Link to="/app/form-config" prefetch="render">
+                          <Button variant={formsCount > 0 ? "secondary" : "primary"}>
+                            {formsCount > 0 ? "Form Builder" : "Go to Form Builder"}
+                          </Button>
+                        </Link>
+                      }
+                    />
+                    <Divider />
+                    <SetupGuideTask
+                      complete={hasSettings}
+                      title="Configure settings"
+                      description="Set languages, appearance, and approval rules for new registrations."
+                      action={
+                        <Link to="/app/settings" prefetch="render">
+                          <Button variant={hasSettings ? "secondary" : "primary"}>
+                            {hasSettings ? "Settings" : "Go to Settings"}
+                          </Button>
+                        </Link>
+                      }
+                    />
+                  </BlockStack>
+
+                  <Divider />
+
+                  <Box paddingBlockStart="100">
+                    <Suspense fallback={null}>
+                      <Await
+                        resolve={analytics}
+                        errorElement={
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            Customer counts unavailable.
+                          </Text>
+                        }
+                      >
+                        {(resolved) => <AnalyticsSummary analytics={resolved} />}
+                      </Await>
+                    </Suspense>
+                  </Box>
+                </BlockStack>
+              </Card>
+            </div>
+
+            <div className="app-backend-card">
+              {setupTasksComplete < 2 ? (
+                <Card padding="500">
+                  <BlockStack gap="300">
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      Complete the 3 steps above to see and manage your customer registrations.
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      After you enable the app embed, create a form, and configure settings, click{" "}
+                      <Text as="span" variant="bodySm" fontWeight="semibold">
+                        Customers
+                      </Text>{" "}
+                      in the nav or the button below to view the list.
+                    </Text>
+                  </BlockStack>
+                </Card>
+              ) : (
+                <Card padding="500">
+                  <BlockStack gap="400">
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      Setup complete. View and manage your customer registrations.
+                    </Text>
+                    <InlineStack gap="200" wrap>
+                      <Link to="/app/customers" prefetch="render">
+                        <Button variant="primary">View customers</Button>
+                      </Link>
+                    </InlineStack>
+                  </BlockStack>
+                </Card>
+              )}
+            </div>
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
     </Page>
   );
 }
