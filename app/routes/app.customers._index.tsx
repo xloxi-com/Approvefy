@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import {
+  data,
   useLoaderData,
   useSubmit,
   useFetcher,
@@ -228,11 +229,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const loadParams = [shop, query, status, from || null, to || null, pageSize, page] as const;
 
+  // Wall-clock for the awaited DB fan-out — emitted as `Server-Timing: db;dur=…` so we
+  // can spot regressions (slow Supabase pool, missing index) directly from DevTools.
+  const t0 = performance.now();
   const [initialCustomersData, initialAnalytics, approvalMode] = await Promise.all([
     getCustomers(...loadParams),
     getAnalytics(shop),
     getCustomerApprovalModeForShop(shop),
   ]);
+  let dbMs = Math.round(performance.now() - t0);
   let customersData = initialCustomersData;
   let analytics = initialAnalytics;
 
@@ -270,24 +275,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         8
       );
       if (repaired) {
+        const t1 = performance.now();
         [customersData, analytics] = await Promise.all([getCustomers(...loadParams), getAnalytics(shop)]);
+        dbMs += Math.round(performance.now() - t1);
       }
     }
   }
 
-  return {
-    customers: customersData.customers,
-    error: customersData.error,
-    analytics,
-    query,
-    status,
-    from,
-    to,
-    page,
-    pageSize,
-    limitParam,
-    totalCount: customersData.totalCount,
-  };
+  return data(
+    {
+      customers: customersData.customers,
+      error: customersData.error,
+      analytics,
+      query,
+      status,
+      from,
+      to,
+      page,
+      pageSize,
+      limitParam,
+      totalCount: customersData.totalCount,
+    },
+    { headers: { "Server-Timing": `db;dur=${dbMs}` } }
+  );
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -339,21 +349,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           customDataLabels,
         });
         if (activationUrl) lastActivationUrl = activationUrl;
-        const toEmail = await getCustomerEmailForRejection(admin, session.shop, id);
-        if (toEmail) {
-          await sendApprovalEmail(session.shop, toEmail, {
-            shopName,
-            shopEmail,
-            customerFirstName: (await getCustomerFirstNameForEmail(admin, session.shop, id)) ?? undefined,
-            activationUrl: activationUrl ?? undefined,
-          });
-        }
+        // Email is non-blocking: DB + Shopify state is committed; merchant should not
+        // wait on SMTP RTT (often 1–3s) before the toast renders. Errors are logged
+        // and reported via a .catch handler so the promise never goes "unhandled".
+        const shopForEmail = session.shop;
+        getCustomerEmailForRejection(admin, shopForEmail, id)
+          .then(async (toEmail) => {
+            if (!toEmail) return;
+            const customerFirstName =
+              (await getCustomerFirstNameForEmail(admin, shopForEmail, id)) ?? undefined;
+            return sendApprovalEmail(shopForEmail, toEmail, {
+              shopName,
+              shopEmail,
+              customerFirstName,
+              activationUrl: activationUrl ?? undefined,
+            });
+          })
+          .catch((err) => console.error("[Approve] Email send failed:", err));
       } else if (actionType === "DENY") {
         await denyCustomer(admin, id);
-        const toEmail = await getCustomerEmailForRejection(admin, session.shop, id);
-        if (toEmail) {
-          await sendRejectionEmail(session.shop, toEmail, { shopName, shopEmail });
-        }
+        const shopForEmail = session.shop;
+        getCustomerEmailForRejection(admin, shopForEmail, id)
+          .then((toEmail) => {
+            if (!toEmail) return;
+            return sendRejectionEmail(shopForEmail, toEmail, { shopName, shopEmail });
+          })
+          .catch((err) => console.error("[Deny] Email send failed:", err));
       } else if (actionType === "DELETE") {
         const deleteMode = (formData.get("deleteMode") as "shopify" | "app" | "both") || "both";
         await deleteCustomer(admin, id, deleteMode);

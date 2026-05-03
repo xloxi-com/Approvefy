@@ -648,10 +648,15 @@ export async function getCustomers(
       ];
     }
 
+    // Bounded pagination: take is capped at 10 000 (only "All" view) and `skip = (page-1) * take`
+    // — guarantees we never run an unbounded scan against Registration.
     const take = Math.min(Math.max(1, limit), 10000);
     const skip = Math.max(0, (page - 1) * take);
 
-    const dbCustomers = await prisma.registration.findMany({
+    // Page > 1 (or full page on page 1) needs an exact total for the Pagination control;
+    // run findMany + count in the SAME Promise.all so they fan out as one round-trip latency.
+    // First page that under-fills `take` skips the count entirely (we already know the exact total).
+    const findManyPromise = prisma.registration.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip,
@@ -668,11 +673,23 @@ export async function getCustomers(
         createdAt: true,
       },
     });
-    // When first page does not fill `take`, we already know exact total without a second count query.
-    const totalCount =
-      page === 1 && dbCustomers.length < take
-        ? dbCustomers.length
-        : await prisma.registration.count({ where });
+
+    let dbCustomers: Awaited<typeof findManyPromise>;
+    let totalCount: number;
+    if (page === 1) {
+      dbCustomers = await findManyPromise;
+      totalCount =
+        dbCustomers.length < take
+          ? dbCustomers.length
+          : await prisma.registration.count({ where });
+    } else {
+      const [rows, count] = await Promise.all([
+        findManyPromise,
+        prisma.registration.count({ where }),
+      ]);
+      dbCustomers = rows;
+      totalCount = count;
+    }
 
     const customers: CustomerNode[] = dbCustomers.map((c) => {
       const raw = (c.status || "pending").toLowerCase();

@@ -5,7 +5,9 @@
 
 import { createDecipheriv, createCipheriv, randomBytes, scryptSync } from "node:crypto";
 import type { Transporter } from "nodemailer";
-import nodemailer from "nodemailer";
+// `nodemailer` is loaded lazily in `buildTransporter` — settings/save endpoints touch
+// this module without ever sending mail, so paying its load cost on every cold start
+// (the import resolves crypto + DNS + zlib helpers) is wasted ms.
 import prisma from "../db.server";
 
 const SMTP_SALT = "b2b-smtp-salt";
@@ -114,7 +116,7 @@ type SmtpRowForSend = {
   fromName: string | null;
 };
 
-function buildTransporter(row: SmtpRowForSend): Transporter {
+async function buildTransporter(row: SmtpRowForSend): Promise<Transporter> {
   const password = decryptSmtpPassword(row.passwordEncrypted);
   const auth =
     row.user && password
@@ -122,6 +124,7 @@ function buildTransporter(row: SmtpRowForSend): Transporter {
       : undefined;
   // Port 587 uses STARTTLS (secure: false); 465 uses implicit TLS (secure: true)
   const useSecure = row.port === 587 ? false : row.secure;
+  const { default: nodemailer } = await import("nodemailer");
   return nodemailer.createTransport({
     host: row.host,
     port: row.port,
@@ -173,7 +176,7 @@ export async function sendMailViaSmtp(
   if (!row) {
     return { success: false, error: "SMTP not configured for this shop. Configure in Settings." };
   }
-  const transporter = buildTransporter(row);
+  const transporter = await buildTransporter(row);
   const to = Array.isArray(options.to) ? options.to : [options.to];
   const from =
     row.fromName && row.fromName.trim()

@@ -1,6 +1,7 @@
 /// <reference path="../../env.d.ts" />
+import { Suspense } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useNavigate, Link } from "react-router";
+import { Await, data, useLoaderData, useNavigate, Link } from "react-router";
 import {
   Page,
   Text,
@@ -11,10 +12,14 @@ import {
   Box,
   InlineStack,
   Icon,
+  Spinner,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getAnalytics } from "../models/approval.server";
+
+type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -24,6 +29,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let hasSettings = false;
   let dbUnavailable = false;
 
+  // Wall-clock for the awaited DB fan-out — emitted as `Server-Timing: db;...`
+  // so we can spot a slow Supabase pool in DevTools without instrumenting client code.
+  const t0 = performance.now();
   try {
     [formsCount, hasSettings] = await Promise.all([
       prisma.formConfig.count({ where: { shop } }),
@@ -35,6 +43,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     dbUnavailable = true;
     console.error("[Home] Failed to load setup data:", error);
   }
+  const dbMs = Math.round(performance.now() - t0);
 
   const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
   const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?context=apps`;
@@ -42,15 +51,67 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const setupTasksTotal = 3;
   const setupTasksComplete = (formsCount > 0 ? 1 : 0) + (hasSettings ? 1 : 0);
 
-  return {
-    themeEditorUrl,
-    formsCount,
-    hasSettings,
-    dbUnavailable,
-    setupTasksComplete,
-    setupTasksTotal,
-  };
+  // Analytics (pending/approved/denied counts) is not part of the above-the-fold "Setup guide".
+  // Return the unsettled promise so React Router streams it; <Await> + <Suspense> renders
+  // a skeleton until it lands. .catch keeps a slow DB from blocking the home page render.
+  const analyticsPromise: Promise<Analytics | null> = getAnalytics(shop).catch(
+    (err: unknown) => {
+      console.warn("[Home] analytics fetch failed:", err);
+      return null;
+    }
+  );
+
+  return data(
+    {
+      themeEditorUrl,
+      formsCount,
+      hasSettings,
+      dbUnavailable,
+      setupTasksComplete,
+      setupTasksTotal,
+      analytics: analyticsPromise,
+    },
+    { headers: { "Server-Timing": `db;dur=${dbMs}` } }
+  );
 };
+
+function AnalyticsSummarySkeleton() {
+  return (
+    <InlineStack gap="200" blockAlign="center">
+      <Spinner accessibilityLabel="Loading analytics" size="small" />
+      <Text as="span" variant="bodySm" tone="subdued">
+        Loading customer counts…
+      </Text>
+    </InlineStack>
+  );
+}
+
+function AnalyticsSummary({ analytics }: { analytics: Analytics | null }) {
+  if (!analytics) {
+    return (
+      <Text as="p" variant="bodySm" tone="subdued">
+        Customer counts will appear here once the database is reachable.
+      </Text>
+    );
+  }
+  const total = analytics.total ?? 0;
+  const pending = analytics.pending ?? 0;
+  const denied = analytics.denied ?? 0;
+  const approved = Math.max(0, total - pending - denied);
+  return (
+    <InlineStack gap="400" wrap>
+      <Text as="span" variant="bodySm" tone="subdued">
+        Pending: <strong>{pending}</strong>
+      </Text>
+      <Text as="span" variant="bodySm" tone="subdued">
+        Approved: <strong>{approved}</strong>
+      </Text>
+      <Text as="span" variant="bodySm" tone="subdued">
+        Rejected: <strong>{denied}</strong>
+      </Text>
+    </InlineStack>
+  );
+}
 
 export default function Index() {
   const {
@@ -60,6 +121,7 @@ export default function Index() {
     dbUnavailable,
     setupTasksComplete,
     setupTasksTotal,
+    analytics,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
@@ -192,6 +254,20 @@ export default function Index() {
                   </div>
                 </div>
               </BlockStack>
+              <Box paddingBlockStart="200">
+                <Suspense fallback={<AnalyticsSummarySkeleton />}>
+                  <Await
+                    resolve={analytics}
+                    errorElement={
+                      <Text as="p" variant="bodySm" tone="subdued">
+                        Customer counts unavailable.
+                      </Text>
+                    }
+                  >
+                    {(resolved) => <AnalyticsSummary analytics={resolved} />}
+                  </Await>
+                </Suspense>
+              </Box>
             </BlockStack>
           </LegacyCard>
         </Box>

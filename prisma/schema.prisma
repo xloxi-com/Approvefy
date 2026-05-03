@@ -53,6 +53,11 @@ model Registration {
   @@index([shop, createdAt])
   @@index([status, createdAt])
   @@index([shop, status, createdAt])
+  // Customer list orders by createdAt DESC — a descending index avoids a sort step.
+  // Explicit `map` so Prisma does not collide with the ascending [shop, createdAt] index name.
+  @@index([shop, createdAt(sort: Desc)], map: "Registration_shop_createdAt_desc_idx")
+  // `customerId` stores the Shopify Customer GID; lookups (reconcile, dedupe) hit this hot.
+  @@index([customerId])
 }
 
 model AppSettings {

@@ -9,7 +9,9 @@ import { getEmailTemplateBySlug } from "../models/email-template.server";
 import { getSmtpRowForSend, sendMailViaSmtp } from "./smtp.server";
 import { replaceLiquidPlaceholders, type LiquidReplacementVars } from "./liquid-placeholders";
 import { APP_DISPLAY_NAME, APP_URL } from "./app-constants";
-import sharp from "sharp";
+// `sharp` is a heavy native module (~30 MB) — keep it out of the cold-start critical
+// path by importing lazily inside `resolveLogoUrlForEmail` only when an SVG logo
+// actually needs to be rasterised for email clients.
 
 const DEFAULT_REJECT_SUBJECT = "Your account registration update";
 const DEFAULT_REJECT_BODY = "Unfortunately, your registration was not approved at this time. If you have questions, please contact us.";
@@ -164,6 +166,7 @@ async function resolveLogoUrlForEmail(
     if (!isSvg) return url;
 
     const w = Math.min(400, Math.max(80, maxWidthPx));
+    const { default: sharp } = await import("sharp");
     const pngBuf = await sharp(buf, { density: 200 })
       .resize(w, Math.ceil(w / 2), { fit: "inside", withoutEnlargement: true })
       .png()

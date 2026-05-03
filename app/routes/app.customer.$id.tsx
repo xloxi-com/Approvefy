@@ -305,15 +305,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
     if (result.error) return { success: false, error: result.error };
 
+    // Emails are sent fire-and-forget after the DB save so the merchant's "Save"
+    // click returns immediately. Failures are logged but never bubble up to the user
+    // — the registration row is the source of truth, the email is a notification.
     if (newStatus === "denied") {
       const toEmail = currentRegistration.email?.trim();
       if (toEmail) {
-        const { shopName, shopEmail } = await getShopNameAndEmail(admin, shop);
-        await sendRejectionEmail(shop, toEmail, {
-          shopName,
-          shopEmail,
-          customerFirstName: (formData.get("firstName") as string)?.trim() || currentRegistration.firstName?.trim() || "Customer",
-        });
+        const customerFirstName =
+          (formData.get("firstName") as string)?.trim() || currentRegistration.firstName?.trim() || "Customer";
+        getShopNameAndEmail(admin, shop)
+          .then(({ shopName, shopEmail }) =>
+            sendRejectionEmail(shop, toEmail, { shopName, shopEmail, customerFirstName })
+          )
+          .catch((err) => console.error("[Deny] Email send failed:", err));
       }
     }
 
@@ -321,13 +325,18 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if (newStatus === "approved" && didJustApprove) {
       const toEmail = currentRegistration.email?.trim();
       if (toEmail) {
-        const { shopName, shopEmail } = await getShopNameAndEmail(admin, shop);
-        await sendApprovalEmail(shop, toEmail, {
-          shopName,
-          shopEmail,
-          customerFirstName: (formData.get("firstName") as string)?.trim() || currentRegistration.firstName?.trim() || "Customer",
-          activationUrl: approvalActivationUrl ?? undefined,
-        });
+        const customerFirstName =
+          (formData.get("firstName") as string)?.trim() || currentRegistration.firstName?.trim() || "Customer";
+        getShopNameAndEmail(admin, shop)
+          .then(({ shopName, shopEmail }) =>
+            sendApprovalEmail(shop, toEmail, {
+              shopName,
+              shopEmail,
+              customerFirstName,
+              activationUrl: approvalActivationUrl ?? undefined,
+            })
+          )
+          .catch((err) => console.error("[Approve] Email send failed:", err));
       }
     }
 

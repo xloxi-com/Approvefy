@@ -163,6 +163,38 @@ async function translateWithMyMemory(
 }
 
 /**
+ * Process-level memo cache for translated strings.
+ *
+ * Cache key = `${target.primary}:${source.primary}:${text}` so identical lookups
+ * across requests in the same warm Vercel lambda hit memory instead of MyMemory /
+ * LibreTranslate (each is a network round-trip + rate-limited). No TTL — the cache
+ * disappears when the lambda recycles, which is the right invalidation window.
+ *
+ * Bounded at 5 000 entries (insertion-order eviction) so a translate-heavy shop can't
+ * grow it without bound and OOM the lambda.
+ */
+const TRANSLATION_CACHE_MAX = 5000;
+const translationCache = new Map<string, string>();
+
+function cacheGet(key: string): string | undefined {
+    const hit = translationCache.get(key);
+    if (hit !== undefined) {
+        // LRU-ish: re-insert to mark as recently used.
+        translationCache.delete(key);
+        translationCache.set(key, hit);
+    }
+    return hit;
+}
+
+function cacheSet(key: string, value: string): void {
+    translationCache.set(key, value);
+    if (translationCache.size > TRANSLATION_CACHE_MAX) {
+        const oldest = translationCache.keys().next().value;
+        if (oldest != null) translationCache.delete(oldest);
+    }
+}
+
+/**
  * Translate single text (used when batch api-translator is not available).
  */
 export async function translateText(
@@ -175,11 +207,21 @@ export async function translateText(
     const source = normalizeLangTag(sourceLang);
     if (target.primary === source.primary) return text;
 
+    const cacheKey = `${target.primary}:${source.primary}:${text}`;
+    const cached = cacheGet(cacheKey);
+    if (cached !== undefined) return cached;
+
     const libre = await translateWithLibreTranslate(text, source.primary, target.primary);
-    if (libre != null && libre.trim() && !isMyMemoryWarning(libre)) return libre;
+    if (libre != null && libre.trim() && !isMyMemoryWarning(libre)) {
+        cacheSet(cacheKey, libre);
+        return libre;
+    }
 
     const mymem = await translateWithMyMemory(text, source.primary, target.primary);
-    if (mymem.translated != null && mymem.translated.trim() && !isMyMemoryWarning(mymem.translated)) return mymem.translated;
+    if (mymem.translated != null && mymem.translated.trim() && !isMyMemoryWarning(mymem.translated)) {
+        cacheSet(cacheKey, mymem.translated);
+        return mymem.translated;
+    }
     if (mymem.nextAvailableSeconds != null) throw new MyMemoryLimitError(undefined, mymem.nextAvailableSeconds);
     return text;
 }

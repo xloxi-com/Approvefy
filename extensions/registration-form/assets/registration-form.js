@@ -569,6 +569,15 @@
     formIdParam +
     customerShopifyIdParam +
     customerEmailParam;
+
+  // Module-level cache for the config fetch.
+  //
+  // The actual network request fires once per page during initial parse — either by the
+  // inline preload in registration-form-embed.liquid (which sets `__approvefyConfigPromise`
+  // before this script loads) or by the fallback `fetch()` below. Either way the resolved
+  // promise is shared with every later caller via `window.__approvefyConfigPromise` and the
+  // local `configPromise`, so opening and closing the form repeatedly on the same page does
+  // NOT cause a refetch. Refresh logic (visibilitychange after 5 min) explicitly resets it.
   var configPromise;
   function wireConfigPromise(p) {
     return p.then(function (cfg) {
