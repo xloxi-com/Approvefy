@@ -1,0 +1,613 @@
+{
+  "buildManifest": {
+    "serverBundles": {
+      "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0": {
+        "id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+        "file": "build/server/nodejs_eyJydW50aW1lIjoibm9kZWpzIn0/index.js",
+        "config": {
+          "runtime": "nodejs"
+        }
+      }
+    },
+    "routeIdToServerBundleId": {
+      "routes/webhooks.app.scopes_update": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/webhooks.customers_create": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/webhooks.app.uninstalled": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.check-phone": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.register": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.config": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/auth.login": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.auth": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/auth.$": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/_index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.api.template-selection": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.api.email-templates": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.api.email-templates.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.customer-file.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.customers._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.export-customers": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.api.analytics": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.download-file": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.customer.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.form-builder": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.form-config": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.api.smtp": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.settings": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.pricing": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0"
+    },
+    "routes": {
+      "root": {
+        "id": "root",
+        "file": "app/root.tsx",
+        "path": "",
+        "config": {}
+      },
+      "routes/webhooks.app.scopes_update": {
+        "id": "routes/webhooks.app.scopes_update",
+        "parentId": "root",
+        "file": "app/routes/webhooks.app.scopes_update.tsx",
+        "path": "webhooks/app/scopes_update",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/webhooks.customers_create": {
+        "id": "routes/webhooks.customers_create",
+        "parentId": "root",
+        "file": "app/routes/webhooks.customers_create.tsx",
+        "path": "webhooks/customers_create",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/webhooks.app.uninstalled": {
+        "id": "routes/webhooks.app.uninstalled",
+        "parentId": "root",
+        "file": "app/routes/webhooks.app.uninstalled.tsx",
+        "path": "webhooks/app/uninstalled",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.check-phone": {
+        "id": "routes/api.check-phone",
+        "parentId": "root",
+        "file": "app/routes/api.check-phone.tsx",
+        "path": "api/check-phone",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.register": {
+        "id": "routes/api.register",
+        "parentId": "root",
+        "file": "app/routes/api.register.tsx",
+        "path": "api/register",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.config": {
+        "id": "routes/api.config",
+        "parentId": "root",
+        "file": "app/routes/api.config.tsx",
+        "path": "api/config",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/auth.login": {
+        "id": "routes/auth.login",
+        "parentId": "root",
+        "file": "app/routes/auth.login/route.tsx",
+        "path": "auth/login",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.auth": {
+        "id": "routes/api.auth",
+        "parentId": "root",
+        "file": "app/routes/api.auth.tsx",
+        "path": "api/auth",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/auth.$": {
+        "id": "routes/auth.$",
+        "parentId": "root",
+        "file": "app/routes/auth.$.tsx",
+        "path": "auth/*",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/_index": {
+        "id": "routes/_index",
+        "parentId": "root",
+        "file": "app/routes/_index/route.tsx",
+        "index": true,
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app": {
+        "id": "routes/app",
+        "parentId": "root",
+        "file": "app/routes/app.tsx",
+        "path": "app",
+        "config": {}
+      },
+      "routes/app.api.template-selection": {
+        "id": "routes/app.api.template-selection",
+        "parentId": "routes/app",
+        "file": "app/routes/app.api.template-selection.tsx",
+        "path": "api/template-selection",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.api.email-templates": {
+        "id": "routes/app.api.email-templates",
+        "parentId": "routes/app",
+        "file": "app/routes/app.api.email-templates.tsx",
+        "path": "api/email-templates",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.api.email-templates.$id": {
+        "id": "routes/app.api.email-templates.$id",
+        "parentId": "routes/app.api.email-templates",
+        "file": "app/routes/app.api.email-templates.$id.tsx",
+        "path": ":id",
+        "config": {}
+      },
+      "routes/app.customer-file.$id": {
+        "id": "routes/app.customer-file.$id",
+        "parentId": "routes/app",
+        "file": "app/routes/app.customer-file.$id.tsx",
+        "path": "customer-file/:id",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.customers._index": {
+        "id": "routes/app.customers._index",
+        "parentId": "routes/app",
+        "file": "app/routes/app.customers._index.tsx",
+        "path": "customers",
+        "index": true,
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.export-customers": {
+        "id": "routes/app.export-customers",
+        "parentId": "routes/app",
+        "file": "app/routes/app.export-customers.tsx",
+        "path": "export-customers",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.api.analytics": {
+        "id": "routes/app.api.analytics",
+        "parentId": "routes/app",
+        "file": "app/routes/app.api.analytics.tsx",
+        "path": "api/analytics",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.download-file": {
+        "id": "routes/app.download-file",
+        "parentId": "routes/app",
+        "file": "app/routes/app.download-file.ts",
+        "path": "download-file",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.customer.$id": {
+        "id": "routes/app.customer.$id",
+        "parentId": "routes/app",
+        "file": "app/routes/app.customer.$id.tsx",
+        "path": "customer/:id",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.form-builder": {
+        "id": "routes/app.form-builder",
+        "parentId": "routes/app",
+        "file": "app/routes/app.form-builder.tsx",
+        "path": "form-builder",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.form-config": {
+        "id": "routes/app.form-config",
+        "parentId": "routes/app",
+        "file": "app/routes/app.form-config.tsx",
+        "path": "form-config",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.api.smtp": {
+        "id": "routes/app.api.smtp",
+        "parentId": "routes/app",
+        "file": "app/routes/app.api.smtp.tsx",
+        "path": "api/smtp",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.settings": {
+        "id": "routes/app.settings",
+        "parentId": "routes/app",
+        "file": "app/routes/app.settings.tsx",
+        "path": "settings",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.pricing": {
+        "id": "routes/app.pricing",
+        "parentId": "routes/app",
+        "file": "app/routes/app.pricing.tsx",
+        "path": "pricing",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app._index": {
+        "id": "routes/app._index",
+        "parentId": "routes/app",
+        "file": "app/routes/app._index.tsx",
+        "index": true,
+        "config": {
+          "runtime": "nodejs"
+        }
+      }
+    }
+  },
+  "reactRouterConfig": {
+    "appDirectory": "C:/Users/Alone Hero/Desktop/b2b-customer-valid 2 2026 4 19/b2b-customer-valid 2/b2b-customer-valid/app",
+    "basename": "/",
+    "buildDirectory": "C:/Users/Alone Hero/Desktop/b2b-customer-valid 2 2026 4 19/b2b-customer-valid 2/b2b-customer-valid/build",
+    "future": {
+      "unstable_optimizeDeps": false,
+      "unstable_subResourceIntegrity": false,
+      "unstable_trailingSlashAwareDataRequests": false,
+      "v8_middleware": false,
+      "v8_splitRouteModules": false,
+      "v8_viteEnvironmentApi": false
+    },
+    "routes": {
+      "root": {
+        "id": "root",
+        "file": "root.tsx",
+        "path": ""
+      },
+      "routes/webhooks.app.scopes_update": {
+        "id": "routes/webhooks.app.scopes_update",
+        "parentId": "root",
+        "file": "routes/webhooks.app.scopes_update.tsx",
+        "path": "webhooks/app/scopes_update"
+      },
+      "routes/webhooks.customers_create": {
+        "id": "routes/webhooks.customers_create",
+        "parentId": "root",
+        "file": "routes/webhooks.customers_create.tsx",
+        "path": "webhooks/customers_create"
+      },
+      "routes/webhooks.app.uninstalled": {
+        "id": "routes/webhooks.app.uninstalled",
+        "parentId": "root",
+        "file": "routes/webhooks.app.uninstalled.tsx",
+        "path": "webhooks/app/uninstalled"
+      },
+      "routes/api.check-phone": {
+        "id": "routes/api.check-phone",
+        "parentId": "root",
+        "file": "routes/api.check-phone.tsx",
+        "path": "api/check-phone"
+      },
+      "routes/api.register": {
+        "id": "routes/api.register",
+        "parentId": "root",
+        "file": "routes/api.register.tsx",
+        "path": "api/register"
+      },
+      "routes/api.config": {
+        "id": "routes/api.config",
+        "parentId": "root",
+        "file": "routes/api.config.tsx",
+        "path": "api/config"
+      },
+      "routes/auth.login": {
+        "id": "routes/auth.login",
+        "parentId": "root",
+        "file": "routes/auth.login/route.tsx",
+        "path": "auth/login"
+      },
+      "routes/api.auth": {
+        "id": "routes/api.auth",
+        "parentId": "root",
+        "file": "routes/api.auth.tsx",
+        "path": "api/auth"
+      },
+      "routes/auth.$": {
+        "id": "routes/auth.$",
+        "parentId": "root",
+        "file": "routes/auth.$.tsx",
+        "path": "auth/*"
+      },
+      "routes/_index": {
+        "id": "routes/_index",
+        "parentId": "root",
+        "file": "routes/_index/route.tsx",
+        "index": true
+      },
+      "routes/app": {
+        "id": "routes/app",
+        "parentId": "root",
+        "file": "routes/app.tsx",
+        "path": "app"
+      },
+      "routes/app.api.template-selection": {
+        "id": "routes/app.api.template-selection",
+        "parentId": "routes/app",
+        "file": "routes/app.api.template-selection.tsx",
+        "path": "api/template-selection"
+      },
+      "routes/app.api.email-templates": {
+        "id": "routes/app.api.email-templates",
+        "parentId": "routes/app",
+        "file": "routes/app.api.email-templates.tsx",
+        "path": "api/email-templates"
+      },
+      "routes/app.api.email-templates.$id": {
+        "id": "routes/app.api.email-templates.$id",
+        "parentId": "routes/app.api.email-templates",
+        "file": "routes/app.api.email-templates.$id.tsx",
+        "path": ":id"
+      },
+      "routes/app.customer-file.$id": {
+        "id": "routes/app.customer-file.$id",
+        "parentId": "routes/app",
+        "file": "routes/app.customer-file.$id.tsx",
+        "path": "customer-file/:id"
+      },
+      "routes/app.customers._index": {
+        "id": "routes/app.customers._index",
+        "parentId": "routes/app",
+        "file": "routes/app.customers._index.tsx",
+        "path": "customers",
+        "index": true
+      },
+      "routes/app.export-customers": {
+        "id": "routes/app.export-customers",
+        "parentId": "routes/app",
+        "file": "routes/app.export-customers.tsx",
+        "path": "export-customers"
+      },
+      "routes/app.api.analytics": {
+        "id": "routes/app.api.analytics",
+        "parentId": "routes/app",
+        "file": "routes/app.api.analytics.tsx",
+        "path": "api/analytics"
+      },
+      "routes/app.download-file": {
+        "id": "routes/app.download-file",
+        "parentId": "routes/app",
+        "file": "routes/app.download-file.ts",
+        "path": "download-file"
+      },
+      "routes/app.customer.$id": {
+        "id": "routes/app.customer.$id",
+        "parentId": "routes/app",
+        "file": "routes/app.customer.$id.tsx",
+        "path": "customer/:id"
+      },
+      "routes/app.form-builder": {
+        "id": "routes/app.form-builder",
+        "parentId": "routes/app",
+        "file": "routes/app.form-builder.tsx",
+        "path": "form-builder"
+      },
+      "routes/app.form-config": {
+        "id": "routes/app.form-config",
+        "parentId": "routes/app",
+        "file": "routes/app.form-config.tsx",
+        "path": "form-config"
+      },
+      "routes/app.api.smtp": {
+        "id": "routes/app.api.smtp",
+        "parentId": "routes/app",
+        "file": "routes/app.api.smtp.tsx",
+        "path": "api/smtp"
+      },
+      "routes/app.settings": {
+        "id": "routes/app.settings",
+        "parentId": "routes/app",
+        "file": "routes/app.settings.tsx",
+        "path": "settings"
+      },
+      "routes/app.pricing": {
+        "id": "routes/app.pricing",
+        "parentId": "routes/app",
+        "file": "routes/app.pricing.tsx",
+        "path": "pricing"
+      },
+      "routes/app._index": {
+        "id": "routes/app._index",
+        "parentId": "routes/app",
+        "file": "routes/app._index.tsx",
+        "index": true
+      }
+    },
+    "routeDiscovery": {
+      "mode": "lazy",
+      "manifestPath": "/__manifest"
+    },
+    "serverBuildFile": "index.js",
+    "serverModuleFormat": "esm",
+    "ssr": true,
+    "allowedActionOrigins": false,
+    "unstable_routeConfig": [
+      {
+        "id": "root",
+        "path": "",
+        "file": "root.tsx",
+        "children": [
+          {
+            "id": "routes/webhooks.app.scopes_update",
+            "file": "routes/webhooks.app.scopes_update.tsx",
+            "path": "webhooks/app/scopes_update"
+          },
+          {
+            "id": "routes/webhooks.customers_create",
+            "file": "routes/webhooks.customers_create.tsx",
+            "path": "webhooks/customers_create"
+          },
+          {
+            "id": "routes/webhooks.app.uninstalled",
+            "file": "routes/webhooks.app.uninstalled.tsx",
+            "path": "webhooks/app/uninstalled"
+          },
+          {
+            "id": "routes/api.check-phone",
+            "file": "routes/api.check-phone.tsx",
+            "path": "api/check-phone"
+          },
+          {
+            "id": "routes/api.register",
+            "file": "routes/api.register.tsx",
+            "path": "api/register"
+          },
+          {
+            "id": "routes/api.config",
+            "file": "routes/api.config.tsx",
+            "path": "api/config"
+          },
+          {
+            "id": "routes/auth.login",
+            "file": "routes/auth.login/route.tsx",
+            "path": "auth/login"
+          },
+          {
+            "id": "routes/api.auth",
+            "file": "routes/api.auth.tsx",
+            "path": "api/auth"
+          },
+          {
+            "id": "routes/auth.$",
+            "file": "routes/auth.$.tsx",
+            "path": "auth/*"
+          },
+          {
+            "id": "routes/_index",
+            "file": "routes/_index/route.tsx",
+            "index": true
+          },
+          {
+            "id": "routes/app",
+            "file": "routes/app.tsx",
+            "path": "app",
+            "children": [
+              {
+                "id": "routes/app.api.template-selection",
+                "file": "routes/app.api.template-selection.tsx",
+                "path": "api/template-selection"
+              },
+              {
+                "id": "routes/app.api.email-templates",
+                "file": "routes/app.api.email-templates.tsx",
+                "path": "api/email-templates",
+                "children": [
+                  {
+                    "id": "routes/app.api.email-templates.$id",
+                    "file": "routes/app.api.email-templates.$id.tsx",
+                    "path": ":id"
+                  }
+                ]
+              },
+              {
+                "id": "routes/app.customer-file.$id",
+                "file": "routes/app.customer-file.$id.tsx",
+                "path": "customer-file/:id"
+              },
+              {
+                "id": "routes/app.customers._index",
+                "file": "routes/app.customers._index.tsx",
+                "path": "customers",
+                "index": true
+              },
+              {
+                "id": "routes/app.export-customers",
+                "file": "routes/app.export-customers.tsx",
+                "path": "export-customers"
+              },
+              {
+                "id": "routes/app.api.analytics",
+                "file": "routes/app.api.analytics.tsx",
+                "path": "api/analytics"
+              },
+              {
+                "id": "routes/app.download-file",
+                "file": "routes/app.download-file.ts",
+                "path": "download-file"
+              },
+              {
+                "id": "routes/app.customer.$id",
+                "file": "routes/app.customer.$id.tsx",
+                "path": "customer/:id"
+              },
+              {
+                "id": "routes/app.form-builder",
+                "file": "routes/app.form-builder.tsx",
+                "path": "form-builder"
+              },
+              {
+                "id": "routes/app.form-config",
+                "file": "routes/app.form-config.tsx",
+                "path": "form-config"
+              },
+              {
+                "id": "routes/app.api.smtp",
+                "file": "routes/app.api.smtp.tsx",
+                "path": "api/smtp"
+              },
+              {
+                "id": "routes/app.settings",
+                "file": "routes/app.settings.tsx",
+                "path": "settings"
+              },
+              {
+                "id": "routes/app.pricing",
+                "file": "routes/app.pricing.tsx",
+                "path": "pricing"
+              },
+              {
+                "id": "routes/app._index",
+                "file": "routes/app._index.tsx",
+                "index": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "viteConfig": {
+    "build": {
+      "assetsDir": "assets"
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 client_id = "d915bdc3b1b08393f6863697d989c5a8"
 name = "Approvefy"
-application_url = "https://approvefy-app.vercel.app"
+application_url = "https://approvefy.vercel.app"
 embedded = true
 
 [webhooks]
@@ -13,10 +13,13 @@ api_version = "2026-01"
 scopes = "read_customers,read_locales,write_app_proxy,write_customers,write_products"
 
 [auth]
-redirect_urls = [ "https://approvefy-app.vercel.app/auth/callback", "https://approvefy-app.vercel.app/api/auth" ]
+redirect_urls = [
+  "https://approvefy.vercel.app/auth/callback",
+  "https://approvefy.vercel.app/api/auth",
+]
 
 [app_proxy]
-url = "https://approvefy-app.vercel.app/api"
+url = "https://approvefy.vercel.app/api"
 subpath = "customer-approval"
 prefix = "apps"
 
