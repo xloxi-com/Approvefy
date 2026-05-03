@@ -468,7 +468,8 @@ export default function Index() {
   useEffect(() => {
     if (!detailCustomerId) return;
     customerDetailFetcher.load(`/app/customer/${encodeURIComponent(detailCustomerId)}`);
-  }, [detailCustomerId, customerDetailFetcher]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when selected row changes; fetcher stable from useFetcher
+  }, [detailCustomerId]);
 
   useEffect(() => {
     if (detailCustomerId && customerDetailFetcher.data?.error) {

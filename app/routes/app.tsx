@@ -4,7 +4,6 @@ import {
   useLoaderData,
   useRouteError,
   useNavigation,
-  useFetchers,
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
@@ -23,12 +22,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
-  const fetchers = useFetchers();
 
+  /** Document navigations only. In-route `useFetcher` loads (detail panel, mutations) stay local — counting all fetchers made the bar run constantly and felt "stuck loading". */
   const isLoading =
-    navigation.state === "loading" ||
-    navigation.state === "submitting" ||
-    fetchers.some((f) => f.state === "loading" || f.state === "submitting");
+    navigation.state === "loading" || navigation.state === "submitting";
 
   return (
     <>
