@@ -1,0 +1,46 @@
+# Anything below is excluded from the Vercel build upload.
+# Keeps the deploy context small so install/build start faster.
+
+.git
+.github
+.cursor
+.gemini
+.shopify
+.vercel
+.react-router
+
+# Local-only / dev tooling
+.env
+.env.*
+!.env.example
+.npmrc.local
+.mcp.json
+.theme-check.yml
+.editorconfig
+.prettierignore
+.eslintignore
+
+# Docs / repo metadata not needed at build time
+README.md
+CHANGELOG.md
+Dockerfile
+.dockerignore
+
+# Shopify CLI app configs / extensions are not part of the web build
+shopify.app.toml
+shopify.app.approvefy.toml
+shopify.app.customer-b2b.toml
+shopify.web.toml
+shopify.cmd
+extensions
+
+# Local Supabase / build artefacts
+supabase
+build
+.cache
+
+# Logs / scratch files
+*.log
+debug-*.log
+tmp_out.txt
+loader_response.html
