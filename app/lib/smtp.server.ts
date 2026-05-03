@@ -116,6 +116,23 @@ type SmtpRowForSend = {
   fromName: string | null;
 };
 
+/** Matches `createTransport` options used for outbound mail (587 → STARTTLS). */
+function createSmtpTransportConfig(row: {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+}) {
+  const useSecure = row.port === 587 ? false : row.secure;
+  return {
+    host: row.host.trim(),
+    port: row.port,
+    secure: useSecure,
+    auth: { user: row.user.trim(), pass: row.password },
+  };
+}
+
 async function buildTransporter(row: SmtpRowForSend): Promise<Transporter> {
   const password = decryptSmtpPassword(row.passwordEncrypted);
   const auth =
@@ -131,6 +148,49 @@ async function buildTransporter(row: SmtpRowForSend): Promise<Transporter> {
     secure: useSecure,
     auth,
   });
+}
+
+/**
+ * Connect + authenticate against SMTP without sending mail. Used when merchants type a new password so we reject bad credentials before saving.
+ */
+export async function verifySmtpCredentials(row: {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    const { default: nodemailer } = await import("nodemailer");
+    const transport = nodemailer.createTransport(
+      createSmtpTransportConfig(row),
+    );
+    await transport.verify();
+    return { ok: true };
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    const lower = raw.toLowerCase();
+    const authFailed =
+      lower.includes("invalid login") ||
+      lower.includes("authentication failed") ||
+      lower.includes("username and password not accepted") ||
+      lower.includes("bad credentials") ||
+      lower.includes("login failed") ||
+      lower.includes("535") ||
+      lower.includes("incorrect authentication") ||
+      lower.includes("5.7.8");
+    if (authFailed) {
+      return {
+        ok: false,
+        message:
+          "Wrong SMTP password or username. Use your full email as Username (same as From email) and the password from your email provider.",
+      };
+    }
+    return {
+      ok: false,
+      message: `Could not verify SMTP: ${raw}`,
+    };
+  }
 }
 
 export type SendMailOptions = {

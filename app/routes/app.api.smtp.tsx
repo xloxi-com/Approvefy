@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
-import { getSmtpSettings, upsertSmtpSettings } from "../lib/smtp.server";
+import { getSmtpSettings, upsertSmtpSettings, verifySmtpCredentials } from "../lib/smtp.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -47,12 +47,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+    const pwd = typeof password === "string" ? password.trim() : "";
+    if (pwd && (!user || !user.trim())) {
+      return new Response(JSON.stringify({ error: "SMTP username is required when setting a password." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (pwd && user) {
+      const v = await verifySmtpCredentials({
+        host,
+        port,
+        secure,
+        user: user.trim(),
+        password: pwd,
+      });
+      if (!v.ok) {
+        return new Response(JSON.stringify({ error: v.message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
     await upsertSmtpSettings(shop, {
       host,
       port,
       secure,
       user: user || null,
-      password: password || null,
+      password: pwd || undefined,
       fromEmail,
       fromName: fromName || null,
     });
