@@ -1,0 +1,9 @@
+# Theme Check config: theme app extension lives under this root so assets/snippets resolve.
+extends: theme-check:theme-app-extension
+root: extensions/registration-form
+
+OrphanedSnippet:
+  ignore:
+    - snippets/registration-form-embed.liquid
+    - snippets/approvefy-ltp-critical.liquid
+    - snippets/approvefy-product-price.liquid

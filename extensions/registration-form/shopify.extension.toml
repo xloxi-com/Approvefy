@@ -1,0 +1,20 @@
+api_version = "2026-01"
+
+[[extensions]]
+name = "Approvefy Registration Form"
+
+uid = "3652577f-2032-d1e3-5a01-bb879c40fe5c31a53853"
+
+type = "theme"
+handle = "registration-form"
+
+  [[extensions.blocks]]
+  name = "Approvefy Form Embed"
+  file = "blocks/app-embed.liquid"
+  target = "body"
+
+  [[extensions.blocks]]
+  name = "Registration Form"
+  file = "blocks/registration-form.liquid"
+  target = "section"
+

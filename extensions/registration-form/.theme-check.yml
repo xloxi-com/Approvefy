@@ -1,0 +1,8 @@
+# Snippet is referenced by blocks/app-embed.liquid
+extends: theme-check:theme-app-extension
+
+OrphanedSnippet:
+  ignore:
+    - snippets/registration-form-embed.liquid
+    - snippets/approvefy-ltp-critical.liquid
+    - snippets/approvefy-product-price.liquid

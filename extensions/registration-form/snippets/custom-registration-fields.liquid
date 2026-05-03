@@ -1,0 +1,85 @@
+{% comment %}
+  Custom Registration Form Fields
+  Renders additional fields based on app configuration
+{% endcomment %}
+
+<div class="custom-registration-fields" data-custom-fields>
+  <h3>Additional Information</h3>
+  
+  <div class="field">
+    <label for="company">Company Name</label>
+    <input type="text" 
+           id="company" 
+           name="customer[note][company]" 
+           placeholder="Enter your company name">
+  </div>
+
+  <div class="field">
+    <label for="phone">Phone Number</label>
+    <input type="tel" 
+           id="phone" 
+           name="customer[phone]" 
+           placeholder="Enter your phone number">
+  </div>
+
+  <p class="form-message form-message--info">
+    Your account will be reviewed and approved by our team. You will receive an email notification once approved.
+  </p>
+</div>
+
+<style>
+  .custom-registration-fields {
+    margin: 20px 0;
+    padding: 20px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+  }
+
+  .custom-registration-fields h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .custom-registration-fields .field {
+    margin-bottom: 15px;
+  }
+
+  .custom-registration-fields label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+  }
+
+  .custom-registration-fields input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  .form-message--info {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #e3f2fd;
+    border-left: 4px solid #2196f3;
+    color: #1976d2;
+    font-size: 14px;
+  }
+</style>
+
+<script>
+  // Fetch and render dynamic fields from app configuration
+  (function() {
+    const customFieldsContainer = document.querySelector('[data-custom-fields]');
+    
+    if (customFieldsContainer) {
+      // This would fetch the configuration from your app's metafields
+      // For now, it uses the static fields above
+      console.log('Custom registration fields loaded');
+    }
+  })();
+</script>

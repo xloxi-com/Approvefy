@@ -1,0 +1,97 @@
+{% # theme-check-disable OrphanedSnippet, UndefinedObject, MissingAsset, ParserBlockingScript %}
+{{ 'registration-form.css' | asset_url | stylesheet_tag }}
+<script>
+window.__REGISTRATION_FORM_CONFIG__ = {
+  embedFormId: {{ block.settings.form_id | default: '' | json }},
+  pendingMessage: { en: {{ block.settings.pending_message | json }}, fr: {{ block.settings.pending_message_fr | default: block.settings.pending_message | json }} },
+  shop: {{ shop.permanent_domain | json }},
+  shopCountryCode: {{ shop.address.country_code | default: localization.country.iso_code | default: "US" | json }},
+  customerLoggedIn: {% if customer %}true{% else %}false{% endif %},
+  customerTags: {% if customer %}{{ customer.tags | json }}{% else %}[]{% endif %},
+  customerEmail: {% if customer %}{{ customer.email | default: '' | json }}{% else %}""{% endif %},
+  customerFirstName: {% if customer %}{{ customer.first_name | default: '' | json }}{% else %}""{% endif %},
+  customerLastName: {% if customer %}{{ customer.last_name | default: '' | json }}{% else %}""{% endif %},
+  shopifyLoggedInCustomerId: {% if customer %}{{ customer.id | json }}{% else %}null{% endif %},
+  contactPageUrl: {% if pages.contact != blank and pages.contact.url != blank %}{{ pages.contact.url | json }}{% else %}{{ routes.root_url | append: 'pages/contact' | json }}{% endif %}
+};
+(function () {
+  var cfg = window.__REGISTRATION_FORM_CONFIG__;
+  if (!cfg || !cfg.shop) return;
+  var shop = cfg.shop;
+  var embedFormId = typeof cfg.embedFormId === 'string' ? cfg.embedFormId.trim() : '';
+  var formIdParam = embedFormId ? '&formId=' + encodeURIComponent(embedFormId) : '';
+  var loc = (document.documentElement.lang || '').toLowerCase().split('-')[0];
+  if (!loc) {
+    var pathMatch = window.location.pathname.match(/^\/([a-z]{2})(\/|$)/);
+    loc = pathMatch ? pathMatch[1].toLowerCase() : '';
+  }
+  if (!loc) loc = 'en';
+  var customerShopifyIdParam =
+    cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
+      ? '&customerShopifyId=' + encodeURIComponent(String(cfg.shopifyLoggedInCustomerId).trim())
+      : '';
+  var customerEmailParam =
+    cfg.customerLoggedIn && cfg.customerEmail && String(cfg.customerEmail).trim() !== ''
+      ? '&customerEmail=' + encodeURIComponent(String(cfg.customerEmail).trim())
+      : '';
+  var configUrl =
+    '/apps/customer-approval/config?shop=' +
+    encodeURIComponent(shop) +
+    '&locale=' +
+    encodeURIComponent(loc) +
+    formIdParam +
+    customerShopifyIdParam +
+    customerEmailParam;
+  var loggedInCustIdForCache =
+    cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
+      ? String(cfg.shopifyLoggedInCustomerId).trim()
+      : '0';
+  var configCacheKey = 'customer_approval_config_' + shop + '_' + embedFormId + '_' + loc + '_' + loggedInCustIdForCache;
+  function applyThemeCss(cssText) {
+    if (typeof cssText !== 'string' || !cssText.trim()) return;
+    var existing = document.getElementById('customer-approval-theme-style');
+    if (existing) {
+      while (existing.firstChild) existing.removeChild(existing.firstChild);
+      existing.appendChild(document.createTextNode(cssText));
+      return;
+    }
+    var styleEl = document.createElement('style');
+    styleEl.id = 'customer-approval-theme-style';
+    styleEl.type = 'text/css';
+    styleEl.appendChild(document.createTextNode(cssText));
+    document.head.appendChild(styleEl);
+  }
+  try {
+    var cachedRaw = null;
+    if (window.sessionStorage) cachedRaw = sessionStorage.getItem(configCacheKey);
+    if (!cachedRaw && window.localStorage) cachedRaw = localStorage.getItem(configCacheKey);
+    if (cachedRaw) {
+      var cachedParsed = JSON.parse(cachedRaw);
+      var cachedCss = cachedParsed && cachedParsed.data && typeof cachedParsed.data.customCss === 'string'
+        ? cachedParsed.data.customCss
+        : '';
+      applyThemeCss(cachedCss);
+    }
+  } catch (e) {
+    void 0;
+  }
+  window.__approvefyConfigPrefetchUrl = configUrl;
+  window.__approvefyConfigPromise = fetch(configUrl, { cache: 'default', credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (data) {
+    if (data && typeof data.customCss === 'string') applyThemeCss(data.customCss);
+    try {
+      if (data && typeof data === 'object') {
+        var payload = JSON.stringify({ ts: Date.now(), data: data });
+        if (window.sessionStorage) sessionStorage.setItem(configCacheKey, payload);
+        if (window.localStorage) localStorage.setItem(configCacheKey, payload);
+      }
+    } catch (eStore) {
+      void 0;
+    }
+    return data;
+  });
+})();
+</script>
+{{ 'registration-form.js' | asset_url | preload_tag: as: 'script' }}
+{{ 'guest-checkout-guard.js' | asset_url | preload_tag: as: 'script' }}
+<script src="{{ 'registration-form.js' | asset_url }}" async></script>
+<script src="{{ 'guest-checkout-guard.js' | asset_url }}" async></script>

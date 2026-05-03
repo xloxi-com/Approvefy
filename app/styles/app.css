@@ -1,0 +1,18 @@
+@tailwind utilities;
+
+/* Polaris overrides — do not set width/max-width on .Polaris-Page; Polaris handles page width. */
+
+/* Tighter spacing for cards inside modals */
+.Polaris-Modal-Dialog__Modal .Polaris-ShadowBevel {
+  margin-top: 0;
+}
+
+/* Customer name link: clear that it opens edit */
+.customer-name-link:hover {
+  text-decoration: underline;
+}
+.customer-name-link:focus-visible {
+  text-decoration: underline;
+  outline: 2px solid var(--p-color-border-info);
+  outline-offset: 2px;
+}

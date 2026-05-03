@@ -1,0 +1,2 @@
+-- No-op migration placeholder.
+-- This file restores migration history integrity for Prisma.

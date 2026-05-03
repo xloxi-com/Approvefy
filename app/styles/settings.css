@@ -1,0 +1,839 @@
+/* Settings page - Fixed header (Settings title + Discard/Save) when scrolling */
+.settings-page-wrapper .Polaris-Page-Header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--p-color-bg-surface, #fff);
+  box-shadow: 0 1px 0 var(--p-color-border-subdued, #e1e3e5);
+}
+
+/* Let Settings use a moderately wide embedded layout */
+.settings-page-wrapper .Polaris-Page {
+  max-width: 1440px;
+  width: 100%;
+  margin-inline: auto;
+}
+
+.settings-page-wrapper {
+  --settings-sticky-top: var(--p-space-300, 12px);
+}
+
+/* Settings page - outer column + sidebar row */
+.settings-layout-main {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: var(--p-space-400);
+}
+
+.settings-layout-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--p-space-500);
+  width: 100%;
+  min-width: 0;
+}
+
+/* Left sidebar: vertical section nav (Polaris-style) */
+.settings-sidebar-nav {
+  flex-shrink: 0;
+  width: 220px;
+  padding: var(--p-space-200) 0;
+  position: sticky;
+  top: var(--settings-sticky-top);
+  align-self: flex-start;
+}
+
+.settings-appearance-preview-wrap {
+  position: sticky;
+  top: var(--settings-sticky-top);
+  align-self: flex-start;
+  min-width: 0;
+}
+.settings-sidebar-nav__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 10px var(--p-space-400);
+  text-align: left;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: var(--p-border-radius-200);
+  background: transparent;
+  color: var(--p-color-text-subdued, #6d7175);
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.settings-sidebar-nav__item:hover {
+  background: var(--p-color-bg-surface-hover, #f6f6f7);
+  color: var(--p-color-text, #202223);
+}
+.settings-sidebar-nav__item--selected {
+  background: var(--p-color-bg-surface-selected, #f1f2f4);
+  color: var(--p-color-text, #202223);
+  font-weight: 600;
+  border-left-color: var(--p-color-border-info, #5c6ac4);
+}
+.settings-sidebar-nav__item--parent-active {
+  background: var(--p-color-bg-surface-selected, #f1f2f4);
+  color: var(--p-color-text, #202223);
+  font-weight: 600;
+  border-left-color: transparent;
+}
+.settings-sidebar-nav__label {
+  font-size: 14px;
+}
+.settings-sidebar-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: calc(var(--p-space-400) + 8px);
+  margin-top: var(--p-space-100);
+}
+.settings-sidebar-nav__item--sub {
+  padding: 8px var(--p-space-400);
+  font-size: 13px;
+}
+.settings-sidebar-nav__item--sub .settings-sidebar-nav__label {
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .settings-layout-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .settings-sidebar-nav {
+    width: 100%;
+    position: static;
+    top: auto;
+  }
+  .settings-sidebar-nav .Polaris-BlockStack {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--p-space-100);
+  }
+  .settings-sidebar-nav__item {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    padding: 10px var(--p-space-200);
+  }
+  .settings-sidebar-nav__item--selected,
+  .settings-sidebar-nav__item--parent-active {
+    border-left: none;
+    border-bottom-color: var(--p-color-border-info, #5c6ac4);
+  }
+  .settings-sidebar-sub {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding-left: 0;
+    width: 100%;
+    margin-top: 0;
+  }
+  .settings-sidebar-nav__item--sub {
+    flex: 1 1 120px;
+  }
+  .settings-appearance-preview-wrap {
+    position: static;
+    top: auto;
+  }
+}
+
+/* Email sub-area: SMTP / Template tabs inside SectionCard (compact row, no extra scroll chrome) */
+.settings-email-subcard {
+  width: 100%;
+  min-width: 0;
+}
+.settings-email-subcard .Polaris-Tabs__Wrapper {
+  overflow-x: visible;
+  overflow-y: visible;
+}
+.settings-email-subcard [role="tablist"] {
+  gap: var(--p-space-050, 2px);
+}
+.settings-email-subcard [role="tablist"] button[role="tab"] {
+  padding-inline: var(--p-space-200, 8px);
+}
+
+/* Email templates – collapsible section (clean user-friendly layout) */
+.settings-email-collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-300, 12px);
+  padding: var(--p-space-200, 8px) var(--p-space-300, 12px) var(--p-space-200, 8px) 0;
+  min-height: 48px;
+}
+.settings-email-collapsible-header .settings-email-collapsible-trigger {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: var(--p-space-300, 12px) var(--p-space-400, 16px);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--p-border-radius-200, 8px);
+  transition: background 0.15s ease;
+}
+.settings-email-collapsible-header .settings-email-collapsible-trigger:hover {
+  background: var(--p-color-bg-surface-hover, #f6f6f7);
+}
+.settings-email-collapsible-header .settings-email-collapsible-trigger .Polaris-Icon {
+  margin: 0;
+  flex-shrink: 0;
+}
+.settings-email-send-toggle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-200, 8px);
+}
+.settings-email-send-toggle .Polaris-Checkbox {
+  margin: 0;
+}
+.settings-email-send-toggle .Polaris-Text {
+  white-space: nowrap;
+}
+
+/* Choose a template modal — modern split layout */
+.settings-template-chooser-modal {
+  display: flex;
+  width: 100%;
+  min-height: 520px;
+  height: min(70vh, 680px);
+  border-radius: var(--p-border-radius-200, 8px);
+  overflow: hidden;
+  background: var(--p-color-bg-surface-secondary, #f6f6f7);
+}
+
+.settings-template-chooser-sidebar {
+  width: 272px;
+  min-width: 220px;
+  flex-shrink: 0;
+  min-height: 100%;
+  overflow-y: auto;
+  padding: var(--p-space-300, 12px);
+  border-right: 1px solid var(--p-color-border, #e1e3e5);
+  background: var(--p-color-bg-surface, #fff);
+}
+
+.settings-template-chooser-sidebar .Polaris-OptionList {
+  margin: 0;
+}
+
+.settings-template-chooser-sidebar .Polaris-OptionList-Option {
+  border-radius: var(--p-border-radius-200, 8px);
+  margin-bottom: 2px;
+}
+
+.settings-template-chooser-sidebar .Polaris-OptionList-Option--focused,
+.settings-template-chooser-sidebar .Polaris-OptionList-Option:hover {
+  background: var(--p-color-bg-surface-hover, #f6f6f7);
+}
+
+.settings-template-chooser-sidebar .Polaris-OptionList-Option--selectable.Polaris-OptionList-Option--active {
+  background: var(--p-color-bg-surface-selected, #f1f2f4);
+  font-weight: 600;
+}
+
+.settings-template-chooser-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 100%;
+  overflow-y: auto;
+  padding: var(--p-space-400, 16px) var(--p-space-500, 20px);
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.settings-template-chooser-preview-label {
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-200, 8px);
+  margin-bottom: var(--p-space-300, 12px);
+}
+
+.settings-template-chooser-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+}
+
+/* Outer “inbox” frame — matches sent email background */
+.settings-email-preview-frame {
+  padding: var(--p-space-500, 20px) var(--p-space-300, 12px);
+  background: #f1f5f9;
+  border-radius: var(--p-border-radius-300, 12px);
+  min-height: 360px;
+}
+
+.settings-email-preview-card {
+  max-width: 560px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  box-shadow:
+    0 4px 6px -1px rgba(15, 23, 42, 0.06),
+    0 12px 32px -8px rgba(15, 23, 42, 0.1);
+}
+
+.settings-email-preview-card-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+}
+
+.settings-email-preview-card-header[data-has-bg="true"] {
+  background: var(--header-bg, #eff6ff);
+  border-bottom-color: rgba(15, 23, 42, 0.06);
+}
+
+.settings-email-preview-card-body {
+  padding: 24px 28px 28px;
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.settings-email-preview-cta-wrap {
+  margin-top: 24px;
+}
+
+.settings-email-preview-cta {
+  display: inline-block;
+  padding: 12px 26px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+/* Choose a template popover: default width */
+.settings-template-chooser-popover {
+  width: 960px;
+  max-width: 90vw;
+  min-width: 720px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+  display: flex !important;
+}
+/* Polaris Popover wrapper: use default width when it contains template chooser */
+.Polaris-Popover__ContentContainer:has(.settings-template-chooser-popover),
+.Polaris-Popover__Content:has(.settings-template-chooser-popover) {
+  max-width: 90vw !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+:has(> .settings-template-chooser-popover) {
+  max-width: 90vw !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+.Polaris-Popover:has(.settings-template-chooser-popover) {
+  max-width: 90vw !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+/* Template: customize left, email preview right */
+.settings-template-layout {
+  display: flex;
+  gap: var(--p-space-600, 24px);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.settings-template-customize {
+  flex: 1;
+  min-width: 0;
+}
+.settings-template-preview {
+  flex: 0 0 360px;
+  position: sticky;
+  top: calc(var(--p-space-400, 16px) + 60px);
+}
+@media (max-width: 900px) {
+  .settings-template-preview {
+    flex: 1 1 100%;
+    position: static;
+  }
+}
+
+/* Email preview body: isolate from Polaris so inline text colors (e.g. span style="color: red") show */
+.settings-email-preview-body {
+  all: initial;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  color: #374151;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.settings-email-preview-body *,
+.settings-email-preview-body *::before,
+.settings-email-preview-body *::after {
+  box-sizing: inherit;
+}
+
+/* Headings in email preview */
+.settings-email-preview-body h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+.settings-email-preview-body h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+.settings-email-preview-body h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+.settings-email-preview-body h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.5em 0 0.25em;
+  color: inherit;
+}
+
+/* Links in preview */
+.settings-email-preview-body a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Settings page - Main content */
+.settings-content-container {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  max-width: min(100%, 1344px);
+  padding-block-start: var(--p-space-100, 4px);
+  padding-inline-end: var(--p-space-400, 16px);
+}
+
+/* --- Mobile-responsive: Settings page --- */
+@media (max-width: 1024px) {
+  /* Match main dashboard width/padding on mobile */
+  .settings-content-container {
+    padding-inline: 0;
+    margin-inline: 0;
+    width: 100%;
+    max-width: none;
+  }
+}
+
+/* Appearance: Colors section — two color fields per row, top-aligned cells */
+.settings-appearance-colors-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--p-space-500);
+  row-gap: var(--p-space-600);
+  align-items: start;
+  min-width: 0;
+}
+.settings-appearance-colors-grid > .settings-appearance-color-field {
+  min-width: 0;
+}
+.settings-appearance-color-field .Polaris-TextField {
+  width: 100%;
+}
+.settings-appearance-color-label {
+  display: block;
+  font-size: var(--p-font-size-325, 13px);
+  font-weight: var(--p-font-weight-semibold, 600);
+  line-height: var(--p-font-line-height-500, 20px);
+  color: var(--p-color-text, #202223);
+  margin: 0;
+  padding: 0;
+}
+.settings-appearance-color-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--p-border-radius-200, 8px);
+  border: 1px solid var(--p-color-border, #c9cccf);
+  box-sizing: border-box;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  align-self: center;
+}
+.settings-appearance-color-swatch:focus-visible {
+  outline: var(--p-border-width-050) solid var(--p-color-border-focus);
+  outline-offset: var(--p-space-050);
+}
+@media (max-width: 560px) {
+  .settings-appearance-colors-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Appearance tab: balanced settings + preview widths */
+.settings-appearance-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.9fr);
+  gap: var(--p-space-500);
+  align-items: start;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .settings-appearance-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-appearance-grid .settings-appearance-preview-wrap {
+    position: static;
+    top: auto;
+  }
+}
+
+/* Appearance: prevent truncation — allow content to wrap and shrink */
+.settings-appearance-card .Polaris-ShadowBevel {
+  min-width: 0;
+  overflow: visible;
+  border-radius: var(--p-border-radius-300, 12px);
+}
+.settings-appearance-card .Polaris-ShadowBevel,
+.settings-appearance-preview-wrap .Polaris-ShadowBevel {
+  overflow: hidden;
+}
+.settings-appearance-card .Polaris-Box {
+  min-width: 0;
+}
+.settings-appearance-font-section .Polaris-InlineStack {
+  flex-wrap: wrap;
+}
+/* Only slider cells flex-grow — not the Font family Select wrapper (flex-grow caused huge vertical gap) */
+.settings-appearance-font-section .Polaris-InlineStack > .Polaris-Box {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+.settings-appearance-font-section .Polaris-Select {
+  width: 100%;
+  max-width: 100%;
+}
+.settings-appearance-font-section .Polaris-RangeSlider {
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .settings-appearance-font-section .Polaris-InlineStack > .Polaris-Box {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
+/* Appearance: Radius & spacing — RangeSlider grid */
+.settings-appearance-radius-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--p-space-500);
+  row-gap: var(--p-space-400);
+  align-items: start;
+  min-width: 0;
+}
+.settings-appearance-radius-grid > * {
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .settings-appearance-radius-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Allow description and labels to wrap instead of truncating */
+.settings-appearance-card .Polaris-Box,
+.settings-appearance-card .Polaris-Box p,
+.settings-appearance-card .Polaris-Text {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+.settings-content-container {
+  min-width: 0;
+  overflow: visible;
+}
+
+/* Language settings: keep inputs and dropdowns a consistent, compact font size */
+.settings-content-container .Polaris-TextField__Input,
+.settings-content-container .Polaris-Select__Input {
+  font-size: 14px;
+}
+
+/* Match labels and selected value text to same size */
+.settings-content-container .Polaris-Label__Text,
+.settings-content-container .Polaris-Select__SelectedOption {
+  font-size: 14px;
+}
+
+/* ─── Rich text editor: Shopify product description style ─── */
+.rich-text-editor {
+  --rte-border: var(--p-color-border, #c9cccf);
+  --rte-bg: var(--p-color-bg-surface, #fff);
+  --rte-bg-subdued: var(--p-color-bg-surface-secondary, #f6f6f7);
+  --rte-radius: var(--p-border-radius-200, 8px);
+  --rte-text: var(--p-color-text, #202223);
+  --rte-text-subdued: var(--p-color-text-subdued, #6d7175);
+  font-family: var(--p-font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+}
+
+.rich-text-editor .Polaris-Labelled__Label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--p-color-text, #202223);
+  margin-bottom: 4px;
+}
+
+.rich-text-editor-wrapper {
+  border: 1px solid var(--rte-border);
+  border-radius: var(--rte-radius);
+  background: var(--rte-bg);
+  overflow: hidden;
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+.rich-text-editor-wrapper:focus-within {
+  border-color: var(--p-color-border-info, #5c6ac4);
+  box-shadow: 0 0 0 1px var(--p-color-border-info, #5c6ac4);
+}
+
+.rich-text-editor .rich-text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--rte-bg-subdued);
+  border-bottom: 1px solid var(--rte-border);
+  min-height: 40px;
+}
+
+.rich-text-editor .rich-text-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rte-text-subdued);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.rich-text-editor .rich-text-toolbar-btn:hover {
+  background: var(--p-color-bg-surface-hover, rgba(0, 0, 0, 0.05));
+  color: var(--rte-text);
+}
+
+.rich-text-editor .rich-text-toolbar-btn:active {
+  background: var(--p-color-bg-surface-active, rgba(0, 0, 0, 0.08));
+}
+
+.rich-text-editor .rich-text-toolbar-btn .Polaris-Icon,
+.rich-text-editor .rich-text-toolbar-btn .rich-text-toolbar-icon-svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.rich-text-editor .rich-text-toolbar-btn .rich-text-toolbar-icon-svg svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+  color: var(--rte-text-subdued);
+}
+
+.rich-text-editor .rich-text-toolbar-btn:hover .rich-text-toolbar-icon-svg svg {
+  color: var(--rte-text);
+}
+
+.rich-text-editor .rich-text-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--rte-border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Format dropdown: Polaris Button as activator - blue text like Shopify description editor */
+.rich-text-editor .rich-text-toolbar .Polaris-Button--plain {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--p-color-text-interactive, #2c6ecb);
+}
+
+.rich-text-editor .rich-text-toolbar .Polaris-Button--plain:hover {
+  color: var(--p-color-text-interactive-hovered, #1f5199);
+  background: var(--p-color-bg-surface-hover, rgba(0, 0, 0, 0.05));
+}
+
+.rich-text-editor .rich-text-body,
+.rich-text-editor .rich-text-source {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 16px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--rte-text);
+  background: var(--rte-bg);
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.rich-text-editor .rich-text-body {
+  overflow-y: auto;
+}
+
+/* Headings in editor so h1–h4 are visually distinct */
+.rich-text-editor .rich-text-body h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0.5em 0 0.25em;
+}
+.rich-text-editor .rich-text-body h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.5em 0 0.25em;
+}
+.rich-text-editor .rich-text-body h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.5em 0 0.25em;
+}
+.rich-text-editor .rich-text-body h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.5em 0 0.25em;
+}
+
+.rich-text-editor .rich-text-body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--rte-text-subdued);
+}
+
+.rich-text-editor .rich-text-source {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.rich-text-editor .rich-text-help {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--rte-text-subdued);
+}
+
+.rich-text-editor .rich-text-color-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  padding: 8px;
+  background: var(--rte-bg);
+  border: 1px solid var(--rte-border);
+  border-radius: var(--rte-radius);
+  box-shadow: var(--p-shadow-400, 0 4px 12px rgba(0, 0, 0, 0.1));
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.rich-text-editor .rich-text-color-swatches {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.rich-text-editor .rich-text-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid var(--rte-bg);
+  box-shadow: 0 0 0 1px var(--rte-border);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.rich-text-editor .rich-text-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.rich-text-editor .rich-text-color-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rte-border);
+}
+
+.rich-text-editor .rich-text-color-custom-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--rte-text-subdued);
+  white-space: nowrap;
+}
+
+.rich-text-editor .rich-text-color-input {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--rte-border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.rich-text-editor .rich-text-color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.rich-text-editor .rich-text-color-input::-webkit-color-swatch {
+  border-radius: 3px;
+  border: none;
+}
+
+.rich-text-editor .rich-text-color-hex {
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: var(--rte-text-subdued);
+}

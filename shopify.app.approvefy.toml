@@ -1,0 +1,24 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "d915bdc3b1b08393f6863697d989c5a8"
+name = "Approvefy"
+application_url = "https://approvefy-app.vercel.app"
+embedded = true
+
+[webhooks]
+api_version = "2026-01"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,read_locales,write_app_proxy,write_customers,write_products"
+
+[auth]
+redirect_urls = [ "https://approvefy-app.vercel.app/auth/callback", "https://approvefy-app.vercel.app/api/auth" ]
+
+[app_proxy]
+url = "https://approvefy-app.vercel.app/api"
+subpath = "customer-approval"
+prefix = "apps"
+
+[build]
+automatically_update_urls_on_dev = true

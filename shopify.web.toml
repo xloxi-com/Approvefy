@@ -1,0 +1,9 @@
+name = "React Router"
+roles = ["frontend", "backend"]
+webhooks_path = "/webhooks/app/uninstalled"
+port = 8099
+
+[commands]
+# Prisma generate can hit EPERM on Windows when engine file is locked; continue safely.
+predev = "node scripts/prisma-generate-safe.cjs"
+dev = "npx prisma migrate deploy && npm exec react-router dev"

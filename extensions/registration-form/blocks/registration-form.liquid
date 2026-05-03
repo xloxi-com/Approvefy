@@ -1,0 +1,79 @@
+{% comment %}
+  Registration Form (section block) — same backend form as the Approvefy app embed.
+  Renders the live form on the storefront inside this block. Also enable the
+  "Approvefy" app embed (Theme settings → App embeds) so scripts load globally,
+  or this block loads assets itself via the embed snippet.
+{% endcomment %}
+
+<div
+  class="custom-registration-form"
+  data-approvefy-registration-block
+  {% if block.settings.heading != blank %}
+    data-heading="{{ block.settings.heading | escape }}"
+  {% endif %}
+  {% if block.settings.description != blank %}
+    data-description="{{ block.settings.description | strip_newlines | escape }}"
+  {% endif %}
+>
+  {% if request.design_mode %}
+    <p
+      class="approvefy-editor-hint"
+      style="padding:16px;margin-bottom:16px;border:1px dashed #d1d5db;border-radius:8px;background:#f9fafb;font-size:14px;"
+    >
+      Preview: the live form loads on the real storefront. Use <strong>Theme settings → App embeds → Approvefy</strong> to enable the app embed if the form does not appear.
+    </p>
+  {% endif %}
+  <div class="approvefy-registration-mount">
+    <style>
+      @keyframes approvefyMountSpin { to { transform: rotate(360deg); } }
+    </style>
+    <div class="approvefy-form-loading" style="padding:32px 16px;text-align:center;color:#6b7280;font-size:15px;line-height:1.5;">
+      <div style="display:inline-flex;align-items:center;justify-content:center;gap:12px;">
+        <span style="width:22px;height:22px;border:2px solid #e5e7eb;border-top-color:#111827;border-radius:50%;display:inline-block;animation:approvefyMountSpin .75s linear infinite;flex-shrink:0;" aria-hidden="true"></span>
+        <span>Loading form…</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% render 'registration-form-embed', block: block %}
+
+{% schema %}
+{
+  "name": "Registration Form",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Form Heading",
+      "default": "Create Account"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Form Description",
+      "default": "Please fill out the information below to create your account."
+    },
+    {
+      "type": "text",
+      "id": "form_id",
+      "label": "Form to display",
+      "placeholder": "Leave blank for default form",
+      "info": "Paste a Form ID from the app (Form configuration) to use a specific form. Leave blank for your default form."
+    },
+    {
+      "type": "text",
+      "id": "pending_message",
+      "label": "Pending approval message (English)",
+      "default": "Thank you for registering! Your account is pending approval. You will receive an email once approved."
+    },
+    {
+      "type": "text",
+      "id": "pending_message_fr",
+      "label": "Pending approval message (French)",
+      "default": "Merci pour votre inscription ! Votre compte est en attente d'approbation. Vous recevrez un e-mail une fois approuvé."
+    }
+  ]
+}
+{% endschema %}

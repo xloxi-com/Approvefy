@@ -1,0 +1,2 @@
+-- This migration folder was missing its SQL file.
+-- Intentionally left as a no-op to keep migration history consistent.
