@@ -7,7 +7,6 @@ import {
   Text,
   LegacyCard,
   BlockStack,
-  Frame,
   Button,
   Box,
   InlineStack,
@@ -114,8 +113,7 @@ export default function Index() {
   const navigate = useNavigate();
 
   return (
-    <Frame>
-      <Page title="Approvefy" fullWidth>
+    <Page title="Approvefy" fullWidth>
         <div className="app-nav-tabs-mobile" style={{ marginBottom: 12 }}>
         <BlockStack gap="200" inlineAlign="start">
           <InlineStack gap="100" wrap>
@@ -283,7 +281,6 @@ export default function Index() {
             </BlockStack>
           </LegacyCard>
         )}
-      </Page>
-    </Frame>
+    </Page>
   );
 }

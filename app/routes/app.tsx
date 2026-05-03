@@ -6,7 +6,7 @@ import {
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import { AppProvider as PolarisAppProvider, Frame } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
 
 import { authenticate } from "../shopify.server";
@@ -30,7 +30,9 @@ export default function App() {
           <s-link href="/app/pricing">Pricing</s-link>
           <s-link href="/app/settings">Settings</s-link>
         </s-app-nav>
-        <Outlet />
+        <Frame>
+          <Outlet />
+        </Frame>
       </PolarisAppProvider>
     </AppProvider>
   );
