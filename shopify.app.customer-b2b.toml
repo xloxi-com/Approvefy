@@ -1,6 +1,6 @@
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "d915bdc3b1b08393f6863697d989c5a8"
+client_id = "d915bdc3b1b08393f68636970989c5e8"
 name = "Approvefy"
 application_url = "https://approvefy.vercel.app"
 embedded = true

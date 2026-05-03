@@ -5,7 +5,7 @@
 # Local without Shopify tunnel: `npm run dev`. Full CLI wrappers: `npm run dev:shopify` / `npm run shopify:dev`.
 # Production URLs: keep `application_url`, `redirect_urls`, and `app_proxy.url` in sync with Vercel (or custom domain). Match `SHOPIFY_APP_URL` in `.env` / deployment env.
 
-client_id = "d915bdc3b1b08393f6863697d989c5a8"
+client_id = "d915bdc3b1b08393f68636970989c5e8"
 name = "Approvefy"
 application_url = "https://approvefy.vercel.app"
 embedded = true
