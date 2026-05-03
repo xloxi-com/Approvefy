@@ -1002,9 +1002,9 @@ export default function CustomerDetailPage() {
               {data.status === "denied" && (
                 <InlineStack gap="200" blockAlign="start">
                   <Button
-                    loading={fetcher.state !== "idle"}
                     variant="secondary"
                     onClick={() => fetcher.submit({ intent: "resendRejection" }, { method: "post" })}
+                    disabled={fetcher.state !== "idle"}
                   >
                     Resend rejection email
                   </Button>
@@ -1013,9 +1013,9 @@ export default function CustomerDetailPage() {
               {data.status === "approved" && (
                 <InlineStack gap="200" blockAlign="start">
                   <Button
-                    loading={fetcher.state !== "idle"}
                     variant="secondary"
                     onClick={() => fetcher.submit({ intent: "resendApproval" }, { method: "post" })}
+                    disabled={fetcher.state !== "idle"}
                   >
                     Resend approval email
                   </Button>
@@ -1085,7 +1085,6 @@ export default function CustomerDetailPage() {
                 <Button
                   variant="primary"
                   submit
-                  loading={isSaving}
                   disabled={isSaving || !!phoneError}
                 >
                   Save changes
@@ -1107,8 +1106,7 @@ export default function CustomerDetailPage() {
                 <Button
                   variant="primary"
                   tone="critical"
-                  loading={deleteFetcher.state !== "idle"}
-                  disabled={isSaving}
+                  disabled={isSaving || deleteFetcher.state !== "idle"}
                   onClick={() => setShowDeleteModal(true)}
                 >
                   Delete customer

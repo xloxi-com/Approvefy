@@ -12,7 +12,6 @@ import {
   Box,
   InlineStack,
   Icon,
-  Spinner,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -52,8 +51,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const setupTasksComplete = (formsCount > 0 ? 1 : 0) + (hasSettings ? 1 : 0);
 
   // Analytics (pending/approved/denied counts) is not part of the above-the-fold "Setup guide".
-  // Return the unsettled promise so React Router streams it; <Await> + <Suspense> renders
-  // a skeleton until it lands. .catch keeps a slow DB from blocking the home page render.
+  // Return the unsettled promise so React Router streams it; <Await> + <Suspense> with a
+  // minimal fallback avoids blocking home paint. .catch keeps a slow DB off the critical path.
   const analyticsPromise: Promise<Analytics | null> = getAnalytics(shop).catch(
     (err: unknown) => {
       console.warn("[Home] analytics fetch failed:", err);
@@ -74,17 +73,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     { headers: { "Server-Timing": `db;dur=${dbMs}` } }
   );
 };
-
-function AnalyticsSummarySkeleton() {
-  return (
-    <InlineStack gap="200" blockAlign="center">
-      <Spinner accessibilityLabel="Loading analytics" size="small" />
-      <Text as="span" variant="bodySm" tone="subdued">
-        Loading customer counts…
-      </Text>
-    </InlineStack>
-  );
-}
 
 function AnalyticsSummary({ analytics }: { analytics: Analytics | null }) {
   if (!analytics) {
@@ -255,7 +243,7 @@ export default function Index() {
                 </div>
               </BlockStack>
               <Box paddingBlockStart="200">
-                <Suspense fallback={<AnalyticsSummarySkeleton />}>
+                <Suspense fallback={null}>
                   <Await
                     resolve={analytics}
                     errorElement={

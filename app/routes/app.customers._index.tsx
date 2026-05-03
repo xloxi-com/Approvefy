@@ -35,7 +35,6 @@ import {
   Select,
   InlineStack,
   Icon,
-  Spinner,
 } from "@shopify/polaris";
 import {
   LayoutColumns2Icon,
@@ -411,7 +410,6 @@ export default function Index() {
     limitParam: initialLimitParam,
     totalCount,
   } = useLoaderData<typeof loader>();
-  /** Document navigation would set parent `navigation.state` to submitting/loading and show a full-page spinner in `app.tsx`. Fetcher submissions revalidate the route without that global overlay. */
   const mutationFetcher = useFetcher<typeof action>();
   const actionData = mutationFetcher.data;
   const submit = useSubmit();
@@ -457,7 +455,6 @@ export default function Index() {
     }
     return new Date().getFullYear();
   });
-  const [exportLoading, setExportLoading] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportScope, setExportScope] = useState<"current" | "all" | "selected">("all");
   const [singleDeleteCustomerId, setSingleDeleteCustomerId] = useState<string | null>(null);
@@ -639,13 +636,11 @@ export default function Index() {
         params.set("ids", currentIds.join(","));
       }
       const url = `/app/export-customers?${params.toString()}`;
-      setExportLoading(true);
       setShowExportModal(false);
       try {
         const res = await fetch(url, { method: "GET", credentials: "include" });
         const contentType = res.headers.get("Content-Type") || "";
         if (!res.ok || !contentType.includes("text/csv")) {
-          setExportLoading(false);
           return;
         }
         const blob = await res.blob();
@@ -659,8 +654,8 @@ export default function Index() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(a.href);
-      } finally {
-        setExportLoading(false);
+      } catch {
+        /* ignore */
       }
     },
     [searchValue, selectedTab, fromDate, toDate, selectedResources, customers]
@@ -1166,13 +1161,10 @@ export default function Index() {
         size="large"
       >
         <Modal.Section>
-          {customerDetailFetcher.state === "loading" && (
-            <Text as="p">Loading...</Text>
-          )}
-          {customerDetailFetcher.state !== "loading" && customerDetailFetcher.data?.error && (
+          {customerDetailFetcher.data?.error && (
             <Text as="p" tone="critical">{customerDetailFetcher.data.error}</Text>
           )}
-          {customerDetailFetcher.state !== "loading" && customerDetailFetcher.data && !customerDetailFetcher.data.error && (
+          {customerDetailFetcher.data && !customerDetailFetcher.data.error && (
             <BlockStack gap="300">
               <Text as="p" fontWeight="bold">{customerDetailFetcher.data.firstName} {customerDetailFetcher.data.lastName}</Text>
               <div>
@@ -1264,7 +1256,6 @@ export default function Index() {
         primaryAction={{
           content: "Export",
           onAction: handleExportModalExport,
-          loading: exportLoading,
         }}
         secondaryActions={[
           {
@@ -1441,19 +1432,10 @@ export default function Index() {
                       />
                     </div>
                     <div className="app-index-toolbar-actions" style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                      {mutationInFlight ? (
-                        <InlineStack gap="200" blockAlign="center">
-                          <Spinner size="small" />
-                          <Text as="span" tone="subdued">
-                            Updating customers…
-                          </Text>
-                        </InlineStack>
-                      ) : null}
                       <Button
                         icon={RefreshIcon}
                         variant="secondary"
                         accessibilityLabel="Reload customers"
-                        loading={revalidator.state === "loading"}
                         onClick={() => revalidator.revalidate()}
                         disabled={mutationInFlight}
                       />
@@ -1471,7 +1453,6 @@ export default function Index() {
                           setExportScope(selectedResources.length > 0 ? "selected" : "all");
                           setShowExportModal(true);
                         }}
-                        loading={exportLoading}
                         variant="secondary"
                       >
                         Export CSV
