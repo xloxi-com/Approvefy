@@ -45,7 +45,7 @@ import {
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getSmtpSettings, upsertSmtpSettings, verifySmtpCredentials } from "../lib/smtp.server";
+import { getSmtpSettings, upsertSmtpSettings } from "../lib/smtp.server";
 import { getEmailTemplateBySlug, upsertRejectionTemplate, upsertApprovalTemplate } from "../models/email-template.server";
 import { CORE_LANGUAGES, normalizeLangCode, coreLanguageName, type LanguageOption as CoreLanguageOption } from "../lib/languages";
 import { normalizeThemeSettings, THEME_DEFAULTS, type ThemeSettings } from "../lib/theme-settings";
@@ -914,27 +914,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         if (!smtpUser) smtpUser = smtpFromEmail;
     }
 
-    const smtpPasswordTrimmed = smtpPassword.trim();
-    let smtpPasswordVerifiedFlag = false;
-    if (smtpPasswordTrimmed && smtpHost && smtpFromEmail) {
-        if (!smtpUser) {
-            return {
-                error: "Enter SMTP username (your full email address, usually the same as From email).",
-            };
-        }
-        const verified = await verifySmtpCredentials({
-            host: smtpHost,
-            port: smtpPort,
-            secure: smtpSecure,
-            user: smtpUser,
-            password: smtpPasswordTrimmed,
-        });
-        if (!verified.ok) {
-            return { error: verified.message };
-        }
-        smtpPasswordVerifiedFlag = true;
-    }
-
     try {
         // Theme/appearance (including reset-to-defaults) persist only when user clicks Save; no other path writes these.
         type AppSettingsUpsertUpdate = Parameters<typeof prisma.appSettings.upsert>[0]["update"];
@@ -971,7 +950,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 port: smtpPort,
                 secure: smtpSecure,
                 user: smtpUser || undefined,
-                password: smtpPasswordTrimmed || undefined,
+                password: smtpPassword || undefined,
                 fromEmail: smtpFromEmail,
                 fromName: smtpFromName || undefined,
             });
@@ -986,11 +965,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             bodyHtml: settingsToPersist.approveEmailBody,
         });
         const fresh = await prisma.appSettings.findUnique({ where: { shop }, select: { updatedAt: true } });
-        return {
-            success: true,
-            settingsUpdatedAt: fresh?.updatedAt.toISOString() ?? null,
-            ...(smtpPasswordVerifiedFlag && { smtpPasswordVerified: true }),
-        };
+        return { success: true, settingsUpdatedAt: fresh?.updatedAt.toISOString() ?? null };
     } catch (e) {
         console.error("Settings save failed:", e);
         return { error: "Failed to save settings" };
@@ -1830,11 +1805,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                 </div>
                 {showToast && (
                     <Toast
-                        content={
-                            (actionData as { smtpPasswordVerified?: boolean } | undefined)?.smtpPasswordVerified
-                                ? "Settings saved successfully. SMTP password verified successfully."
-                                : "Settings saved successfully!"
-                        }
+                        content="Settings saved successfully!"
                         onDismiss={() => setShowToast(false)}
                     />
                 )}
