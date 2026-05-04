@@ -1471,7 +1471,11 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     // Only update baseline when we receive a new success from the server (Save clicked).
     // Do NOT depend on customerApprovalSettings etc., or Reset would re-run this and overwrite baseline with reset state, hiding Discard.
     useEffect(() => {
-        const data = actionData as { success?: boolean; settingsUpdatedAt?: string | null } | undefined;
+        const data = actionData as {
+            success?: boolean;
+            settingsUpdatedAt?: string | null;
+            translationsSaved?: boolean;
+        } | undefined;
         if (data?.success) {
             const at = data.settingsUpdatedAt ?? null;
             if (at) setLastSavedAtDisplay(at);
@@ -1496,6 +1500,11 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                 appSettingsUpdatedAt: at,
             };
             setBaselineVersion((v) => v + 1);
+            // Password is only for “pending change”; after full settings save it is persisted and must be cleared
+            // so hasUnsavedChanges does not stay true. (Skip when only translations were saved — user may still be editing SMTP.)
+            if (!data.translationsSaved) {
+                setSmtpPassword("");
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on actionData so Reset doesn't overwrite baseline
     }, [actionData]);
