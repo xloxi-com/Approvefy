@@ -1655,7 +1655,7 @@ export default function FormBuilder() {
             revalidator.revalidate();
         }
     }, [
-        actionData?.success,
+        actionData,
         fields,
         name,
         formType,
