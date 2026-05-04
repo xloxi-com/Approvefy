@@ -314,18 +314,19 @@ function assignSortKeys(list: FormField[]): FormField[] {
 }
 
 /**
- * Parse options text (one per line). Interior blank lines are collapsed.
- * Preserves one trailing blank line so Enter while typing round-trips — otherwise
- * `join("\\n")` would erase the newline and the textarea stays single-line.
+ * Parse options text (one per line). Do not trim lines — trimming removed trailing
+ * spaces on every keystroke so Space “did not work”. Interior completely empty
+ * lines are collapsed; one trailing blank line is kept for Enter while typing.
+ * `normalizeFieldOptions` / save still trim for persisted JSON.
  */
 function parseOptionsFromText(text: string): string[] {
     const rawLines = text.split(/\r?\n|\r/);
     const n = rawLines.length;
     const out: string[] = [];
     for (let i = 0; i < n; i++) {
-        const t = rawLines[i].trim();
-        if (t !== "") {
-            out.push(t);
+        const line = rawLines[i];
+        if (line !== "") {
+            out.push(line);
         } else if (i === n - 1 && n > 0) {
             out.push("");
         }
