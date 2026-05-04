@@ -1,4 +1,4 @@
-import { Suspense, useId } from "react";
+import { Suspense, useId, type ReactNode } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { Await, data, useLoaderData, useNavigate, Link } from "react-router";
 import {
@@ -11,14 +11,15 @@ import {
   InlineStack,
   Icon,
   ProgressBar,
-  InlineGrid,
   Banner,
   Divider,
+  Layout,
+  Badge,
 } from "@shopify/polaris";
 import { CheckCircleIcon, ViewIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getAnalytics } from "../models/approval.server";
+import { getAnalytics } from "../models/registration-analytics.server";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
 
 type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
@@ -58,7 +59,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     (err: unknown) => {
       console.warn("[Home] analytics fetch failed:", err);
       return null;
-    }
+    },
   );
 
   return data(
@@ -72,7 +73,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       setupTasksTotal,
       analytics: analyticsPromise,
     },
-    { headers: { "Server-Timing": `db;dur=${dbMs}` } }
+    { headers: { "Server-Timing": `db;dur=${dbMs}` } },
   );
 };
 
@@ -106,17 +107,12 @@ function LiveStatusPanel({ analytics }: { analytics: Analytics | null }) {
   );
 
   return (
-    <Card background="bg-surface-secondary">
-      <BlockStack gap="300">
-        <Text
-          as="p"
-          variant="bodySm"
-          fontWeight="bold"
-          tone="subdued"
-        >
-          <span style={{ letterSpacing: "0.06em", textTransform: "uppercase" }}>Live status</span>
+    <Card background="bg-surface-secondary" padding="500">
+      <BlockStack gap="400">
+        <Text as="p" variant="bodySm" fontWeight="bold" tone="subdued">
+          <span className="setup-guide-live-status-label">Live status</span>
         </Text>
-        <BlockStack gap="200">
+        <BlockStack gap="300">
           {row("Pending", pending)}
           {row("Approved", approved)}
           {row("Rejected", rejected)}
@@ -126,69 +122,81 @@ function LiveStatusPanel({ analytics }: { analytics: Analytics | null }) {
   );
 }
 
-function CompletedTaskCard({
-  complete,
+function GuideAnnotatedBlock({
+  id,
+  stepLabel,
   title,
   description,
-  actionLabel,
-  actionHref,
+  children,
 }: {
-  complete: boolean;
+  id?: string;
+  stepLabel: string;
   title: string;
   description: string;
-  actionLabel: string;
-  actionHref: string;
+  children: ReactNode;
 }) {
   return (
-    <div style={{ opacity: complete ? 0.92 : 1 }}>
-      <Card>
+    <Layout.AnnotatedSection id={id} title={title} description={description}>
+      <Box paddingBlockStart={{ xs: "200", lg: "0" }}>
         <BlockStack gap="300">
-          <InlineStack gap="300" blockAlign="start" wrap={false}>
-            <Box flex="0 0 auto">
-              <Box paddingBlockStart="025">
-                {complete ? (
-                  <Icon
-                    source={CheckCircleIcon}
-                    tone="success"
-                    accessibilityLabel="Completed"
-                  />
-                ) : (
-                  <Box
-                    width="20px"
-                    height="20px"
-                    borderRadius="full"
-                    borderWidth="025"
-                    borderColor="border"
-                    background="bg-fill-secondary"
-                  />
-                )}
-              </Box>
-            </Box>
-            <BlockStack gap="200">
-              <Text
-                as="p"
-                variant="headingSm"
-                tone={complete ? "subdued" : undefined}
-              >
-                <span style={complete ? { textDecoration: "line-through" } : undefined}>
-                  {title}
-                </span>
-              </Text>
-              <Text as="p" variant="bodySm" tone="subdued">
-                {description}
-              </Text>
-              <Box>
-                <Link to={actionHref} prefetch="render">
-                  <Button variant="secondary" size="micro">
-                    {actionLabel}
-                  </Button>
-                </Link>
-              </Box>
-            </BlockStack>
-          </InlineStack>
+          <Text as="p" variant="bodySm" tone="subdued">
+            {stepLabel}
+          </Text>
+          {children}
         </BlockStack>
-      </Card>
-    </div>
+      </Box>
+    </Layout.AnnotatedSection>
+  );
+}
+
+function StepStatusRow({
+  complete,
+  heading,
+  body,
+  action,
+}: {
+  complete: boolean;
+  heading: string;
+  body: string;
+  action: ReactNode;
+}) {
+  return (
+    <Card padding="500">
+      <BlockStack gap="400">
+        <InlineStack align="space-between" blockAlign="center" wrap gap="300">
+          <InlineStack gap="300" blockAlign="center" wrap={false}>
+            <Box flex="0 0 auto">
+              {complete ? (
+                <Icon source={CheckCircleIcon} tone="success" accessibilityLabel="Completed" />
+              ) : (
+                <Box
+                  width="22px"
+                  height="22px"
+                  borderRadius="full"
+                  borderWidth="025"
+                  borderColor="border"
+                  background="bg-surface"
+                />
+              )}
+            </Box>
+            <Text as="span" variant="headingSm" tone={complete ? "subdued" : undefined}>
+              <span
+                style={
+                  complete ? { textDecoration: "line-through", textDecorationColor: "var(--p-color-border)" } : undefined
+                }
+              >
+                {heading}
+              </span>
+            </Text>
+          </InlineStack>
+          <Badge tone={complete ? "success" : "attention"}>{complete ? "Done" : "To do"}</Badge>
+        </InlineStack>
+        <Text as="p" variant="bodyMd" tone="subdued">
+          {body}
+        </Text>
+        <Box>{action}</Box>
+      </BlockStack>
+    </Card>
   );
 }
 
@@ -216,10 +224,23 @@ export default function Index() {
     </Button>
   );
 
+  const formDone = formsCount > 0;
+  const settingsDone = hasSettings;
+
   return (
     <div className="app-home-page">
-      <Page title={APP_DISPLAY_NAME} subtitle="Setup guide" fullWidth>
-        <div className="app-home-main">
+      <Page
+        title={APP_DISPLAY_NAME}
+        subtitle="Setup guide — full checklist"
+        fullWidth
+        secondaryActions={[
+          { content: "View customers", onAction: () => navigate("/app/customers") },
+          { content: "Form Builder", onAction: () => navigate("/app/form-config") },
+          { content: "Settings", onAction: () => navigate("/app/settings") },
+          { content: "Support", url: APP_URL, external: true },
+        ]}
+      >
+        <div className="app-home-main app-setup-guide app-setup-guide--annotated">
           <BlockStack gap="600">
             <div className="app-nav-tabs-mobile">
               <Box paddingBlockEnd="200">
@@ -262,120 +283,127 @@ export default function Index() {
               </Banner>
             )}
 
-            <div className="app-backend-card">
-              <Card>
-                <BlockStack gap="300">
-                  <InlineStack align="space-between" blockAlign="center">
+            <Box className="app-backend-card setup-guide-overview-card">
+              <Card padding="500">
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">
+                    Overview
+                  </Text>
+                  <Text as="p" variant="bodyMd" tone="subdued">
+                    Follow all three steps so Approvefy can show your registration form on the storefront and route
+                    new sign-ups into the approval workflow.
+                  </Text>
+                  <Divider />
+                  <InlineStack align="space-between" blockAlign="center" wrap={false}>
                     <Text id={progressLabelId} as="span" variant="headingSm">
                       {setupTasksComplete} of {setupTasksTotal} tasks complete
                     </Text>
-                    <Text as="span" variant="bodySm" tone="subdued">
+                    <Text as="span" variant="bodySm" fontWeight="medium" tone="subdued">
                       {progressPercent}%
                     </Text>
                   </InlineStack>
                   <ProgressBar
                     progress={progressPercent}
                     tone="success"
-                    size="small"
+                    size="medium"
                     ariaLabelledBy={progressLabelId}
                   />
                 </BlockStack>
               </Card>
-            </div>
+            </Box>
 
-            <InlineGrid columns={{ xs: 1, md: ["twoThirds", "oneThird"] }} gap="600">
-              <BlockStack gap="400">
-                <div className="app-backend-card">
-                  <Card padding="0">
-                    <Box padding="600">
-                      <InlineStack gap="400" blockAlign="start" wrap={false}>
-                        <Box flex="0 0 auto">
-                          <Box paddingBlockStart="100">
-                            <Box
-                              width="24px"
-                              height="24px"
-                              borderRadius="full"
-                              borderWidth="025"
-                              borderColor="border"
-                            />
-                          </Box>
-                        </Box>
-                        <BlockStack gap="400">
-                          <BlockStack gap="200">
-                            <Text as="h3" variant="headingMd">
-                              Enable app embed block
-                            </Text>
-                            <Text as="p" variant="bodyMd" tone="subdued">
-                              Turn on the Approvefy app embed in your theme so the registration form
-                              appears on your storefront. This is essential for the app to function
-                              properly on your live site.
-                            </Text>
-                          </BlockStack>
-                          <InlineStack gap="300" wrap>
-                            <Button url={themeEditorUrl} variant="primary" external>
-                              Enable app embed
-                            </Button>
-                            <Button url={storefrontUrl} variant="secondary" external>
-                              Preview theme
-                            </Button>
-                          </InlineStack>
-                        </BlockStack>
-                      </InlineStack>
-                    </Box>
-                    <Box
-                      background="bg-surface-secondary"
-                      paddingInline="600"
-                      paddingBlock="400"
-                      borderBlockStartWidth="025"
-                      borderColor="border"
-                    >
-                      <InlineStack align="space-between" blockAlign="center" gap="400" wrap>
-                        <Text as="span" variant="bodySm" tone="subdued">
-                          Required step for storefront activation
-                        </Text>
-                        <span className="setup-guide-tutorial-link">{tutorialLink}</span>
-                      </InlineStack>
-                    </Box>
-                  </Card>
-                </div>
-
-                {setupTasksComplete < 2 ? (
-                  <Card>
-                    <BlockStack gap="300">
+            <Layout>
+              <GuideAnnotatedBlock
+                id="setup-step-embed"
+                stepLabel="Step 1 · Storefront activation"
+                title="Enable app embed block"
+                description={
+                  "Required: the embed loads scripts and mounts the form in your theme (Theme settings → App embeds → Approvefy)."
+                }
+              >
+                <Card padding="0">
+                  <Box padding="500">
+                    <BlockStack gap="500">
                       <Text as="p" variant="bodyMd" tone="subdued">
-                        Complete the remaining steps above, then manage customer registrations under{" "}
-                        <Text as="span" variant="bodyMd" fontWeight="semibold">
-                          Customers
-                        </Text>{" "}
-                        in the app navigation.
+                        Turn on the Approvefy app embed in your theme so the registration form appears on your storefront.
                       </Text>
-                      <Text as="p" variant="bodySm" tone="subdued">
-                        After enabling the embed, creating a form, and saving settings, open the{" "}
-                        <Link to="/app/customers">customer list</Link>.
-                      </Text>
+                      <InlineStack gap="300" wrap blockAlign="center">
+                        <Button url={themeEditorUrl} variant="primary" external>
+                          Enable app embed
+                        </Button>
+                        <Button url={storefrontUrl} variant="secondary" external>
+                          Preview theme
+                        </Button>
+                      </InlineStack>
                     </BlockStack>
-                  </Card>
-                ) : null}
-              </BlockStack>
+                  </Box>
+                  <Box
+                    background="bg-surface-secondary"
+                    paddingInline="500"
+                    paddingBlock="450"
+                    borderBlockStartWidth="025"
+                    borderColor="border"
+                  >
+                    <InlineStack align="space-between" blockAlign="center" gap="400" wrap>
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        Required step for storefront activation
+                      </Text>
+                      <span className="setup-guide-tutorial-link">{tutorialLink}</span>
+                    </InlineStack>
+                  </Box>
+                </Card>
+              </GuideAnnotatedBlock>
 
-              <BlockStack gap="600">
-                <CompletedTaskCard
-                  complete={formsCount > 0}
-                  title="Create a registration form"
-                  description="Build your first form in Form Builder and choose which fields to collect."
-                  actionLabel={formsCount > 0 ? "Form Builder" : "Go to Form Builder"}
-                  actionHref="/app/form-config"
+              <GuideAnnotatedBlock
+                stepLabel="Step 2 · Registration form"
+                title="Create a registration form"
+                description={
+                  "Build at least one form in Form Builder. Leave the theme embed \"Form ID\" blank to use your default form."
+                }
+              >
+                <StepStatusRow
+                  complete={formDone}
+                  heading="Create a registration form"
+                  body="Build your first form in Form Builder and choose which fields to collect."
+                  action={
+                    <Link to="/app/form-config" prefetch="render">
+                      <Button variant={formDone ? "secondary" : "primary"} size="slim">
+                        {formDone ? "Open Form Builder" : "Go to Form Builder"}
+                      </Button>
+                    </Link>
+                  }
                 />
-                <CompletedTaskCard
-                  complete={hasSettings}
-                  title="Configure settings"
-                  description="Set languages, appearance, and approval rules for new registrations."
-                  actionLabel={hasSettings ? "Settings" : "Go to Settings"}
-                  actionHref="/app/settings"
+              </GuideAnnotatedBlock>
+
+              <GuideAnnotatedBlock
+                stepLabel="Step 3 · Behaviour & branding"
+                title="Configure settings"
+                description={
+                  "Set languages, form appearance, and approval workflow (SMTP, notifications, storefront messages)."
+                }
+              >
+                <StepStatusRow
+                  complete={settingsDone}
+                  heading="Configure settings"
+                  body="Set languages, appearance, and approval rules for new registrations."
+                  action={
+                    <Link to="/app/settings" prefetch="render">
+                      <Button variant={settingsDone ? "secondary" : "primary"} size="slim">
+                        {settingsDone ? "Open Settings" : "Go to Settings"}
+                      </Button>
+                    </Link>
+                  }
                 />
+              </GuideAnnotatedBlock>
+
+              <GuideAnnotatedBlock
+                stepLabel="Monitor"
+                title="Registration pipeline"
+                description="Counts update as customers submit applications and you approve or reject them."
+              >
                 <Suspense
                   fallback={
-                    <Card>
+                    <Card padding="500">
                       <Text as="p" variant="bodySm" tone="subdued">
                         Loading live status…
                       </Text>
@@ -385,49 +413,37 @@ export default function Index() {
                   <Await
                     resolve={analytics}
                     errorElement={
-                      <Card>
+                      <Card padding="500">
                         <Text as="p" variant="bodySm" tone="subdued">
                           Live status unavailable.
                         </Text>
                       </Card>
                     }
                   >
-                    {(resolved) => (
-                      <div className="app-backend-card">
-                        <LiveStatusPanel analytics={resolved} />
-                      </div>
-                    )}
+                    {(resolved) => <LiveStatusPanel analytics={resolved} />}
                   </Await>
                 </Suspense>
-              </BlockStack>
-            </InlineGrid>
+              </GuideAnnotatedBlock>
+            </Layout>
 
             <Divider />
 
             <Box paddingBlock="400">
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "16px",
-                }}
-              >
+              <div className="setup-guide-footer-row">
                 <Text as="p" variant="bodySm" tone="subdued">
                   © {APP_DISPLAY_NAME} {year}
                 </Text>
                 <div className="setup-guide-footer-links">
-                  <InlineStack gap="400" wrap>
-                    <Link to="/app/customers" prefetch="render" style={{ textDecoration: "none" }}>
-                      <Button variant="plain" tone="subdued">
+                  <InlineStack gap="500" wrap>
+                    <Link to="/app/customers" prefetch="render" className="setup-guide-footer-link">
+                      <Button variant="plain" tone="primary">
                         View Customers
                       </Button>
                     </Link>
-                    <Button variant="plain" tone="subdued" url={APP_URL} external>
+                    <Button variant="plain" tone="primary" url={APP_URL} external>
                       Support
                     </Button>
-                    <Button variant="plain" tone="subdued" url={SETUP_TUTORIAL_URL} external>
+                    <Button variant="plain" tone="primary" url={SETUP_TUTORIAL_URL} external>
                       Documentation
                     </Button>
                   </InlineStack>

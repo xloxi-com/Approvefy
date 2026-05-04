@@ -45,9 +45,9 @@ import {
   RefreshIcon,
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
+import { getAnalytics } from "../models/registration-analytics.server";
 import {
   getCustomers,
-  getAnalytics,
   getApprovedTags,
   approveCustomer,
   denyCustomer,

@@ -129,6 +129,14 @@
 }
 
 /* Sidebar status row: tame hover on plain icon link */
+.setup-guide-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--p-space-400);
+}
+
 .setup-guide-footer-links {
   justify-content: flex-end;
 }
@@ -136,6 +144,25 @@
 .setup-guide-tutorial-link:focus-visible {
   outline: var(--p-border-width-050) solid var(--p-color-border-focus);
   outline-offset: var(--p-space-100);
+}
+
+/* App home — Setup guide (Polaris-aligned layout) */
+.app-setup-guide {
+  width: 100%;
+}
+
+.setup-guide-live-status-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setup-guide-task-card--complete {
+  opacity: 0.9;
+}
+
+.setup-guide-footer-link {
+  display: inline-flex;
+  text-decoration: none;
 }
 
 /* Half-width column on desktop; full width on small viewports so cards stay usable */

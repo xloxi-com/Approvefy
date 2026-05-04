@@ -6,6 +6,7 @@
 import { createDecipheriv, scryptSync } from "node:crypto";
 import { ApiVersion } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
+import { invalidateAnalyticsCache } from "./registration-analytics.server";
 import { deleteSupabaseFilesFromCustomData } from "../lib/supabase.server";
 import { formatNoteForShopify, isFileUploadValue } from "../lib/format-note";
 import { buildCustomDataLabels, type FormFieldForLabels } from "../lib/form-config-labels.server";
@@ -582,20 +583,6 @@ interface CustomersResponse {
   totalCount: number;
 }
 
-interface AnalyticsResponse {
-  total: number;
-  pending: number;
-  denied: number;
-}
-
-const ANALYTICS_CACHE_TTL_MS = 15_000;
-const analyticsCache = new Map<string, { value: AnalyticsResponse; at: number }>();
-
-function invalidateAnalyticsCache(shop: string): void {
-  const key = (shop || "").trim().toLowerCase();
-  if (key) analyticsCache.delete(key);
-}
-
 /** Approval-mode rarely changes; this loader is on every customers-list paint. */
 const APPROVAL_MODE_CACHE_TTL_MS = 30_000;
 const approvalModeCache = new Map<string, { value: "auto" | "manual"; at: number }>();
@@ -835,46 +822,6 @@ export async function getCustomersForExport(
   } catch (error) {
     console.error("Error fetching customers for export:", error);
     return { rows: [], error: "Failed to load customers for export." };
-  }
-}
-
-// ─── Get Analytics ───
-
-export async function getAnalytics(shop: string): Promise<AnalyticsResponse> {
-  try {
-    const key = (shop || "").trim().toLowerCase();
-    if (key) {
-      const cached = analyticsCache.get(key);
-      if (cached && Date.now() - cached.at < ANALYTICS_CACHE_TTL_MS) {
-        return cached.value;
-      }
-    }
-
-    const groups = await prisma.registration.groupBy({
-      by: ["status"],
-      where: { shop },
-      _count: { status: true },
-    });
-
-    let total = 0;
-    let pending = 0;
-    let denied = 0;
-
-    for (const g of groups) {
-      total += g._count.status;
-      const st = (g.status || "").toLowerCase();
-      if (st === "pending") pending += g._count.status;
-      else if (st === "denied") denied += g._count.status;
-    }
-
-    const result = { total, pending, denied };
-    if (key) {
-      setBoundedCacheEntry(analyticsCache, key, { value: result, at: Date.now() }, 200);
-    }
-    return result;
-  } catch (error) {
-    console.error("Error fetching analytics:", error);
-    return { total: 0, pending: 0, denied: 0 };
   }
 }
 
@@ -2102,3 +2049,6 @@ export async function deleteCustomer(
     }
   }
 }
+
+export { getAnalytics } from "./registration-analytics.server";
+export type { AnalyticsResponse } from "./registration-analytics.server";

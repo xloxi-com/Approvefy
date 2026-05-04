@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, useId, lazy, Suspens
 import { flushSync } from "react-dom";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
-import { Await, useLoaderData, useSubmit, useNavigation, useActionData, useNavigate } from "react-router";
+import { Await, useLoaderData, useSubmit, useNavigation, useActionData, useNavigate, useLocation } from "react-router";
 import {
     Page,
     Card,
@@ -982,6 +982,74 @@ function getLangTranslations(
     return { ...defaults, ...(formTranslations[lang] || {}) };
 }
 
+/** Normalized JSON.stringify for comparisons — ignores object key insertion order so Save Bar stays hidden when values match. */
+function sortKeysDeep(value: unknown): unknown {
+    if (value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map(sortKeysDeep);
+    const o = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(o).sort()) {
+        const v = o[k];
+        if (v === undefined) continue;
+        out[k] = sortKeysDeep(v);
+    }
+    return out;
+}
+
+function serializedSettingsEqual(a: unknown, b: unknown): boolean {
+    return JSON.stringify(sortKeysDeep(a)) === JSON.stringify(sortKeysDeep(b));
+}
+
+/** Same optional-field coercion as the loader→state sync effect so dirty checks match hydrated form state. */
+function coerceApprovalSettingsUiDefaults(cas: CustomerApprovalSettings): CustomerApprovalSettings {
+    return {
+        ...cas,
+        rejectEmailLogoUrl: cas.rejectEmailLogoUrl ?? "",
+        rejectEmailLogoSize: cas.rejectEmailLogoSize ?? "200",
+        rejectEmailHeaderTitle: cas.rejectEmailHeaderTitle ?? "",
+        rejectEmailHeaderTitleSize: cas.rejectEmailHeaderTitleSize ?? "24",
+        rejectEmailHeaderTitleColor: cas.rejectEmailHeaderTitleColor ?? "",
+        rejectEmailHeaderBgColor: cas.rejectEmailHeaderBgColor ?? "",
+        rejectEmailLogoAlign: cas.rejectEmailLogoAlign ?? "left",
+        rejectEmailButtonText: cas.rejectEmailButtonText ?? "",
+        rejectEmailButtonUrl: cas.rejectEmailButtonUrl ?? "",
+        rejectEmailButtonColor: cas.rejectEmailButtonColor ?? "",
+        rejectEmailButtonTextColor: cas.rejectEmailButtonTextColor ?? "",
+        rejectEmailButtonAlign: cas.rejectEmailButtonAlign ?? "left",
+        rejectEmailFooterText: cas.rejectEmailFooterText ?? "",
+        rejectEmailShowPoweredBy: cas.rejectEmailShowPoweredBy ?? true,
+        approveEmailLogoUrl: cas.approveEmailLogoUrl ?? "",
+        approveEmailLogoSize: cas.approveEmailLogoSize ?? "200",
+        approveEmailHeaderTitle: cas.approveEmailHeaderTitle ?? "",
+        approveEmailHeaderTitleSize: cas.approveEmailHeaderTitleSize ?? "24",
+        approveEmailHeaderTitleColor: cas.approveEmailHeaderTitleColor ?? "",
+        approveEmailHeaderBgColor: cas.approveEmailHeaderBgColor ?? "",
+        approveEmailLogoAlign: cas.approveEmailLogoAlign ?? "left",
+        approveEmailButtonText: cas.approveEmailButtonText ?? "",
+        approveEmailButtonUrl: cas.approveEmailButtonUrl ?? "",
+        approveEmailButtonColor: cas.approveEmailButtonColor ?? "",
+        approveEmailButtonTextColor: cas.approveEmailButtonTextColor ?? "",
+        approveEmailButtonAlign: cas.approveEmailButtonAlign ?? "left",
+        approveEmailFooterText: cas.approveEmailFooterText ?? "",
+        approveEmailShowPoweredBy: cas.approveEmailShowPoweredBy ?? true,
+    };
+}
+
+function resolveDefaultLanguageForForm(defaultLanguage: string, languageOptions: LanguageOption[]): string {
+    const codes = new Set(languageOptions.map((l) => normalizeLangCode(l.code)));
+    const def = normalizeLangCode(defaultLanguage) || "en";
+    if (codes.has(def)) return def;
+    return normalizeLangCode(languageOptions[0]?.code) || "en";
+}
+
+function normalizedLanguageSetKey(codes: Set<string>): string {
+    return [...codes]
+        .map((c) => normalizeLangCode(c))
+        .filter(Boolean)
+        .sort()
+        .join("\0");
+}
+
 function ColorPickerField({
     label,
     value,
@@ -1135,7 +1203,18 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     const submit = useSubmit();
     const navigation = useNavigation();
     const navigate = useNavigate();
-    const [selectedDefault, setSelectedDefault] = useState(defaultLanguage);
+    const location = useLocation();
+    /** Defer Save Bar until after mount effects flush (avoids one-frame false “dirty” in embedded admin). */
+    const [saveBarEligible, setSaveBarEligible] = useState(false);
+    useEffect(() => {
+        setSaveBarEligible(false);
+        const t = window.setTimeout(() => setSaveBarEligible(true), 0);
+        return () => window.clearTimeout(t);
+    }, [location.key]);
+
+    const [selectedDefault, setSelectedDefault] = useState(() =>
+        resolveDefaultLanguageForForm(defaultLanguage, languageOptions),
+    );
     const [enabledCodes, setEnabledCodes] = useState<Set<string>>(
         () => new Set(languageOptions.map((l) => l.code))
     );
@@ -1165,9 +1244,13 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     const [smtpFromName, setSmtpFromName] = useState(initialSmtpSettings?.fromName ?? "");
     /** Shown as “Last saved”; restored to server/save-bar baseline on Discard. */
     const [lastSavedAtDisplay, setLastSavedAtDisplay] = useState<string | null>(initialAppSettingsUpdatedAt ?? null);
-    const [selectedRejectionPresetId, setSelectedRejectionPresetId] = useState<string | null>(null);
-    const [selectedApprovalPresetId, setSelectedApprovalPresetId] = useState<string | null>(null);
-    const [isTemplateSelectionLoading, setIsTemplateSelectionLoading] = useState(true);
+    /** Must match loader `customerApprovalSettings` (includes inferred preset ids). Do not re-fetch from `/app/api/template-selection` on mount — that API reads raw JSON and can disagree with the loader, which falsely triggers the Save Bar. */
+    const [selectedRejectionPresetId, setSelectedRejectionPresetId] = useState(
+        () => (initialCustomerApprovalSettings?.rejectionEmailPresetId ?? "").trim(),
+    );
+    const [selectedApprovalPresetId, setSelectedApprovalPresetId] = useState(
+        () => (initialCustomerApprovalSettings?.approvalEmailPresetId ?? "").trim(),
+    );
     const [approvedSectionOpen, setApprovedSectionOpen] = useState(false);
     const [rejectedSectionOpen, setRejectedSectionOpen] = useState(false);
     const [approvalTemplatePopoverActive, setApprovalTemplatePopoverActive] = useState(false);
@@ -1175,101 +1258,13 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     // Keep preset ids on the main settings object in sync with the selected preset state so
     // baseline comparison and discard detection treat a saved template as "no unsaved changes".
     useEffect(() => {
-        if (selectedRejectionPresetId === null || selectedApprovalPresetId === null) return;
-        setCustomerApprovalSettings((prev) => ({
-            ...prev,
-            rejectionEmailPresetId: (selectedRejectionPresetId ?? "").trim(),
-            approvalEmailPresetId: (selectedApprovalPresetId ?? "").trim(),
-        }));
+        setCustomerApprovalSettings((prev) => {
+            const r = selectedRejectionPresetId.trim();
+            const a = selectedApprovalPresetId.trim();
+            if (prev.rejectionEmailPresetId === r && prev.approvalEmailPresetId === a) return prev;
+            return { ...prev, rejectionEmailPresetId: r, approvalEmailPresetId: a };
+        });
     }, [selectedRejectionPresetId, selectedApprovalPresetId]);
-
-    useEffect(() => {
-        let isMounted = true;
-        const fallbackRejectionId = (initialCustomerApprovalSettings?.rejectionEmailPresetId ?? "").trim();
-        const fallbackApprovalId = (initialCustomerApprovalSettings?.approvalEmailPresetId ?? "").trim();
-        async function loadTemplateSelection() {
-            try {
-                const response = await fetch("/app/api/template-selection", {
-                    method: "GET",
-                    headers: { Accept: "application/json" },
-                });
-                if (!response.ok) {
-                    throw new Error(`Template selection fetch failed: ${response.status}`);
-                }
-                const data = (await response.json()) as {
-                    rejectionEmailPresetId?: unknown;
-                    approvalEmailPresetId?: unknown;
-                };
-                if (!isMounted) return;
-                const loadedRejectionId =
-                    typeof data?.rejectionEmailPresetId === "string"
-                        ? data.rejectionEmailPresetId.trim()
-                        : fallbackRejectionId;
-                const loadedApprovalId =
-                    typeof data?.approvalEmailPresetId === "string"
-                        ? data.approvalEmailPresetId.trim()
-                        : fallbackApprovalId;
-                setSelectedRejectionPresetId(loadedRejectionId);
-                setSelectedApprovalPresetId(loadedApprovalId);
-                setCustomerApprovalSettings((prev) => {
-                    const rejectionPreset = loadedRejectionId ? getRejectionPresetById(loadedRejectionId) : undefined;
-                    const approvalPreset = loadedApprovalId ? getApprovalPresetById(loadedApprovalId) : undefined;
-                    return {
-                        ...prev,
-                        rejectionEmailPresetId: loadedRejectionId,
-                        approvalEmailPresetId: loadedApprovalId,
-                        ...(rejectionPreset
-                            ? {
-                                  rejectEmailSubject: rejectionPreset.subject,
-                                  rejectEmailBody: rejectionPreset.bodyHtml,
-                                  rejectEmailFooterText: rejectionPreset.footerText,
-                                  rejectEmailButtonText: rejectionPreset.buttonText,
-                                  rejectEmailButtonUrl: rejectionPreset.buttonUrl,
-                                  rejectEmailHeaderTitle: rejectionPreset.headerTitle ?? "",
-                                  rejectEmailHeaderTitleSize: rejectionPreset.headerTitleSize ?? "24",
-                                  rejectEmailHeaderTitleColor: rejectionPreset.headerTitleColor ?? "",
-                                  rejectEmailHeaderBgColor: rejectionPreset.headerBgColor ?? "",
-                                  rejectEmailLogoAlign: rejectionPreset.logoAlign ?? "left",
-                                  rejectEmailButtonColor: rejectionPreset.buttonColor ?? "",
-                                  rejectEmailButtonTextColor: rejectionPreset.buttonTextColor ?? "",
-                                  rejectEmailButtonAlign: rejectionPreset.buttonAlign ?? "left",
-                              }
-                            : {}),
-                        ...(approvalPreset
-                            ? {
-                                  approveEmailSubject: approvalPreset.subject,
-                                  approveEmailBody: approvalPreset.bodyHtml,
-                                  approveEmailFooterText: approvalPreset.footerText,
-                                  approveEmailButtonText: approvalPreset.buttonText,
-                                  approveEmailButtonUrl: approvalPreset.buttonUrl,
-                                  approveEmailHeaderTitle: approvalPreset.headerTitle ?? "",
-                                  approveEmailHeaderTitleSize: approvalPreset.headerTitleSize ?? "24",
-                                  approveEmailHeaderTitleColor: approvalPreset.headerTitleColor ?? "",
-                                  approveEmailHeaderBgColor: approvalPreset.headerBgColor ?? "",
-                                  approveEmailLogoAlign: approvalPreset.logoAlign ?? "left",
-                                  approveEmailButtonColor: approvalPreset.buttonColor ?? "",
-                                  approveEmailButtonTextColor: approvalPreset.buttonTextColor ?? "",
-                                  approveEmailButtonAlign: approvalPreset.buttonAlign ?? "left",
-                              }
-                            : {}),
-                    };
-                });
-            } catch {
-                if (!isMounted) return;
-                setSelectedRejectionPresetId(fallbackRejectionId);
-                setSelectedApprovalPresetId(fallbackApprovalId);
-            } finally {
-                if (isMounted) setIsTemplateSelectionLoading(false);
-            }
-        }
-        loadTemplateSelection();
-        return () => {
-            isMounted = false;
-        };
-    }, [
-        initialCustomerApprovalSettings?.rejectionEmailPresetId,
-        initialCustomerApprovalSettings?.approvalEmailPresetId,
-    ]);
     const buildTranslationsFromLoader = useCallback(() => {
         const init: Record<string, Record<string, string>> = {};
         const langs = new Set(["en", ...languageOptions.map((l) => l.code), ...Object.keys(formTranslations || {})]);
@@ -1308,7 +1303,8 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     }, [translationKeys, defaultTranslationsEn, translationSearch, translations, selectedLangTab]);
 
     useEffect(() => {
-        setTranslations(buildTranslationsFromLoader());
+        const next = buildTranslationsFromLoader();
+        setTranslations((prev) => (serializedSettingsEqual(prev, next) ? prev : next));
     }, [buildTranslationsFromLoader]);
 
     useEffect(() => {
@@ -1318,11 +1314,16 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     }, [enabledCodesList, selectedLangTab]);
 
     useEffect(() => {
-        if (!enabledCodes.has(selectedDefault)) {
-            const firstEnabled = Array.from(enabledCodes)[0] ?? "en";
-            setSelectedDefault(firstEnabled);
+        const normSel = normalizeLangCode(selectedDefault);
+        const selOk = [...enabledCodes].some((c) => normalizeLangCode(c) === normSel);
+        if (!selOk) {
+            const pick =
+                languageOptions.find((l) => enabledCodes.has(l.code))?.code ??
+                Array.from(enabledCodes)[0] ??
+                "en";
+            setSelectedDefault(pick);
         }
-    }, [enabledCodes, selectedDefault]);
+    }, [enabledCodes, selectedDefault, languageOptions]);
 
     useEffect(() => {
         const data = actionData as
@@ -1501,9 +1502,10 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
 
     const hasUnsavedChanges = useMemo(() => {
         const base = lastSavedBaselineRef.current;
-        const initialApproval = base ? base.customerApprovalSettings : initialApprovalForCompare;
-        const initialDefLang = base ? base.selectedDefault : defaultLanguage;
-        const initialCodes = base ? new Set(base.enabledCodes) : new Set(languageOptions.map((l) => l.code));
+        const initialApprovalRaw = base ? base.customerApprovalSettings : initialApprovalForCompare;
+        const initialApproval = coerceApprovalSettingsUiDefaults(initialApprovalRaw);
+        const initialDefLang = base ? base.selectedDefault : resolveDefaultLanguageForForm(defaultLanguage, languageOptions);
+        const initialCodes = base ? new Set(base.enabledCodes.map((c) => normalizeLangCode(c))) : new Set(languageOptions.map((l) => normalizeLangCode(l.code)));
         const initialTrans = base ? base.translations : initialTranslations;
         const initialSmtp = base
             ? base.smtp
@@ -1516,16 +1518,22 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                   fromName: initialSmtpSettings?.fromName ?? "",
               };
 
-        if (JSON.stringify(customerApprovalSettings) !== JSON.stringify(initialApproval)) return true;
-        if (selectedDefault !== initialDefLang) return true;
-        if (enabledCodes.size !== initialCodes.size || [...enabledCodes].some((c) => !initialCodes.has(c))) return true;
-        if (JSON.stringify(translations) !== JSON.stringify(initialTrans)) return true;
-        if (smtpHost !== initialSmtp.host) return true;
+        if (
+            !serializedSettingsEqual(
+                coerceApprovalSettingsUiDefaults(customerApprovalSettings),
+                initialApproval,
+            )
+        )
+            return true;
+        if (normalizeLangCode(selectedDefault) !== normalizeLangCode(initialDefLang)) return true;
+        if (normalizedLanguageSetKey(enabledCodes) !== normalizedLanguageSetKey(initialCodes)) return true;
+        if (!serializedSettingsEqual(translations, initialTrans)) return true;
+        if ((smtpHost || "").trim() !== (initialSmtp.host || "").trim()) return true;
         if ((parseInt(smtpPort, 10) || 587) !== initialSmtp.port) return true;
         if (smtpSecure !== initialSmtp.secure) return true;
-        if (smtpUser !== initialSmtp.user) return true;
-        if (smtpFromEmail !== initialSmtp.fromEmail) return true;
-        if (smtpFromName !== initialSmtp.fromName) return true;
+        if ((smtpUser || "").trim() !== (initialSmtp.user || "").trim()) return true;
+        if ((smtpFromEmail || "").trim() !== (initialSmtp.fromEmail || "").trim()) return true;
+        if ((smtpFromName || "").trim() !== (initialSmtp.fromName || "").trim()) return true;
         if ((smtpPassword || "").trim() !== "") return true;
         return false;
     // baselineVersion: re-run after save so we read updated lastSavedBaselineRef
@@ -1570,7 +1578,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
             setLastSavedAtDisplay(base.appSettingsUpdatedAt);
         } else {
             setCustomerApprovalSettings(initialApprovalForCompare);
-            setSelectedDefault(defaultLanguage);
+            setSelectedDefault(resolveDefaultLanguageForForm(defaultLanguage, languageOptions));
             setEnabledCodes(new Set(languageOptions.map((l) => l.code)));
             setCustomLanguages(languageOptions.filter((l) => !CORE_CODE_SET.has(normalizeLangCode(l.code))));
             setTranslations(buildTranslationsFromLoader());
@@ -1676,7 +1684,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
 
     // Polaris-controlled fields do not reliably trigger the automatic data-save-bar; sync visibility explicitly.
     useEffect(() => {
-        const shouldShow = hasUnsavedChanges && !isSaving;
+        const shouldShow = hasUnsavedChanges && !isSaving && saveBarEligible;
         const saveBar = typeof window !== "undefined" ? window.shopify?.saveBar : undefined;
         if (!saveBar) return;
         let cancelled = false;
@@ -1694,7 +1702,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
             window.clearTimeout(t);
             void saveBar.hide(SETTINGS_SAVE_BAR_ID).catch(() => {});
         };
-    }, [hasUnsavedChanges, isSaving]);
+    }, [hasUnsavedChanges, isSaving, saveBarEligible]);
 
     const settingsSidebarNav = useMemo(
         () => [
@@ -2350,31 +2358,6 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                         </Text>
                                     </Box>
                                 </BlockStack>
-                                        ) : isTemplateSelectionLoading ? (
-                                            <Box
-                                                role="status"
-                                                aria-label="Loading email templates"
-                                                paddingBlockStart="100"
-                                            >
-                                                <div className="flex flex-col gap-5">
-                                                    <div className="flex items-center gap-4">
-                                                        <Skeleton className="h-12 w-12 shrink-0 rounded-full" />
-                                                        <div className="min-w-0 flex-1 space-y-2">
-                                                            <Skeleton className="h-4 w-full max-w-[250px]" />
-                                                            <Skeleton className="h-4 w-full max-w-[200px]" />
-                                                        </div>
-                                                    </div>
-                                                    <div className="space-y-3 rounded-md border border-[color:var(--p-color-border,#c9cccf)] p-4">
-                                                        <Skeleton className="h-4 w-full max-w-md" />
-                                                        <Skeleton className="h-4 w-full max-w-lg" />
-                                                    </div>
-                                                    <div className="space-y-3 rounded-md border border-[color:var(--p-color-border,#c9cccf)] p-4">
-                                                        <Skeleton className="h-4 w-full max-w-sm" />
-                                                        <Skeleton className="h-4 w-full max-w-xl" />
-                                                        <Skeleton className="h-4 w-full max-w-lg" />
-                                                    </div>
-                                                </div>
-                                            </Box>
                                         ) : (
                                 <BlockStack gap="500">
                                     <Text as="p" variant="bodyMd" tone="subdued">

@@ -60,9 +60,12 @@ export default defineConfig({
       output: {
         manualChunks: (id) => {
           if (id.includes("node_modules")) {
+            if (id.includes("react-dom")) return "react-dom";
+            if (id.includes("node_modules/react/")) return "react";
             if (id.includes("@shopify/polaris") || id.includes("@shopify/polaris-icons")) return "polaris";
             if (id.includes("@shopify/app-bridge") || id.includes("@shopify/shopify-app")) return "shopify";
             if (id.includes("@dnd-kit")) return "dnd-kit";
+            if (id.includes("react-router")) return "react-router";
           }
         },
       },
