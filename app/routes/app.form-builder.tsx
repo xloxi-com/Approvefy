@@ -313,12 +313,24 @@ function assignSortKeys(list: FormField[]): FormField[] {
     return list.map((f) => (f.sortKey ? f : { ...f, sortKey: newFieldSortKey() }));
 }
 
-/** Parse options text (one per line) - handles \\n, \\r\\n, \\r */
+/**
+ * Parse options text (one per line). Interior blank lines are collapsed.
+ * Preserves one trailing blank line so Enter while typing round-trips — otherwise
+ * `join("\\n")` would erase the newline and the textarea stays single-line.
+ */
 function parseOptionsFromText(text: string): string[] {
-    return text
-        .split(/\r?\n|\r/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+    const rawLines = text.split(/\r?\n|\r/);
+    const n = rawLines.length;
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) {
+        const t = rawLines[i].trim();
+        if (t !== "") {
+            out.push(t);
+        } else if (i === n - 1 && n > 0) {
+            out.push("");
+        }
+    }
+    return out;
 }
 
 const DEFAULT_FIELDS: FormField[] = [

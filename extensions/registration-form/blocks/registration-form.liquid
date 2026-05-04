@@ -15,14 +15,6 @@
     data-description="{{ block.settings.description | strip_newlines | escape }}"
   {% endif %}
 >
-  {% if request.design_mode %}
-    <p
-      class="approvefy-editor-hint"
-      style="padding:16px;margin-bottom:16px;border:1px dashed #d1d5db;border-radius:8px;background:#f9fafb;font-size:14px;"
-    >
-      Preview: the live form loads on the real storefront. Use <strong>Theme settings → App embeds → Approvefy</strong> to enable the app embed if the form does not appear.
-    </p>
-  {% endif %}
   <div class="approvefy-registration-mount">
     <style>
       @keyframes approvefyMountSpin { to { transform: rotate(360deg); } }
