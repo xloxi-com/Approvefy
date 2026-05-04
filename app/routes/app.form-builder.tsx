@@ -50,22 +50,8 @@ import {
 } from "../lib/theme-settings";
 import { STOREFRONT_FORM_DEFAULTS_EN } from "../lib/storefront-form-defaults";
 
-import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-    arrayMove,
-    SortableContext,
-    sortableKeyboardCoordinates,
-    useSortable,
-    verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { PlusCircleIcon, DeleteIcon, ToggleOnIcon, ToggleOffIcon } from "@shopify/polaris-icons";
 
@@ -619,7 +605,22 @@ const SortableFieldRow = memo(function SortableFieldRow({
             </div>
 
             {isExpanded && (
-                <div className="fb-edit-panel">
+                <div
+                    className="fb-edit-panel"
+                    onKeyDownCapture={(e) => {
+                        const t = e.target as HTMLElement | null;
+                        if (!t) return;
+                        const tag = t.tagName;
+                        if (
+                            tag === "INPUT" ||
+                            tag === "TEXTAREA" ||
+                            tag === "SELECT" ||
+                            (t as HTMLElement).isContentEditable
+                        ) {
+                            e.stopPropagation();
+                        }
+                    }}
+                >
                     <TextField
                         label={field.type === "heading" ? "Heading text" : "Label"}
                         value={field.label}
@@ -1673,10 +1674,8 @@ export default function FormBuilder() {
         setTimeout(() => setShowErrorToast(true), 100);
     }
 
-    const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-    );
+    /** Pointer only — KeyboardSensor steals Space/Enter in inputs & textareas inside sortables. Reorder via drag handle. */
+    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
     const sortableFieldIds = useMemo(() => fields.map((f) => f.sortKey as string), [fields]);
 
