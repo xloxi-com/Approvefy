@@ -2004,6 +2004,23 @@ export async function deleteCustomer(
   const isDbOnly = id.startsWith("db-");
   const registrationId = isDbOnly ? id.slice(3) : null;
 
+  let shopForAnalyticsInvalidation: string | null = null;
+  if (deleteMode === "app" || deleteMode === "both") {
+    if (isDbOnly && registrationId) {
+      const row = await prisma.registration.findUnique({
+        where: { id: registrationId },
+        select: { shop: true },
+      });
+      shopForAnalyticsInvalidation = row?.shop ?? null;
+    } else {
+      const row = await prisma.registration.findFirst({
+        where: { customerId: id },
+        select: { shop: true },
+      });
+      shopForAnalyticsInvalidation = row?.shop ?? null;
+    }
+  }
+
   // Delete from Shopify
   if ((deleteMode === "shopify" || deleteMode === "both") && !isDbOnly) {
     await admin.graphql(
@@ -2044,6 +2061,9 @@ export async function deleteCustomer(
         await prisma.registration.deleteMany({ where: { customerId: id } });
       }
       console.log(`Customer ${id} deleted from app DB`);
+      if (shopForAnalyticsInvalidation) {
+        invalidateAnalyticsCache(shopForAnalyticsInvalidation);
+      }
     } catch {
       /* registration may not exist in DB */
     }

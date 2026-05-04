@@ -45,7 +45,7 @@ import {
   RefreshIcon,
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
-import { getAnalytics } from "../models/registration-analytics.server";
+import { getAnalytics, invalidateAnalyticsCache } from "../models/registration-analytics.server";
 import {
   getCustomers,
   getApprovedTags,
@@ -387,6 +387,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const firstError = errors.length > 0 ? errors[0] : null;
+  if (successCount > 0) {
+    invalidateAnalyticsCache(session.shop);
+  }
   return {
     success: errors.length === 0,
     error: firstError ?? null,
@@ -500,10 +503,11 @@ export default function Index() {
     const data = mutationFetcher.data;
     if (data?.success && (data.count ?? 0) > 0) {
       setShowToast(true);
+      revalidator.revalidate();
     } else {
       setShowToast(false);
     }
-  }, [mutationFetcher.state, mutationFetcher.data]);
+  }, [mutationFetcher.state, mutationFetcher.data, revalidator]);
 
   const resourceName = {
     singular: "customer",
