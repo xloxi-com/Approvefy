@@ -15,7 +15,7 @@ automatically_update_urls_on_dev = true
 include_config_on_deploy = true
 
 [webhooks]
-api_version = "2026-01"
+api_version = "2025-04"
 
   [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
@@ -30,7 +30,7 @@ api_version = "2026-01"
   uri = "/webhooks/customers_create"
 
   [[webhooks.subscriptions]]
-  topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
   uri = "/webhooks/compliance"
 
 [access_scopes]
