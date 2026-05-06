@@ -1,9 +1,4 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
-#
-# "No app with client ID": Partners user must own this app — run `shopify auth login`; optional `npm run config:link:approvefy`.
-# Put Client ID (= API key) in `.env` as SHOPIFY_API_KEY, then prefer: `.\shopify.cmd app dev` or `npm run shopify -- app dev`
-# Local without Shopify tunnel: `npm run dev`. Full CLI wrappers: `npm run dev:shopify` / `npm run shopify:dev`.
-# Production URLs: keep `application_url`, `redirect_urls`, and `app_proxy.url` in sync with Vercel (or custom domain). Match `SHOPIFY_APP_URL` in `.env` / deployment env.
 
 client_id = "d915bdc3b1b08393f68636970989c5e8"
 name = "Approvefy"
@@ -12,35 +7,18 @@ embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-01"
 
-  [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
-
-  [[webhooks.subscriptions]]
-  topics = [ "app/scopes_update" ]
-  uri = "/webhooks/app/scopes_update"
-
-  [[webhooks.subscriptions]]
-  topics = [ "customers/create" ]
-  uri = "/webhooks/customers_create"
-
-  [[webhooks.subscriptions]]
-  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
-  uri = "/webhooks/compliance"
-
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,read_customers,write_customers,write_app_proxy,read_locales"
+scopes = "read_customers,read_locales,write_app_proxy,write_customers,write_products"
 
 [auth]
 redirect_urls = [
   "https://approvefy.vercel.app/auth/callback",
-  "https://approvefy.vercel.app/api/auth",
+  "https://approvefy.vercel.app/api/auth"
 ]
 
 [app_proxy]
