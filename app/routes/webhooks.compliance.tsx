@@ -1,20 +1,71 @@
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate } from "../shopify.server";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import db from "../db.server";
+
+function verifyShopifyHmacSha256(
+  rawBody: Buffer,
+  hmacHeader: string | null,
+  secret: string,
+): boolean {
+  if (!hmacHeader) return false;
+
+  const digest = createHmac("sha256", secret).update(rawBody).digest("base64");
+
+  const expectedBuf = Buffer.from(digest, "utf8");
+  const receivedBuf = Buffer.from(hmacHeader.trim(), "utf8");
+
+  if (expectedBuf.length !== receivedBuf.length) return false;
+
+  try {
+    return timingSafeEqual(expectedBuf, receivedBuf);
+  } catch {
+    return false;
+  }
+}
 
 export const loader = () => new Response(null, { status: 405 });
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { topic, shop } = await authenticate.webhook(request);
-  console.log(`Received ${topic} compliance webhook for ${shop}`);
-
-  // Compliance webhooks must acknowledge receipt even when the shop
-  // has already uninstalled and no session exists.
-  switch (topic) {
-    case "CUSTOMERS_DATA_REQUEST":
-    case "CUSTOMERS_REDACT":
-    case "SHOPS_REDACT":
-      return new Response(null, { status: 200 });
-    default:
-      return new Response(null, { status: 200 });
+  if (request.method !== "POST") {
+    return new Response(null, { status: 405 });
   }
+
+  const secret = process.env.SHOPIFY_API_SECRET?.trim();
+  if (!secret) {
+    return new Response(null, { status: 401 });
+  }
+
+  const rawBody = Buffer.from(await request.arrayBuffer());
+  const hmacHeader = request.headers.get("x-shopify-hmac-sha256");
+
+  if (!verifyShopifyHmacSha256(rawBody, hmacHeader, secret)) {
+    return new Response(null, { status: 401 });
+  }
+
+  let shopDomain: string | undefined;
+  try {
+    const payload = JSON.parse(rawBody.toString("utf8")) as {
+      shop_domain?: unknown;
+    };
+    if (typeof payload.shop_domain === "string" && payload.shop_domain.trim()) {
+      shopDomain = payload.shop_domain.trim();
+    }
+  } catch {
+    return new Response(null, { status: 401 });
+  }
+
+  if (!shopDomain) {
+    return new Response(null, { status: 401 });
+  }
+
+  const session = await db.session.findFirst({
+    where: { shop: shopDomain },
+    select: { id: true },
+  });
+
+  if (!session) {
+    return new Response(null, { status: 401 });
+  }
+
+  return new Response(null, { status: 200 });
 };
