@@ -1,0 +1,633 @@
+================================================================================
+  APPROVEFY — COMPLETE SEPARATED SETUP GUIDE (ALL OPTIONS · STEP BY STEP)
+================================================================================
+  Every section below stands alone: **Customers** | **Form Builder** |
+  **Settings → Store | Language | Approval | Email → SMTP | Template**.
+
+  Tamil இங்குள்ளது: இந்த அப்பில் உள்ள **எல்லா அமைப்பு விருப்பங்களும்** பட்டியலாகவும்,
+  ஒன்றன் பின் ஒன்றாகவும் உள்ளன.
+
+  Shopify path base: Admin → Apps → Approvefy.
+  Inside Settings always use bottom **Save** / **Discard** bar for main settings,
+  except translations (see Language).
+
+
+------------------------------------------------------------------------------
+QUICK NAV MAP
+------------------------------------------------------------------------------
+  Theme (storefront):  Online Store → Themes → Customize → App embeds → Approvefy
+  Approvefy app menu: Customers · Form Builder · Pricing · Settings
+------------------------------------------------------------------------------
+
+
+###############################################################################
+# SECTION A — THEME EDITOR · APP APPROVFY EMBED (storefront widget)
+###############################################################################
+  Open: Theme customize → App embeds → choose **Approvefy**
+
+  Listed options on the embed panel (exact labels):
+
+    A1. Enable Custom Registration Form  
+        Checkbox. ON = custom registration / approval workflow active.  
+        OFF = default theme registration (no Approvefy form).
+
+    A2. Pending Approval Message  
+        Single-line text shown after registration (English default in schema).
+
+    A3. Pending Approval Message (French)  
+        French variant when store language fits that use case.
+
+    A4. Form to display  
+        Text. **Leave blank** = use Form Builder **default** form.  
+        **Paste Form ID** = lock storefront to one form row from Form Builder.
+
+  Then click **Save** on the theme editor.
+
+
+###############################################################################
+# SECTION B — CUSTOMERS PAGE
+###############################################################################
+  Open: Apps → Approvefy → **Customers**
+
+  --- B0. Toolbar / chrome ---
+    · Page title Customers (or analytics header if present).
+
+  --- B1. Tabs (status filter for the whole list) ---
+      1) All Customers  
+      2) Pending  
+      3) Approved  
+      4) Rejected  
+
+  --- B2. Search ---
+    · Text box: filters results (name/email style search loaded from server).
+
+  --- B3. Date filter ---
+    · Opens **Filter by date** modal:  
+        • From / To read-only preview fields  
+        • Calendar **DatePicker** to pick range  
+      Buttons: **Apply** | **Cancel**
+
+  --- B4. Rows per page (page size) ---
+    · Choices typical in app code: **25 | 50 | 100 | 200 | All**  
+      (“All” uses a capped max for listing — export may differ.)
+
+  --- B5. Pagination ---
+    · **Previous / Next** on the footer when paging.
+
+  --- B6. Refresh ---
+    · Button with refresh icon reloads latest list/data.
+
+  --- B7. Export CSV ---
+    · Opens modal **Export customers**  
+      Radio choices:  
+        • **Current page**  
+        • **All customers** (respects broader query; see CSV route limits)  
+        • **Selected: N customer(s)** (disabled until you tick row checkboxes)  
+      Buttons: **Export** | **Cancel**
+
+  --- B8. Edit columns ---
+    · Opens column editor: toggle visibility per column  
+    · Drag to reorder columns (saved in browser local storage)  
+
+        Column keys shown in UI (labels):  
+        • Customer name | Email | Company | Phone | Status | Date Join | Action  
+
+  --- B9. Table row actions (per applicant) ---
+    · Select checkbox for bulk workflows.  
+    · Row icons typically: view/edit path, approve if applicable, deny, delete, etc.
+      (exact icon set follows current Polaris deployment.)
+
+  --- B10. Bulk promoted actions (when rows selected) ---
+    · **Approve**  
+    · **Reject** — disabled when every selected row’s tags already include the  
+          literal Shopify tag **`status:approved`** (matches current Customers UI logic)  
+    · **Delete customers** — opens destructive flow (see B11).
+
+    Note — Status badges in the table interpret **`status:approved`** vs **`status:denied`** vs pending.  
+    Your **Approved customer tag** under Settings → Approval should align with **`status:approved`**  
+    unless you customize code; otherwise badges and bulk Reject disabling may mismatch.
+
+  --- B11. Delete customers modal (bulk) ---
+    Step 1 — Pick mode:  
+        • Delete from Shopify only (app keeps records)  
+        • Delete from App server only (Shopify stays)  
+        • Delete from Both — permanent; cannot undo  
+      **Cancel**
+
+    Step 2 — Confirmation text repeats mode; buttons **Back** | destructive confirm  
+
+  --- B12. Single-row delete ---
+    Same three-mode concept as bulk (two-step modal in code).
+
+  --- B13. Detail modal (opening a registration) ---
+    Shows when you drill into a registration: identity fields, labels for custom  
+    Form Builder data, timestamps, reviewer info when present  
+    Actions may include approve / reject from here depending on UX version.
+
+  --- B14. Deny/Reject modal ---
+    Follow on-screen prompts to confirm denial (fires rejection email rules if configured).
+
+------------------------------------------------------------------------------
+  EXAMPLES
+------------------------------------------------------------------------------
+    · Morning triage: tab **Pending** → Approve/Reject → Export CSV “All” weekly.  
+    · Tags: Approved customers mirror **Settings → Approval → Approved tag**.
+
+
+###############################################################################
+# SECTION C — FORM BUILDER (FORM CONFIGURATION LIST)
+###############################################################################
+  Open: Apps → Approvefy → **Form Builder** (page title: Form configuration)
+
+  --- C1. Top navigation ---
+    Overview · Customers · Form Builder (current) · Settings
+
+  --- C2. Primary action ---
+    · **Create form** — opens modal
+
+  --- C3. Banner (when forms exist) ---
+    Reminder: enable embed in Theme Editor · **Customize theme** button link
+
+  --- C4. Create form modal ---
+    Two cards fixed to form types:
+
+      Card · **Wholesale registration form**  
+        Description + **Create form**  
+        Footer note: *This form can show on all pages of the store-front.*
+
+      Card · **Multi-step form**  
+        Description + **Create form**  
+        Footer note: *This form can only show on Customer Account Page after login.*
+
+  --- C5. Forms table headings ---
+      Form ID | Name | Form type | Status | Actions
+
+      Row contents:  
+      · **Form ID** + copy clipboard button (toast: paste in embed “Form to display”)  
+      · **Name** (link into Form Builder editor)  
+      · **Form type** badge: Wholesale registration form · Multi-step form  
+      · **Status** badge: Enabled | Disabled  
+      · **Actions**: Edit pencil · Clone · Delete trash  
+
+  --- C6. Delete form modal ---
+      Title “Delete form?” · explains irreversible · **Delete** | **Cancel**
+
+
+###############################################################################
+# SECTION D — FORM BUILDER (INSIDE ONE FORM · EDITOR)
+###############################################################################
+  Opens from Form Builder table name link or `/app/form-builder?formId=…`  
+  New form: wizard starts with chosen type from modal.
+
+  --- D1. Tabs (top of builder) ---
+    · **General** — fields & form metadata  
+    · **Appearance** — visuals (see SECTION E)
+
+  --- D2. General — form-level options ---
+    Typical controls (persist with main save):  
+
+      • **Form name** (internal)  
+      • **Form type** — Wholesale registration form | Multi-step form  
+           (changing type influences progress bar availability)  
+
+      • **Enabled** checkbox — storefront availability for assignments  
+      • **Default form** checkbox — ONLY one shop default recommended for blank embed  
+
+      • **Multi-step only:**  
+          ☑ Show progress bar (and % progression on storefront wizard)  
+
+      • **Storefront heading** optional — overrides empty with translation defaults  
+      • **Storefront description** optional — subtitle under heading  
+
+      • Bulk save action — label like **Save configuration** / save bar wording in UI  
+
+      • **Discard** — restores last saved snapshot (general + appearance together)
+
+  --- D3. General — Each field row (expand row to edit) ---
+
+      Core controls common to fields:  
+
+        • Drag handle — reorder vertical list (@dnd-kit)  
+        • Field **type** picker (types listed in D5) — some types limited to ONE per form  
+        • **Label** text  
+        • **Placeholder** optional  
+        • **Help text** optional tooltip/helper line  
+        • **Required** checkbox — Email always required (locked ON)  
+        • **Enabled** checkbox — hides field without deleting config  
+            (Address bundle: toggling Address enables/disables city/state/etc. chain)  
+
+        Width (some types): **30 | 50 | 100 %**  
+
+        Phone type: **default country dial code** picker  
+
+        Date type: **Date format** picker — matches DATE_FORMAT_OPTIONS list  
+          e.g. DD/MM/YYYY, MM/DD/YYYY, ISO dates, spelled-out month formats, weekdays…  
+
+        File upload type:  
+          • max files 1–20  
+          • max size MB presets 2 · 5 · 10 · 15 · 20 · 25  
+
+        Dropdown / Checkbox group / Radio:  
+          • **Options** textarea — one choice per line (blank lines trimmed on save logic)  
+
+        Checkbox-group (multiple):  
+          • **minimum selections** (`minRequired` 0–10) enforced when required counts matter  
+
+        Newsletter type: preset label / option text behavior if left blank  
+
+        Heading type: **Heading level** h2 · h3 · h4  
+
+        Multi-step: **Step number** allocation per field (wizard grouping)
+
+      Locked rules (auto in code):  
+
+        • Only one each (single-instance types): Password, Phone, Company, Address,  
+          City, State/Province, Zip, Country  
+
+        • **Address**: adding inserts full address bundle (address + city/state/zip/country);  
+          removing address removes bundle children together  
+
+      Default seeded fields usually include First Name · Last Name · Email (built-in defaults).
+
+    · **Add field** popover lists only allowed types (duplicate singletons omitted).
+
+    · **Remove**: cannot remove default-system core rows like default first names in some UX;  
+      address children not individually deleted.
+
+  --- D5. Complete FIELD TYPE list (exact builder labels → values) ---
+
+      First Name                 (first_name)  
+      Last Name                  (last_name)  
+      Email                      (email) — required locked  
+      Password                   (password)  
+      Phone                      (phone)  
+      Company                    (company)  
+      Address                    (address) — bundle  
+      City                       (city)  
+      State / Province           (state)  
+      Zip / Postal Code          (zip_code)  
+      Country                    (country)  
+      Text                       (text)  
+      Text Area                  (textarea)  
+      Number                     (number)  
+      Date                       (date)  
+      Dropdown                   (dropdown)  
+      Multiple Checkbox          (checkbox)  
+      Newsletter subscription    (newsletter)  
+      Radio                      (radio)  
+      Heading                    (heading)  
+      File Upload                (file_upload)  
+
+
+###############################################################################
+# SECTION E — FORM BUILDER · APPEARANCE TAB (every control)
+###############################################################################
+  Applies store-wide storefront registration styling saved with **Save**.
+
+  --- E1. Intro card ---
+    Heading **Appearance**  
+    explanatory text referencing same save button as configuration  
+    **Reset to defaults** — restores baseline theme tokens  
+
+  --- E2. Templates ---
+    Dropdown **Template** — pick one preset:  
+
+      • Minimal Light        (clean)  
+      • Aurora Night         (aurora)  
+      • Midnight Indigo      (midnight)  
+      • Warm Stone           (sand)  
+      • Coastal Blue         (ocean)  
+      • Rose Clay            (blush)  
+      • Zinc Pro             (graphite)  
+      • Mint Forest          (emerald)  
+      • Lilac SaaS           (violet)  
+      • Glass Neo            (neo)  
+
+      Choosing a preset overwrites sliders/colors/CSS auto layer per app logic until you edit again.
+
+  --- E3. Font ---
+    Font family dropdown options:  
+
+      • System (Shopify default)  
+      • Arial · Helvetica · Verdana · Tahoma  
+      • Open Sans · Roboto · Lato · Montserrat · Poppins  
+
+    Sliders (px):  
+
+      • Storefront heading size (14–48)  
+      • Storefront description size (12–24)  
+      • Label size (11–20)  
+      • Input size (10–24)  
+      • Button font size (10–24)  
+
+    **Storefront heading and description alignment**  
+
+      Desktop: Heading alignment Left|Center|Right  
+               Description alignment Left|Center|Right  
+
+      Mobile:  Heading alignment Left|Center|Right  
+               Description alignment Left|Center|Right  
+
+  --- E4. Colors (hex fields + picker swatches) ---
+    • Card background  
+    • Card text  
+    • Storefront heading (h2 title)  
+    • Storefront description (subtitle muted)  
+    • Button background  
+    • Button text  
+    • Input background  
+    • Input border  
+    • Accent (focus, checkbox, radio highlights)  
+    • Error (asterisk & validation messages)  
+
+  --- E5. Radius & spacing ---
+
+    Slide ranges:  
+
+      • Input border radius (0–24 px)  
+      • Button border radius (0–40 px capped)  
+      • Form max width (320–1500 px)
+
+  --- E6. Custom CSS ---
+
+      Large multi-line textarea.  
+      Help: leave empty = only sliders/templates apply — non-empty persists raw CSS overrides.
+
+
+###############################################################################
+# SECTION F — SETTINGS PAGE (COMMON CHROME)
+###############################################################################
+  Open: Apps → Approvefy → **Settings**
+
+  --- Always visible ---
+    · **Save** sticky bar button — POST all main settings payloads  
+    · **Discard** — revert unsaved changes  
+    · **Back** Polaris back action  
+
+  --- Sidebar (main) ---
+      Store | Language | Approval | Email  
+
+  --- When Email is selected ---
+    Sub-sidebar:  
+
+      **SMTP** | **Template**  
+
+
+###############################################################################
+# SECTION F1 — SETTINGS → STORE
+###############################################################################
+  Sidebar: **Store**  
+  Card title localizes (“Store Setting” in EN).
+
+  Listed controls (exact English labels):
+
+    F1a. Guest checkout  
+
+        ☑ **Redirect guests away from checkout and Buy it now**  
+            Help mentions enabling embed / Registration Form block.  
+
+        If checked → text field  
+
+        • **Redirect URL**  
+          Placeholder: `/pages/contact or https://…`  
+          Help: where guests sent when blocked.  
+
+    F1b. ☑ **Show Log in / Sign up switch on registration form**  
+        Help: turn off hides switch above signup form storefront.  
+
+    F1c. When guest redirect checked → card **Logged-in customers**  
+
+        ☑ **Redirect customers without the approved tag**  
+            (customers missing tag from Approval settings)
+
+        Then multiline  
+
+        • **Popup message**  
+          Help text: shown before redirect.  
+          Default English example (if untouched): invites completing registration  
+          form after ordering.
+
+**Save / Discard** sticky bar afterward.
+
+
+###############################################################################
+# SECTION F2 — SETTINGS → LANGUAGE
+###############################################################################
+  Sidebar: **Language**
+
+  ----- Block: Language Options -----
+
+      Intro text explains choosing storefront languages.
+
+      Row 1: **Default language** select — sourced from languages you marked enabled  
+
+      Row 2: **Search languages** field + scrollable checklist of languages  
+
+      Row 3: Custom add form (when present):  
+
+        • Code (e.g. fr, de)  
+        • Language name  
+
+        **Add language**  
+
+        Your custom rows integrate into enable list  
+
+      **Tips** banners may cite translation importance.
+
+  ----- Block: Form Translations -----
+
+      • Tab row per configured language  
+
+      • **Search fields** finds keys by English label or snake_case key substring  
+
+      • Each row: label • text field translating that string  
+
+      • **Save translations** button here (DOES NOT rely only on sticky Save)
+
+
+###############################################################################
+# SECTION F3 — SETTINGS → APPROVAL
+###############################################################################
+  Sidebar: **Approval**
+
+  Card heading: **Customer approval options**
+
+      1. **Approval mode** radio  
+
+          ○ Manual approval  
+          ○ Auto approval  
+
+      2. **Approved customer tag** text  
+         Placeholder e.g. `status:approved`  
+         Describes hiding registration + storefront approved flows.
+
+      3. **After submit** radios  
+
+          ○ Redirect to URL  
+          ○ Clear form, and show messages  
+
+         If Redirect → **Redirect URL** (type url)  
+
+         If Message → multiline **Thank you message** (simple HTML hint)  
+
+      4. **Pending approval screen title** multiline/plain guidance  
+
+      5. **Pending approval screen message** multiline  
+
+
+###############################################################################
+# SECTION F4 — SETTINGS → EMAIL → SMTP
+###############################################################################
+  Sidebar: Email · sub **SMTP**
+
+    Intro bullets: Gmail app password reminder + generic custom domain SMTP text  
+
+    **Use Gmail** quick fill button  
+
+    Fields:  
+
+      • SMTP host  
+
+      • Port (number field)  
+
+      • ☑ Use TLS (secure)  
+
+      • From email  
+
+      • Username  
+
+      • Password (`Leave blank to keep existing` when editing)  
+
+      • From name  
+
+    Footer reminds: click **Save** on sticky Settings bar  
+
+
+###############################################################################
+# SECTION F5 — SETTINGS → EMAIL → TEMPLATE
+###############################################################################
+  Sidebar: Email · sub **Template**
+
+  Banner: approvals/rejections send only when each section’s ☑ Send email on.
+
+  =============================================================================  
+  F5-A  CUSTOMER APPROVED EMAIL (collapsible)  
+  =============================================================================
+
+    Toolbar row  
+
+      Heading text **Customer approved email**  
+
+      ☑ toggle **Send approval email**
+
+    Expanded content split layout (customize • preview modal chooser):
+
+      Button **Choose a template**  
+
+        Modal **Choose a template**  
+
+          Left list:  
+
+            • Custom (edit below)  
+            • {each preset from APPROVAL_EMAIL_PRESETS}  
+
+          Right: approximate Email preview iframe card  
+
+          Primary **Apply template** · secondary **Cancel**  
+
+      After customizing (when collapsed inline still shows editors):
+
+        Fields (mirroring code):  
+
+          • Logo URL (PNG/JPG/WebP only validation)  
+
+          • **Use store logo** button if admin GraphQL exposes brand  
+
+          • Logo size slider (~80–400 px)  
+
+          • Logo alignment — Left · Center · Right  
+
+          • Header title  
+
+          • Header title size dropdown 16–28 px presets  
+
+          • Header title color (color picker)  
+
+          • Header background color  
+
+          • Subject  
+
+          • Body rich text  
+
+          • Button text / Button URL  
+
+          • Button color / Button text color  
+
+          • Button alignment — Left · Center · Right  
+
+          • Footer rich text  
+
+          • ☑ Show “Powered by Approvefy …” footer line  
+
+          Right column static approval preview duplicates logic.
+
+  =============================================================================  
+  F5-B  CUSTOMER REJECTED EMAIL  
+  =============================================================================
+
+      Same skeleton as approval: collapsible  
+
+      ☑ Send rejection email  
+
+      Template chooser modal for REJECTION presets  
+
+      Parallel field set: Logo URL · size slider · align · header titles · colors  
+
+      Subject  
+
+      Body rich text (+ Liquid placeholders help string in UI)
+
+      Button text / Button URL  
+
+      Button colors · alignment  
+
+      Footer  
+
+      ☑ Powered by Approvefy line  
+
+      Preview pane title “Email preview”
+
+
+###############################################################################
+# SECTION G — PRICING SCREEN
+###############################################################################
+  Navigation: Pricing  
+  Typical content: informational text that pricing unavailable / placeholder  
+
+
+###############################################################################
+# SECTION H — HOME / OVERVIEW (optional setup checklist)
+###############################################################################
+  First load page can show:  
+
+    · Setup annotated steps embedding / form creation / Settings configuration  
+
+    · Live status Pending / Approved / Rejected badges  
+
+    · Secondary buttons shortcut to Customers, Form Builder, Settings, tutorial URL  
+
+
+###############################################################################
+# SECTION I — SUGGESTED SETUP SEQUENCE (REFERENCE)
+###############################################################################
+    1) Theme embed (Section A) ON + messages + optional Form ID  
+    2) Form Builder Sections C–E (default form, fields, appearance)  
+    3) Language F2 baseline + translations  
+    4) Approval F3 + Store F1 if you gate checkout  
+    5) Email F4 SMTP then F5 template toggles + content  
+    6) Operate Customers daily (Section B)  
+
+
+================================================================================
+  End · All listed options traced to Approvefy admin / theme embed UI layers.
+================================================================================

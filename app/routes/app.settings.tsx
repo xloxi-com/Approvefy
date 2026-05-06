@@ -1765,10 +1765,8 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
         ? selectedDefault
         : Array.from(enabledCodes)[0] || "en";
 
-    const storeUi = useMemo(
-        () => getSettingsStoreUiStrings(effectiveDefault),
-        [effectiveDefault]
-    );
+    // Admin chrome is always English; storefront-facing strings live under Language / saved settings.
+    const storeUi = useMemo(() => getSettingsStoreUiStrings("en"), []);
 
     useEffect(() => {
         setLastSavedAtDisplay(initialAppSettingsUpdatedAt ?? null);
