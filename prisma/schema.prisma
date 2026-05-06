@@ -26,6 +26,9 @@ model Session {
   emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+
+  @@index([shop, isOnline, expires])
+  @@index([shop, expires])
 }
 
 model Registration {
@@ -58,6 +61,8 @@ model Registration {
   @@index([shop, createdAt(sort: Desc)], map: "Registration_shop_createdAt_desc_idx")
   // `customerId` stores the Shopify Customer GID; lookups (reconcile, dedupe) hit this hot.
   @@index([customerId])
+  // Detail/reconcile code paths usually filter by both shop and customerId.
+  @@index([shop, customerId], map: "Registration_shop_customerId_idx")
 }
 
 model AppSettings {

@@ -1921,35 +1921,75 @@ export async function getRegistrationEmail(dbId: string): Promise<string | null>
   return reg?.email ?? null;
 }
 
+type NotificationRecipient = {
+  email: string | null;
+  firstName: string | null;
+};
+
+/** Get customer email + first name in one lookup (DB first, Shopify fallback). */
+export async function getCustomerNotificationRecipient(
+  admin: AdminGraphQL,
+  shop: string,
+  customerId: string
+): Promise<NotificationRecipient> {
+  if (customerId.startsWith("db-")) {
+    const registrationId = customerId.slice(3);
+    const reg = await prisma.registration.findUnique({
+      where: { id: registrationId },
+      select: { email: true, firstName: true },
+    });
+    return {
+      email: typeof reg?.email === "string" && reg.email.trim() ? reg.email : null,
+      firstName:
+        typeof reg?.firstName === "string" && reg.firstName.trim()
+          ? reg.firstName.trim()
+          : null,
+    };
+  }
+
+  const reg = await prisma.registration.findFirst({
+    where: { shop, customerId },
+    select: { email: true, firstName: true },
+    orderBy: { createdAt: "desc" },
+  });
+  if (reg?.email?.trim()) {
+    return {
+      email: reg.email,
+      firstName: reg.firstName?.trim() || null,
+    };
+  }
+
+  try {
+    const res = await admin.graphql(
+      `#graphql
+      query getCustomerEmailAndFirstName($id: ID!) {
+        customer(id: $id) {
+          email
+          firstName
+        }
+      }`,
+      { variables: { id: customerId } }
+    );
+    const data = await res.json();
+    const email = data?.data?.customer?.email;
+    const firstName = data?.data?.customer?.firstName;
+    return {
+      email: typeof email === "string" && email.trim() ? email : null,
+      firstName: typeof firstName === "string" && firstName.trim() ? firstName.trim() : null,
+    };
+  } catch {
+    return { email: null, firstName: null };
+  }
+}
+
 /** Get customer email for rejection notification (from Registration or Shopify). */
 export async function getCustomerEmailForRejection(
   admin: AdminGraphQL,
   shop: string,
   customerId: string
 ): Promise<string | null> {
-  if (customerId.startsWith("db-")) {
-    return getRegistrationEmail(customerId);
-  }
-  const reg = await prisma.registration.findFirst({
-    where: { shop, customerId },
-    select: { email: true },
-    orderBy: { createdAt: "desc" },
-  });
-  if (reg?.email) return reg.email;
-  try {
-    const res = await admin.graphql(
-      `#graphql
-      query getCustomer($id: ID!) {
-        customer(id: $id) { email }
-      }`,
-      { variables: { id: customerId } }
-    );
-    const data = await res.json();
-    const email = data?.data?.customer?.email;
-    return typeof email === "string" && email.trim() ? email : null;
-  } catch {
-    return null;
-  }
+  const recipient = await getCustomerNotificationRecipient(admin, shop, customerId);
+  return recipient.email;
 }
 
 /** Get customer first name for approval/rejection emails. */
@@ -1958,39 +1998,8 @@ export async function getCustomerFirstNameForEmail(
   shop: string,
   customerId: string
 ): Promise<string | null> {
-  if (customerId.startsWith("db-")) {
-    const registrationId = customerId.slice(3);
-    const reg = await prisma.registration.findUnique({
-      where: { id: registrationId },
-      select: { firstName: true },
-    });
-    const name = reg?.firstName;
-    return typeof name === "string" && name.trim() ? name.trim() : null;
-  }
-
-  const reg = await prisma.registration.findFirst({
-    where: { shop, customerId },
-    select: { firstName: true },
-    orderBy: { createdAt: "desc" },
-  });
-  if (reg?.firstName && reg.firstName.trim()) {
-    return reg.firstName.trim();
-  }
-
-  try {
-    const res = await admin.graphql(
-      `#graphql
-      query getCustomerFirstName($id: ID!) {
-        customer(id: $id) { firstName }
-      }`,
-      { variables: { id: customerId } }
-    );
-    const data = await res.json();
-    const firstName = data?.data?.customer?.firstName;
-    return typeof firstName === "string" && firstName.trim() ? firstName.trim() : null;
-  } catch {
-    return null;
-  }
+  const recipient = await getCustomerNotificationRecipient(admin, shop, customerId);
+  return recipient.firstName;
 }
 
 // ─── Delete Customer ───
@@ -2053,11 +2062,13 @@ export async function deleteCustomer(
           where: { customerId: id },
           select: { customData: true },
         });
-        for (const reg of regs) {
-          if (reg.customData && typeof reg.customData === "object" && !Array.isArray(reg.customData)) {
-            await deleteSupabaseFilesFromCustomData(reg.customData as Record<string, unknown>);
-          }
-        }
+        await Promise.all(
+          regs.map(async (reg) => {
+            if (reg.customData && typeof reg.customData === "object" && !Array.isArray(reg.customData)) {
+              await deleteSupabaseFilesFromCustomData(reg.customData as Record<string, unknown>);
+            }
+          })
+        );
         await prisma.registration.deleteMany({ where: { customerId: id } });
       }
       console.log(`Customer ${id} deleted from app DB`);

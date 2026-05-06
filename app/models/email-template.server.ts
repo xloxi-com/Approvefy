@@ -16,10 +16,23 @@ export type EmailTemplateRecord = {
   updatedAt: Date;
 };
 
+const emailTemplateSelect = {
+  id: true,
+  shop: true,
+  slug: true,
+  name: true,
+  subject: true,
+  bodyHtml: true,
+  bodyText: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export async function listEmailTemplates(shop: string): Promise<EmailTemplateRecord[]> {
   const list = await prisma.emailTemplate.findMany({
     where: { shop },
     orderBy: { name: "asc" },
+    select: emailTemplateSelect,
   });
   return list;
 }
@@ -30,6 +43,7 @@ export async function getEmailTemplateBySlug(
 ): Promise<EmailTemplateRecord | null> {
   const row = await prisma.emailTemplate.findUnique({
     where: { shop_slug: { shop, slug } },
+    select: emailTemplateSelect,
   });
   return row;
 }
@@ -38,9 +52,11 @@ export async function getEmailTemplateById(
   shop: string,
   id: string
 ): Promise<EmailTemplateRecord | null> {
-  const row = await prisma.emailTemplate.findFirst({
-    where: { id, shop },
+  const row = await prisma.emailTemplate.findUnique({
+    where: { id },
+    select: emailTemplateSelect,
   });
+  if (!row || row.shop !== shop) return null;
   return row;
 }
 
@@ -79,8 +95,11 @@ export async function updateEmailTemplate(
   id: string,
   data: { name?: string; subject?: string; bodyHtml?: string; bodyText?: string }
 ): Promise<{ template?: EmailTemplateRecord; error?: string }> {
-  const existing = await prisma.emailTemplate.findFirst({ where: { id, shop } });
-  if (!existing) return { error: "Template not found." };
+  const existing = await prisma.emailTemplate.findUnique({
+    where: { id },
+    select: emailTemplateSelect,
+  });
+  if (!existing || existing.shop !== shop) return { error: "Template not found." };
   const name = data.name !== undefined ? data.name.trim() || existing.name : existing.name;
   const subject = data.subject !== undefined ? data.subject.trim() || existing.subject : existing.subject;
   const bodyHtml = data.bodyHtml !== undefined ? data.bodyHtml.trim() : existing.bodyHtml;
@@ -98,8 +117,11 @@ export async function updateEmailTemplate(
 }
 
 export async function deleteEmailTemplate(shop: string, id: string): Promise<{ error?: string }> {
-  const existing = await prisma.emailTemplate.findFirst({ where: { id, shop } });
-  if (!existing) return { error: "Template not found." };
+  const existing = await prisma.emailTemplate.findUnique({
+    where: { id },
+    select: { id: true, shop: true },
+  });
+  if (!existing || existing.shop !== shop) return { error: "Template not found." };
   try {
     await prisma.emailTemplate.delete({ where: { id } });
     return {};

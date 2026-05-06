@@ -52,8 +52,7 @@ import {
   approveCustomer,
   denyCustomer,
   deleteCustomer,
-  getCustomerEmailForRejection,
-  getCustomerFirstNameForEmail,
+  getCustomerNotificationRecipient,
   getCustomerApprovalModeForShop,
   getOfflineAccessTokenForShop,
   reconcilePendingRegistrationsForAutoApprovalShop,
@@ -352,15 +351,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         // wait on SMTP RTT (often 1–3s) before the toast renders. Errors are logged
         // and reported via a .catch handler so the promise never goes "unhandled".
         const shopForEmail = session.shop;
-        getCustomerEmailForRejection(admin, shopForEmail, id)
-          .then(async (toEmail) => {
-            if (!toEmail) return;
-            const customerFirstName =
-              (await getCustomerFirstNameForEmail(admin, shopForEmail, id)) ?? undefined;
-            return sendApprovalEmail(shopForEmail, toEmail, {
+        getCustomerNotificationRecipient(admin, shopForEmail, id)
+          .then(async (recipient) => {
+            if (!recipient.email) return;
+            return sendApprovalEmail(shopForEmail, recipient.email, {
               shopName,
               shopEmail,
-              customerFirstName,
+              customerFirstName: recipient.firstName ?? undefined,
               activationUrl: activationUrl ?? undefined,
             });
           })
@@ -368,10 +365,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       } else if (actionType === "DENY") {
         await denyCustomer(admin, id);
         const shopForEmail = session.shop;
-        getCustomerEmailForRejection(admin, shopForEmail, id)
-          .then((toEmail) => {
-            if (!toEmail) return;
-            return sendRejectionEmail(shopForEmail, toEmail, { shopName, shopEmail });
+        getCustomerNotificationRecipient(admin, shopForEmail, id)
+          .then((recipient) => {
+            if (!recipient.email) return;
+            return sendRejectionEmail(shopForEmail, recipient.email, { shopName, shopEmail });
           })
           .catch((err) => console.error("[Deny] Email send failed:", err));
       } else if (actionType === "DELETE") {
