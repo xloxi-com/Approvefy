@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs } from "react-router";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import db from "../db.server";
 
 function verifyShopifyHmacSha256(
   rawBody: Buffer,
@@ -42,29 +41,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response(null, { status: 401 });
   }
 
-  let shopDomain: string | undefined;
+  // Minimal parsing validates payload structure without coupling compliance events
+  // to app sessions (these webhooks can arrive after uninstall).
   try {
-    const payload = JSON.parse(rawBody.toString("utf8")) as {
-      shop_domain?: unknown;
-    };
-    if (typeof payload.shop_domain === "string" && payload.shop_domain.trim()) {
-      shopDomain = payload.shop_domain.trim();
-    }
+    JSON.parse(rawBody.toString("utf8"));
   } catch {
-    return new Response(null, { status: 401 });
-  }
-
-  if (!shopDomain) {
-    return new Response(null, { status: 401 });
-  }
-
-  const session = await db.session.findFirst({
-    where: { shop: shopDomain },
-    select: { id: true },
-  });
-
-  if (!session) {
-    return new Response(null, { status: 401 });
+    return new Response(null, { status: 400 });
   }
 
   return new Response(null, { status: 200 });
