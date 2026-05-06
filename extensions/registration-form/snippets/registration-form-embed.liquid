@@ -46,7 +46,8 @@ window.__REGISTRATION_FORM_CONFIG__ = {
     cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
       ? String(cfg.shopifyLoggedInCustomerId).trim()
       : '0';
-  var configCacheKey = 'customer_approval_config_' + shop + '_' + embedFormId + '_' + loc + '_' + loggedInCustIdForCache;
+  var cacheSchemaVersion = 'v2';
+  var configCacheKey = 'customer_approval_config_' + cacheSchemaVersion + '_' + shop + '_' + embedFormId + '_' + loc + '_' + loggedInCustIdForCache;
   function applyThemeCss(cssText) {
     if (typeof cssText !== 'string' || !cssText.trim()) return;
     var existing = document.getElementById('customer-approval-theme-style');

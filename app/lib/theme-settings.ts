@@ -9,8 +9,12 @@ export type ThemeSettings = {
   formDescriptionColor: string;
   /** Text alignment for the storefront form title (`h2`). */
   formTitleTextAlign: TextAlignOption;
+  /** Mobile text alignment for the storefront form title (`h2`). */
+  formTitleTextAlignMobile: TextAlignOption;
   /** Text alignment for the storefront form description paragraph. */
   formDescriptionTextAlign: TextAlignOption;
+  /** Mobile text alignment for the storefront form description paragraph. */
+  formDescriptionTextAlignMobile: TextAlignOption;
   baseFontSize: string;
   formTitleFontSize: string;
   formDescriptionFontSize: string;
@@ -41,7 +45,9 @@ export const THEME_DEFAULTS: ThemeSettings = {
   headingColor: "#111827",
   formDescriptionColor: "#6b7280",
   formTitleTextAlign: "left",
+  formTitleTextAlignMobile: "center",
   formDescriptionTextAlign: "left",
+  formDescriptionTextAlignMobile: "center",
   baseFontSize: "14px",
   formTitleFontSize: "28px",
   formDescriptionFontSize: "15px",
@@ -152,9 +158,17 @@ export function normalizeThemeSettings(raw: unknown): ThemeSettings {
       THEME_DEFAULTS.formDescriptionColor
     ),
     formTitleTextAlign: normalizeTextAlign(o.formTitleTextAlign, THEME_DEFAULTS.formTitleTextAlign),
+    formTitleTextAlignMobile: normalizeTextAlign(
+      o.formTitleTextAlignMobile,
+      THEME_DEFAULTS.formTitleTextAlignMobile
+    ),
     formDescriptionTextAlign: normalizeTextAlign(
       o.formDescriptionTextAlign,
       THEME_DEFAULTS.formDescriptionTextAlign
+    ),
+    formDescriptionTextAlignMobile: normalizeTextAlign(
+      o.formDescriptionTextAlignMobile,
+      THEME_DEFAULTS.formDescriptionTextAlignMobile
     ),
     baseFontSize: normalizePx(o.baseFontSize, THEME_DEFAULTS.baseFontSize, {
       min: 10,
@@ -221,7 +235,9 @@ export function buildThemeCss(theme: ThemeSettings): string {
     headingColor,
     formDescriptionColor,
     formTitleTextAlign,
+    formTitleTextAlignMobile,
     formDescriptionTextAlign,
+    formDescriptionTextAlignMobile,
     baseFontSize,
     formTitleFontSize,
     formDescriptionFontSize,
@@ -274,6 +290,16 @@ export function buildThemeCss(theme: ThemeSettings): string {
   font-size: ${formDescriptionFontSize} !important;
   color: ${formDescriptionColor} !important;
   text-align: ${formDescriptionTextAlign} !important;
+}
+
+@media (max-width: 749px) {
+  #custom-registration-container h2 {
+    text-align: ${formTitleTextAlignMobile} !important;
+  }
+
+  #custom-registration-container .form-description {
+    text-align: ${formDescriptionTextAlignMobile} !important;
+  }
 }
 
 #custom-registration-container .custom-form-field > label {

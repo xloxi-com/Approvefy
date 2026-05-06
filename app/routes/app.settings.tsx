@@ -229,6 +229,8 @@ export type CustomerApprovalSettings = {
     blockLoggedInWithoutApprovedTag: boolean;
     /** Alert shown before redirect when blocking logged-in customers without the approved tag (Buy it now / checkout). */
     loggedInCheckoutBlockedMessage: string;
+    /** Show/hide the storefront auth switch (Log in / Sign up) above the registration form. */
+    showAuthTabsOnRegistration: boolean;
 };
 
 const DEFAULT_REJECT_SUBJECT = "Your account registration update";
@@ -299,6 +301,7 @@ const CUSTOMER_APPROVAL_DEFAULTS: CustomerApprovalSettings = {
     guestCheckoutRedirectUrl: "",
     blockLoggedInWithoutApprovedTag: false,
     loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
+    showAuthTabsOnRegistration: true,
 };
 
 type ShopMetaCacheEntry = {
@@ -512,6 +515,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                             typeof o.loggedInCheckoutBlockedMessage === "string" && o.loggedInCheckoutBlockedMessage.trim()
                                 ? o.loggedInCheckoutBlockedMessage.trim()
                                 : CUSTOMER_APPROVAL_DEFAULTS.loggedInCheckoutBlockedMessage,
+                        showAuthTabsOnRegistration:
+                            typeof o.showAuthTabsOnRegistration === "boolean"
+                                ? o.showAuthTabsOnRegistration
+                                : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
                         emailOnReject: o.emailOnReject === true,
                         rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                         // Prefer email_template table for subject/body so reload always shows last-saved template
@@ -821,6 +828,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                         typeof o.loggedInCheckoutBlockedMessage === "string" && o.loggedInCheckoutBlockedMessage.trim()
                             ? o.loggedInCheckoutBlockedMessage.trim()
                             : CUSTOMER_APPROVAL_DEFAULTS.loggedInCheckoutBlockedMessage,
+                    showAuthTabsOnRegistration:
+                        typeof o.showAuthTabsOnRegistration === "boolean"
+                            ? o.showAuthTabsOnRegistration
+                            : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
                     emailOnReject: o.emailOnReject === true,
                     rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                     rejectEmailSubject: typeof o.rejectEmailSubject === "string" ? o.rejectEmailSubject : DEFAULT_REJECT_SUBJECT,
@@ -3447,9 +3458,22 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                                     setCustomerApprovalSettings((prev) => ({
                                                         ...prev,
                                                         redirectGuestsFromCheckout: checked,
+                                                        // Logged-in blocking depends on the same redirect flow.
+                                                        ...(checked ? {} : { blockLoggedInWithoutApprovedTag: false }),
                                                     }))
                                                 }
                                                 helpText={storeUi.redirectGuestsHelp}
+                                            />
+                                            <Checkbox
+                                                label={storeUi.showAuthTabsLabel}
+                                                checked={customerApprovalSettings.showAuthTabsOnRegistration}
+                                                onChange={(checked) =>
+                                                    setCustomerApprovalSettings((prev) => ({
+                                                        ...prev,
+                                                        showAuthTabsOnRegistration: checked,
+                                                    }))
+                                                }
+                                                helpText={storeUi.showAuthTabsHelp}
                                             />
                                             {customerApprovalSettings.redirectGuestsFromCheckout && (
                                                 <>
@@ -3472,39 +3496,41 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                         </BlockStack>
                                     </Card>
 
-                                    <Card>
-                                        <BlockStack gap="300">
-                                            <Text as="h3" variant="headingSm">
-                                                {storeUi.loggedInCustomersHeading}
-                                            </Text>
-                                            <Checkbox
-                                                label={storeUi.blockLoggedInLabel}
-                                                checked={customerApprovalSettings.blockLoggedInWithoutApprovedTag}
-                                                onChange={(checked) =>
-                                                    setCustomerApprovalSettings((prev) => ({
-                                                        ...prev,
-                                                        blockLoggedInWithoutApprovedTag: checked,
-                                                    }))
-                                                }
-                                            />
-                                            {customerApprovalSettings.blockLoggedInWithoutApprovedTag && (
-                                                <TextField
-                                                    label={storeUi.popupMessageLabel}
-                                                    value={customerApprovalSettings.loggedInCheckoutBlockedMessage}
-                                                    onChange={(val) =>
+                                    {customerApprovalSettings.redirectGuestsFromCheckout && (
+                                        <Card>
+                                            <BlockStack gap="300">
+                                                <Text as="h3" variant="headingSm">
+                                                    {storeUi.loggedInCustomersHeading}
+                                                </Text>
+                                                <Checkbox
+                                                    label={storeUi.blockLoggedInLabel}
+                                                    checked={customerApprovalSettings.blockLoggedInWithoutApprovedTag}
+                                                    onChange={(checked) =>
                                                         setCustomerApprovalSettings((prev) => ({
                                                             ...prev,
-                                                            loggedInCheckoutBlockedMessage: val,
+                                                            blockLoggedInWithoutApprovedTag: checked,
                                                         }))
                                                     }
-                                                    placeholder={storeUi.defaultLoggedInBlockedMessage}
-                                                    multiline={4}
-                                                    autoComplete="off"
-                                                    helpText={storeUi.popupMessageHelp}
                                                 />
-                                            )}
-                                        </BlockStack>
-                                    </Card>
+                                                {customerApprovalSettings.blockLoggedInWithoutApprovedTag && (
+                                                    <TextField
+                                                        label={storeUi.popupMessageLabel}
+                                                        value={customerApprovalSettings.loggedInCheckoutBlockedMessage}
+                                                        onChange={(val) =>
+                                                            setCustomerApprovalSettings((prev) => ({
+                                                                ...prev,
+                                                                loggedInCheckoutBlockedMessage: val,
+                                                            }))
+                                                        }
+                                                        placeholder={storeUi.defaultLoggedInBlockedMessage}
+                                                        multiline={4}
+                                                        autoComplete="off"
+                                                        helpText={storeUi.popupMessageHelp}
+                                                    />
+                                                )}
+                                            </BlockStack>
+                                        </Card>
+                                    )}
                                 </BlockStack>
                             </SectionCard>
                         )}

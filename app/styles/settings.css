@@ -208,22 +208,26 @@
 .settings-template-chooser-modal {
   display: flex;
   width: 100%;
-  min-height: 520px;
-  height: min(70vh, 680px);
-  border-radius: var(--p-border-radius-200, 8px);
+  min-height: 560px;
+  height: min(74vh, 720px);
+  border-radius: 18px;
   overflow: hidden;
-  background: var(--p-color-bg-surface-secondary, #f6f6f7);
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 20px 45px -22px rgba(15, 23, 42, 0.3);
 }
 
 .settings-template-chooser-sidebar {
-  width: 272px;
-  min-width: 220px;
+  width: 290px;
+  min-width: 240px;
   flex-shrink: 0;
   min-height: 100%;
   overflow-y: auto;
-  padding: var(--p-space-300, 12px);
-  border-right: 1px solid var(--p-color-border, #e1e3e5);
-  background: var(--p-color-bg-surface, #fff);
+  padding: 14px;
+  border-right: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 .settings-template-chooser-sidebar .Polaris-OptionList {
@@ -231,17 +235,23 @@
 }
 
 .settings-template-chooser-sidebar .Polaris-OptionList-Option {
-  border-radius: var(--p-border-radius-200, 8px);
-  margin-bottom: 2px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+  border: 1px solid transparent;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
 }
 
 .settings-template-chooser-sidebar .Polaris-OptionList-Option--focused,
 .settings-template-chooser-sidebar .Polaris-OptionList-Option:hover {
-  background: var(--p-color-bg-surface-hover, #f6f6f7);
+  background: #ffffff;
+  border-color: #e2e8f0;
+  transform: translateX(1px);
 }
 
 .settings-template-chooser-sidebar .Polaris-OptionList-Option--selectable.Polaris-OptionList-Option--active {
-  background: var(--p-color-bg-surface-selected, #f1f2f4);
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
   font-weight: 600;
 }
 
@@ -250,36 +260,37 @@
   min-width: 0;
   min-height: 100%;
   overflow-y: auto;
-  padding: var(--p-space-400, 16px) var(--p-space-500, 20px);
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 20px 22px 24px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 42%, #eef2ff 100%);
 }
 
 .settings-template-chooser-preview-label {
   display: flex;
   align-items: center;
   gap: var(--p-space-200, 8px);
-  margin-bottom: var(--p-space-300, 12px);
+  margin-bottom: 12px;
 }
 
 .settings-template-chooser-preview-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 10px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #64748b;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  color: #475569;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
   border-radius: 999px;
 }
 
 /* Outer “inbox” frame — matches sent email background */
 .settings-email-preview-frame {
-  padding: var(--p-space-500, 20px) var(--p-space-300, 12px);
-  background: #f1f5f9;
-  border-radius: var(--p-border-radius-300, 12px);
+  padding: 18px 14px;
+  background: linear-gradient(180deg, #e2e8f0 0%, #edf2f7 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
   min-height: 360px;
 }
 
@@ -287,18 +298,18 @@
   max-width: 560px;
   margin: 0 auto;
   background: #fff;
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #dbe3ee;
   box-shadow:
-    0 4px 6px -1px rgba(15, 23, 42, 0.06),
-    0 12px 32px -8px rgba(15, 23, 42, 0.1);
+    0 8px 18px -6px rgba(15, 23, 42, 0.09),
+    0 24px 45px -22px rgba(15, 23, 42, 0.18);
 }
 
 .settings-email-preview-card-header {
   padding: 20px 24px;
-  border-bottom: 1px solid #e2e8f0;
-  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border-bottom: 1px solid #dbe3ee;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 85%);
 }
 
 .settings-email-preview-card-header[data-has-bg="true"] {
@@ -329,9 +340,9 @@
 
 /* Choose a template popover: default width */
 .settings-template-chooser-popover {
-  width: 960px;
+  width: 1040px;
   max-width: 90vw;
-  min-width: 720px;
+  min-width: 760px;
   box-sizing: border-box;
   position: relative;
   z-index: 1;
@@ -353,6 +364,29 @@
   max-width: 90vw !important;
   width: auto !important;
   min-width: 0 !important;
+}
+
+@media (max-width: 900px) {
+  .settings-template-chooser-modal {
+    flex-direction: column;
+    min-height: 0;
+    height: min(82vh, 760px);
+  }
+  .settings-template-chooser-sidebar {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-height: 34vh;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .settings-template-chooser-main {
+    padding: 16px;
+  }
+  .settings-template-chooser-popover {
+    width: min(94vw, 760px);
+    min-width: 0;
+  }
 }
 
 /* Template: customize left, email preview right */

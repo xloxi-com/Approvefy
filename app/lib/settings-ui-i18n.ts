@@ -9,6 +9,8 @@ export type SettingsStoreUiStrings = {
     guestCheckoutHeading: string;
     redirectGuestsLabel: string;
     redirectGuestsHelp: string;
+    showAuthTabsLabel: string;
+    showAuthTabsHelp: string;
     redirectUrlLabel: string;
     redirectUrlPlaceholder: string;
     redirectUrlHelp: string;
@@ -29,6 +31,8 @@ const EN: SettingsStoreUiStrings = {
     guestCheckoutHeading: "Guest checkout",
     redirectGuestsLabel: "Redirect guests away from checkout and Buy it now",
     redirectGuestsHelp: "Enable the app embed (or Registration Form block) in your theme.",
+    showAuthTabsLabel: "Show Log in / Sign up switch on registration form",
+    showAuthTabsHelp: "Turn off to hide the switch above the signup form in storefront.",
     redirectUrlLabel: "Redirect URL",
     redirectUrlPlaceholder: "/pages/contact or https://…",
     redirectUrlHelp: "Where guests are sent when blocked.",
@@ -45,6 +49,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Commande invité",
         redirectGuestsLabel: "Rediriger les invités loin du paiement et de « Acheter maintenant »",
         redirectGuestsHelp: "Activez l’intégration d’application (ou le bloc Formulaire d’inscription) dans votre thème.",
+        showAuthTabsLabel: "Afficher le sélecteur Connexion / Inscription sur le formulaire",
+        showAuthTabsHelp: "Désactivez pour masquer ce sélecteur au-dessus du formulaire d’inscription.",
         redirectUrlLabel: "URL de redirection",
         redirectUrlPlaceholder: "/pages/contact ou https://…",
         redirectUrlHelp: "Destination des invités lorsqu’ils sont bloqués.",
@@ -60,6 +66,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Gast-Checkout",
         redirectGuestsLabel: "Gäste vom Checkout und „Sofort kaufen“ wegleiten",
         redirectGuestsHelp: "App-Einbettung (oder Registrierungsformular-Block) im Theme aktivieren.",
+        showAuthTabsLabel: "Schalter „Anmelden / Registrieren“ im Registrierungsformular anzeigen",
+        showAuthTabsHelp: "Deaktivieren, um den Schalter über dem Formular auszublenden.",
         redirectUrlLabel: "Weiterleitungs-URL",
         redirectUrlPlaceholder: "/pages/contact oder https://…",
         redirectUrlHelp: "Wohin Gäste geschickt werden, wenn sie blockiert sind.",
@@ -75,6 +83,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Pago como invitado",
         redirectGuestsLabel: "Redirigir invitados fuera del pago y de Comprar ahora",
         redirectGuestsHelp: "Activa la incrustación de la app (o el bloque Formulario de registro) en tu tema.",
+        showAuthTabsLabel: "Mostrar conmutador Iniciar sesión / Registrarse en el formulario",
+        showAuthTabsHelp: "Desactívalo para ocultar el conmutador sobre el formulario de registro.",
         redirectUrlLabel: "URL de redirección",
         redirectUrlPlaceholder: "/pages/contact o https://…",
         redirectUrlHelp: "A dónde se envía a los invitados cuando se bloquean.",
@@ -90,6 +100,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Checkout ospite",
         redirectGuestsLabel: "Reindirizza gli ospiti lontano dal checkout e da Compra ora",
         redirectGuestsHelp: "Abilita l’embed dell’app (o il blocco Modulo di registrazione) nel tema.",
+        showAuthTabsLabel: "Mostra selettore Accedi / Registrati nel modulo",
+        showAuthTabsHelp: "Disattiva per nascondere il selettore sopra il modulo di registrazione.",
         redirectUrlLabel: "URL di reindirizzamento",
         redirectUrlPlaceholder: "/pages/contact o https://…",
         redirectUrlHelp: "Dove vengono inviati gli ospiti quando vengono bloccati.",
@@ -105,6 +117,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Gastafrekening",
         redirectGuestsLabel: "Gasten wegsturen van afrekenen en Nu kopen",
         redirectGuestsHelp: "Schakel de app-embed (of het registratieformulierblok) in je thema in.",
+        showAuthTabsLabel: "Toon Inloggen / Registreren-schakelaar op registratieformulier",
+        showAuthTabsHelp: "Zet uit om de schakelaar boven het registratieformulier te verbergen.",
         redirectUrlLabel: "Redirect-URL",
         redirectUrlPlaceholder: "/pages/contact of https://…",
         redirectUrlHelp: "Waar gasten naartoe gaan als ze worden geblokkeerd.",
@@ -120,6 +134,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Płatność gościa",
         redirectGuestsLabel: "Przekieruj gości z kasy i z opcji Kup teraz",
         redirectGuestsHelp: "Włącz osadzenie aplikacji (lub blok formularza rejestracji) w motywie.",
+        showAuthTabsLabel: "Pokaż przełącznik Logowanie / Rejestracja nad formularzem",
+        showAuthTabsHelp: "Wyłącz, aby ukryć przełącznik nad formularzem rejestracji.",
         redirectUrlLabel: "URL przekierowania",
         redirectUrlPlaceholder: "/pages/contact lub https://…",
         redirectUrlHelp: "Dokąd trafiają goście po zablokowaniu.",
@@ -135,6 +151,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Checkout de convidado",
         redirectGuestsLabel: "Redirecionar convidados para fora do checkout e Comprar agora",
         redirectGuestsHelp: "Ative a incorporação da app (ou o bloco Formulário de registo) no tema.",
+        showAuthTabsLabel: "Mostrar alternador Iniciar sessão / Registar no formulário",
+        showAuthTabsHelp: "Desative para ocultar o alternador acima do formulário de registo.",
         redirectUrlLabel: "URL de redirecionamento",
         redirectUrlPlaceholder: "/pages/contact ou https://…",
         redirectUrlHelp: "Para onde os convidados são enviados quando bloqueados.",
@@ -150,6 +168,8 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "விருந்தினர் பணம் செலுத்தல்",
         redirectGuestsLabel: "விருந்தினர்களை செக் அவுட் மற்றும் «இப்போது வாங்கு» பக்கத்திலிருந்து திருப்பி அனுப்பு",
         redirectGuestsHelp: "தீமில் ஆப் எம்பெட் (அல்லது பதிவுப் படிவத் தொகுதி) இயக்கவும்.",
+        showAuthTabsLabel: "பதிவு படிவத்தின் மேலே Log in / Sign up மாற்றியை காட்டு",
+        showAuthTabsHelp: "இந்த மாற்றியை மறைக்க Off செய்யவும்.",
         redirectUrlLabel: "திருப்பும் URL",
         redirectUrlPlaceholder: "/pages/contact அல்லது https://…",
         redirectUrlHelp: "தடுக்கப்படும்போது விருந்தினர்கள் அனுப்பப்படும் இடம்.",

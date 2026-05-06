@@ -320,7 +320,10 @@ export function FormAppearancePanel({
                                     Storefront heading and description
                                 </Text>
                                 <Text as="p" variant="bodySm" tone="subdued">
-                                    Text alignment for the main title and subtitle shown above the form fields on your store.
+                                    Set separate text alignment for desktop and mobile for the main title and subtitle above the form.
+                                </Text>
+                                <Text as="h4" variant="headingXs">
+                                    Desktop
                                 </Text>
                                 <InlineStack gap="400" wrap blockAlign="start">
                                     <Box minWidth="200px" maxWidth="100%">
@@ -346,6 +349,39 @@ export function FormAppearancePanel({
                                                 setThemeSettings((prev) => ({
                                                     ...prev,
                                                     formDescriptionTextAlign: val as TextAlignOption,
+                                                }))
+                                            }
+                                            disabled={disabled}
+                                        />
+                                    </Box>
+                                </InlineStack>
+                                <Text as="h4" variant="headingXs">
+                                    Mobile
+                                </Text>
+                                <InlineStack gap="400" wrap blockAlign="start">
+                                    <Box minWidth="200px" maxWidth="100%">
+                                        <Select
+                                            label="Heading alignment"
+                                            options={STOREFRONT_TEXT_ALIGN_OPTIONS}
+                                            value={previewTheme.formTitleTextAlignMobile}
+                                            onChange={(val) =>
+                                                setThemeSettings((prev) => ({
+                                                    ...prev,
+                                                    formTitleTextAlignMobile: val as TextAlignOption,
+                                                }))
+                                            }
+                                            disabled={disabled}
+                                        />
+                                    </Box>
+                                    <Box minWidth="200px" maxWidth="100%">
+                                        <Select
+                                            label="Description alignment"
+                                            options={STOREFRONT_TEXT_ALIGN_OPTIONS}
+                                            value={previewTheme.formDescriptionTextAlignMobile}
+                                            onChange={(val) =>
+                                                setThemeSettings((prev) => ({
+                                                    ...prev,
+                                                    formDescriptionTextAlignMobile: val as TextAlignOption,
                                                 }))
                                             }
                                             disabled={disabled}

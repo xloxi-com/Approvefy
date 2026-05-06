@@ -12,6 +12,7 @@
     max-width: 760px;
     padding: 40px;
     background: #ffffff;
+    border: none !important;
     border-radius: 16px;
     overflow: hidden;
     box-shadow: none;

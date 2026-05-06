@@ -306,6 +306,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             guestCheckoutRedirectUrl: string;
             blockLoggedInWithoutApprovedTag: boolean;
             loggedInCheckoutBlockedMessage: string;
+            showAuthTabsOnRegistration: boolean;
         } | null = null;
         if (shop && settings) {
             try {
@@ -374,6 +375,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                                 o.loggedInCheckoutBlockedMessage.trim()
                                     ? o.loggedInCheckoutBlockedMessage.trim()
                                     : defaultBlockedMsg,
+                            showAuthTabsOnRegistration:
+                                typeof o.showAuthTabsOnRegistration === "boolean"
+                                    ? o.showAuthTabsOnRegistration
+                                    : true,
                         };
                     }
 
@@ -407,6 +412,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 guestCheckoutRedirectUrl: "",
                 blockLoggedInWithoutApprovedTag: false,
                 loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
+                showAuthTabsOnRegistration: true,
             };
         }
 

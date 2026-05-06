@@ -15,7 +15,7 @@ import {
     getOfflineAccessTokenForShop,
     reconcilePendingRegistrationRow,
     shopifyCustomerHasAnyConfiguredApprovalTag,
-} from "../models/approval.server";
+} from "../models/approval.server"; 
 import { uploadFileToSupabase } from "../lib/supabase.server";
 import { sendApprovalEmail } from "../lib/approval-email.server";
 import { getShopNameAndEmail } from "../lib/shop-meta.server";

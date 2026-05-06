@@ -477,11 +477,12 @@
     cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
       ? String(cfg.shopifyLoggedInCustomerId).trim()
       : '0';
+  var CACHE_SCHEMA_VERSION = 'v2';
   var CONFIG_CACHE_KEY =
-    'customer_approval_config_' + shop + '_' + (embedFormId || '') + '_' + locale + '_' + loggedInCustIdForCache;
+    'customer_approval_config_' + CACHE_SCHEMA_VERSION + '_' + shop + '_' + (embedFormId || '') + '_' + locale + '_' + loggedInCustIdForCache;
   var CONFIG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — fast repeat loads; tab-switch refresh only after long absence (below)
   var FORM_HTML_CACHE_KEY =
-    'customer_approval_rendered_form_' + shop + '_' + (embedFormId || '') + '_' + locale + '_' + loggedInCustIdForCache;
+    'customer_approval_rendered_form_' + CACHE_SCHEMA_VERSION + '_' + shop + '_' + (embedFormId || '') + '_' + locale + '_' + loggedInCustIdForCache;
   var FORM_HTML_CACHE_TTL_MS = 30 * 60 * 1000;
 
   function readCachedConfig() {
@@ -1385,65 +1386,11 @@
     var isRegisterPage = window.location.pathname.indexOf('/account/register') !== -1;
     var isInline = !!(inlineRoot && !isRegisterPage);
     var floatingLoaderId = 'approvefy-inline-floating-loader';
-    var loadingFormLabel = function () {
-      return escapeHtml(t('loading') || 'Loading form...');
-    };
-    var ensureLoaderSpinKeyframes = function () {
-      if (document.getElementById('approvefy-loader-spin-style')) return;
-      var spinStyle = document.createElement('style');
-      spinStyle.id = 'approvefy-loader-spin-style';
-      spinStyle.type = 'text/css';
-      spinStyle.appendChild(document.createTextNode('@keyframes approvefySpin{to{transform:rotate(360deg)}}'));
-      document.head.appendChild(spinStyle);
-    };
-    var renderInlineLoadingState = function () {
-      if (!isInline || !inlineRoot) return;
-      var mount = inlineRoot.querySelector('.approvefy-registration-mount');
-      if (mount) {
-        if (mount.querySelector('#custom-registration-container')) return;
-        if (!mount.querySelector('.approvefy-form-loading')) {
-          ensureLoaderSpinKeyframes();
-          mount.innerHTML =
-            '<div class="approvefy-form-loading" style="padding:32px 16px;text-align:center;color:#6b7280;font-size:15px;line-height:1.5;">' +
-              '<div style="display:inline-flex;align-items:center;justify-content:center;gap:12px;">' +
-                '<span style="width:22px;height:22px;border:2px solid #e5e7eb;border-top-color:#111827;border-radius:50%;display:inline-block;animation:approvefySpin .75s linear infinite;flex-shrink:0;" aria-hidden="true"></span>' +
-                '<span>' + loadingFormLabel() + '</span>' +
-              '</div>' +
-            '</div>';
-        }
-      } else if (!document.getElementById(floatingLoaderId)) {
-        ensureLoaderSpinKeyframes();
-        var floating = document.createElement('div');
-        floating.id = floatingLoaderId;
-        floating.setAttribute('role', 'status');
-        floating.setAttribute('aria-live', 'polite');
-        floating.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483000;background:#111827;color:#fff;border-radius:999px;padding:10px 14px;display:inline-flex;align-items:center;gap:10px;box-shadow:0 8px 22px rgba(0,0,0,.24);font-size:13px;';
-        floating.innerHTML =
-          '<span style="width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;display:inline-block;animation:approvefySpin .75s linear infinite;flex-shrink:0;" aria-hidden="true"></span>' +
-          '<span>' + loadingFormLabel() + '</span>';
-        document.body.appendChild(floating);
-      }
-    };
     var clearFloatingInlineLoader = function () {
       var floating = document.getElementById(floatingLoaderId);
       if (floating && floating.parentNode) floating.parentNode.removeChild(floating);
     };
     var registerLoaderId = 'approvefy-register-spinner-loader';
-    var renderRegisterSpinnerLoader = function () {
-      if (!isRegisterPage || isInline) return;
-      if (!existingRegisterForm || !existingRegisterForm.parentNode) return;
-      if (document.getElementById(registerLoaderId)) return;
-      var loader = document.createElement('div');
-      loader.id = registerLoaderId;
-      loader.setAttribute('role', 'status');
-      loader.setAttribute('aria-live', 'polite');
-      loader.style.cssText = 'display:flex;justify-content:center;align-items:center;gap:12px;margin:14px 0 18px;color:#6b7280;font-size:15px;';
-      ensureLoaderSpinKeyframes();
-      loader.innerHTML =
-        '<span style="width:20px;height:20px;border:2px solid #d1d5db;border-top-color:#111827;border-radius:50%;display:inline-block;animation:approvefySpin .75s linear infinite;flex-shrink:0;" aria-hidden="true"></span>' +
-        '<span>' + loadingFormLabel() + '</span>';
-      existingRegisterForm.parentNode.insertBefore(loader, existingRegisterForm);
-    };
     var clearRegisterSpinnerLoader = function () {
       var loader = document.getElementById(registerLoaderId);
       if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
@@ -1470,19 +1417,50 @@
         if (mountCached) {
           mountCached.innerHTML = cachedFormHtml;
         }
-      } else {
-        renderInlineLoadingState();
       }
-    }
-    if (!readCachedConfig()) {
-      renderRegisterSpinnerLoader();
     }
     try {
-      // Use cached config for instant reloads when available, fall back to network.
-      config = readCachedConfig();
-      if (!config) {
+      // Fast path: render immediately from cache on reload.
+      var cachedConfig = readCachedConfig();
+      if (cachedConfig && typeof cachedConfig === 'object') {
+        config = cachedConfig;
+        // Background sync: if backend config changed, remount with fresh data.
+        configPromise.then(function (latestConfig) {
+          try {
+            if (!latestConfig || typeof latestConfig !== 'object') return;
+            var cachedFingerprint = JSON.stringify({
+              fields: cachedConfig.fields || [],
+              customerApprovalSettings: cachedConfig.customerApprovalSettings || null,
+              customCss: cachedConfig.customCss || '',
+              translations: cachedConfig.translations || {},
+              availableLocales: cachedConfig.availableLocales || [],
+              storefrontHeading: cachedConfig.storefrontHeading || '',
+              storefrontDescription: cachedConfig.storefrontDescription || '',
+              showProgressBar: cachedConfig.showProgressBar !== false
+            });
+            var latestFingerprint = JSON.stringify({
+              fields: latestConfig.fields || [],
+              customerApprovalSettings: latestConfig.customerApprovalSettings || null,
+              customCss: latestConfig.customCss || '',
+              translations: latestConfig.translations || {},
+              availableLocales: latestConfig.availableLocales || [],
+              storefrontHeading: latestConfig.storefrontHeading || '',
+              storefrontDescription: latestConfig.storefrontDescription || '',
+              showProgressBar: latestConfig.showProgressBar !== false
+            });
+            if (cachedFingerprint !== latestFingerprint) {
+              refreshConfigAndForm();
+            }
+          } catch (bgErr) {
+            void bgErr;
+          }
+        }).catch(function (cfgErr) {
+          void cfgErr;
+        });
+      } else {
         config = await configPromise;
       }
+      if (!config) throw new Error('Approvefy config unavailable');
       if (config.error) {
         console.warn('[Approvefy] Config API error:', config.error);
       }
@@ -1522,7 +1500,8 @@
         redirectGuestsFromCheckout: false,
         guestCheckoutRedirectUrl: '',
         blockLoggedInWithoutApprovedTag: false,
-        loggedInCheckoutBlockedMessage: ''
+        loggedInCheckoutBlockedMessage: '',
+        showAuthTabsOnRegistration: true
       };
       if (!cas0 || typeof cas0 !== 'object' || Array.isArray(cas0)) {
         config.customerApprovalSettings = casDefaults;
@@ -1828,13 +1807,20 @@
     var authTabsAriaLabel = cfg.customerLoggedIn
       ? escapeHtml(t('myAccount') + ' / ' + t('signUpTab'))
       : escapeHtml(t('logInTab') + ' / ' + t('signUpTab'));
+    var showAuthTabs =
+      !config ||
+      !config.customerApprovalSettings ||
+      config.customerApprovalSettings.showAuthTabsOnRegistration !== false;
+    var authTabsHtml = showAuthTabs
+      ? '<div class="approvefy-auth-tabs" aria-label="' + authTabsAriaLabel + '">' +
+          '<a class="approvefy-auth-tab approvefy-auth-tab--link" href="' + escapeHtml(authTabsNavHref) + '">' + escapeHtml(authTabsNavLabel) + '</a>' +
+          '<span class="approvefy-auth-tab approvefy-auth-tab--active" aria-current="page">' + escapeHtml(t('signUpTab')) + '</span>' +
+        '</div>'
+      : '';
 
     const formHTML = `
       <div id="custom-registration-container">
-        <div class="approvefy-auth-tabs" aria-label="${authTabsAriaLabel}">
-          <a class="approvefy-auth-tab approvefy-auth-tab--link" href="${escapeHtml(authTabsNavHref)}">${escapeHtml(authTabsNavLabel)}</a>
-          <span class="approvefy-auth-tab approvefy-auth-tab--active" aria-current="page">${escapeHtml(t('signUpTab'))}</span>
-        </div>
+        ${authTabsHtml}
         <h2>${h2Text}</h2>
         <p class="form-description">${descText}</p>
         <form id="custom-registration-form" novalidate>
@@ -1852,31 +1838,7 @@
       </div>
     `;
     
-    if (isInline && inlineRoot) {
-      var mountPt = inlineRoot.querySelector('.approvefy-registration-mount');
-      if (!mountPt) {
-        console.warn('[Approvefy] Missing .approvefy-registration-mount inside registration block');
-        return;
-      }
-      mountPt.innerHTML = formHTML;
-      writeCachedRenderedFormHtml(formHTML);
-      inlineRoot.setAttribute('data-approvefy-mounted', '1');
-    } else {
-      // If no container exists yet, create one now at the right place
-      if (!container) {
-        container = document.createElement('div');
-        container.id = 'custom-registration-container';
-        if (existingRegisterForm && existingRegisterForm.parentNode) {
-          existingRegisterForm.parentNode.insertBefore(container, existingRegisterForm);
-        } else {
-          mainContent.insertBefore(container, mainContent.firstChild);
-        }
-      }
-
-      container.outerHTML = formHTML;
-    }
-
-    // Appearance CSS applies immediately; Google Fonts deferred so first paint is not blocked by font CSS.
+    // Apply appearance styles before mount so cold loads do not flash/rescale after first paint.
     var existingThemeStyle = document.getElementById('customer-approval-theme-style');
     if (existingThemeStyle) existingThemeStyle.remove();
     if (backendCustomCss && typeof backendCustomCss === 'string' && backendCustomCss.trim().length > 0) {
@@ -1903,21 +1865,45 @@
       );
       document.head.appendChild(override);
     })();
+
     function injectGoogleFontDeferred() {
       var existingFontLink = document.getElementById('customer-approval-google-font');
       if (existingFontLink) existingFontLink.remove();
-      if (config.googleFont && typeof config.googleFont === 'string' && config.googleFont.trim().length > 0) {
-        try {
-          var fontFamilyParam = config.googleFont.trim().replace(/\s+/g, '+');
-          var fontLink = document.createElement('link');
-          fontLink.id = 'customer-approval-google-font';
-          fontLink.rel = 'stylesheet';
-          fontLink.href = 'https://fonts.googleapis.com/css2?family=' + fontFamilyParam + ':wght@400;500;600;700&display=swap';
-          document.head.appendChild(fontLink);
-        } catch (e) {
-          console.warn('[Approvefy] Failed to load Google Font:', e);
+      if (!(config.googleFont && typeof config.googleFont === 'string' && config.googleFont.trim().length > 0)) return;
+      try {
+        var fontFamilyParam = config.googleFont.trim().replace(/\s+/g, '+');
+        var fontLink = document.createElement('link');
+        fontLink.id = 'customer-approval-google-font';
+        fontLink.rel = 'stylesheet';
+        fontLink.href = 'https://fonts.googleapis.com/css2?family=' + fontFamilyParam + ':wght@400;500;600;700&display=swap';
+        document.head.appendChild(fontLink);
+      } catch (e) {
+        console.warn('[Approvefy] Failed to load Google Font:', e);
+      }
+    }
+
+    if (isInline && inlineRoot) {
+      var mountPt = inlineRoot.querySelector('.approvefy-registration-mount');
+      if (!mountPt) {
+        console.warn('[Approvefy] Missing .approvefy-registration-mount inside registration block');
+        return;
+      }
+      mountPt.innerHTML = formHTML;
+      writeCachedRenderedFormHtml(formHTML);
+      inlineRoot.setAttribute('data-approvefy-mounted', '1');
+    } else {
+      // If no container exists yet, create one now at the right place
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'custom-registration-container';
+        if (existingRegisterForm && existingRegisterForm.parentNode) {
+          existingRegisterForm.parentNode.insertBefore(container, existingRegisterForm);
+        } else {
+          mainContent.insertBefore(container, mainContent.firstChild);
         }
       }
+
+      container.outerHTML = formHTML;
     }
     if (typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(function () {
