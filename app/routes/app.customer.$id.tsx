@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useActionData, useNavigation, useNavigate, Form, useFetcher, redirect } from "react-router";
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
 import { flushSync } from "react-dom";
-import { Page, BlockStack, InlineStack, Text, TextField, Select, Button, Banner, Thumbnail, Box, ButtonGroup, Modal } from "@shopify/polaris";
+import { Page, BlockStack, InlineStack, Text, TextField, Button, Banner, Thumbnail, Box, ButtonGroup, Modal } from "@shopify/polaris";
 import { SectionCard } from "../components/SectionCard";
 import { FileIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -384,6 +384,14 @@ export default function CustomerDetailPage() {
     fetcher.data && isActionJson(fetcher.data) && fetcher.data.resendApproval
       ? fetcher.data
       : null;
+  const isResendingRejection =
+    fetcher.state !== "idle" && fetcher.formData?.get("intent") === "resendRejection";
+  const isResendingApproval =
+    fetcher.state !== "idle" && fetcher.formData?.get("intent") === "resendApproval";
+  const isRejectionEmailDisabled =
+    resendResult?.error === "Rejection email is disabled in Settings.";
+  const isApprovalEmailDisabled =
+    resendApprovalResult?.error === "Approval email is disabled in Settings.";
   const [showResendSuccessBanner, setShowResendSuccessBanner] = useState(true);
   const [showResendErrorBanner, setShowResendErrorBanner] = useState(true);
   const [showResendApprovalSuccessBanner, setShowResendApprovalSuccessBanner] = useState(true);
@@ -431,7 +439,15 @@ export default function CustomerDetailPage() {
   const [status, setStatus] = useState("pending");
   const [customDataValues, setCustomDataValues] = useState<Record<string, string>>({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [activeSubmitAction, setActiveSubmitAction] = useState<"save" | "approve" | "reject" | null>(null);
   const hasSyncedFromLoaderRef = useRef(false);
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => {
+    if (navigation.state === "idle") {
+      setActiveSubmitAction(null);
+    }
+  }, [navigation.state]);
 
   useEffect(() => {
     if ("error" in data) return;
@@ -566,22 +582,15 @@ export default function CustomerDetailPage() {
     navigate("/app/customers");
   }, [navigate]);
 
-  const statusOptions = useMemo(
-    () => {
-      if (!data || "error" in data) {
-        return [
-          { label: "Pending", value: "pending" },
-          { label: "Approved", value: "approved" },
-        ];
-      }
-      return [
-        { label: "Pending", value: "pending" },
-        { label: "Approved", value: "approved" },
-        ...(data.status !== "approved" ? [{ label: "Rejected", value: "denied" as const }] : []),
-      ];
-    },
-    [data]
-  );
+  const statusMeta = useMemo(() => {
+    if (status === "approved") {
+      return { label: "Approved", color: "#008060" };
+    }
+    if (status === "denied") {
+      return { label: "Rejected", color: "#D72C0D" };
+    }
+    return { label: "Pending", color: "#8A6116" };
+  }, [status]);
 
   const layoutApiKeys = useMemo(() => {
     if (!data || "error" in data) return new Set<string>();
@@ -739,7 +748,7 @@ export default function CustomerDetailPage() {
             {actionData.error}
           </Banner>
         )}
-        <Form id="customer-edit-form" method="post">
+        <Form id="customer-edit-form" method="post" ref={formRef}>
           <input type="hidden" name="intent" value="save" />
           <input type="hidden" name="status" value={status} />
           <SectionCard title="Registration details">
@@ -992,19 +1001,61 @@ export default function CustomerDetailPage() {
                   })}
                 </>
               )}
-              <Select
-                label="Status"
-                options={statusOptions}
-                value={status}
-                onChange={setStatus}
-                disabled={data.status === "approved"}
-              />
+              <BlockStack gap="200">
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Status
+                </Text>
+                <InlineStack gap="200" blockAlign="center">
+                  <div
+                    aria-hidden
+                    style={{
+                      width: "8px",
+                      height: "24px",
+                      borderRadius: "999px",
+                      backgroundColor: statusMeta.color,
+                    }}
+                  />
+                  <Text as="p">{statusMeta.label}</Text>
+                </InlineStack>
+              </BlockStack>
+              {data.status === "pending" && (
+                <InlineStack gap="200" blockAlign="start">
+                  <Button
+                    disabled={isSaving || !!phoneError}
+                    loading={isSaving && activeSubmitAction === "approve"}
+                    onClick={() => {
+                      setActiveSubmitAction("approve");
+                      setStatus("approved");
+                      window.requestAnimationFrame(() => {
+                        formRef.current?.requestSubmit();
+                      });
+                    }}
+                  >
+                    Approve customer
+                  </Button>
+                  <Button
+                    tone="critical"
+                    disabled={isSaving || !!phoneError}
+                    loading={isSaving && activeSubmitAction === "reject"}
+                    onClick={() => {
+                      setActiveSubmitAction("reject");
+                      setStatus("denied");
+                      window.requestAnimationFrame(() => {
+                        formRef.current?.requestSubmit();
+                      });
+                    }}
+                  >
+                    Reject customer
+                  </Button>
+                </InlineStack>
+              )}
               {data.status === "denied" && (
                 <InlineStack gap="200" blockAlign="start">
                   <Button
                     variant="secondary"
                     onClick={() => fetcher.submit({ intent: "resendRejection" }, { method: "post" })}
                     disabled={fetcher.state !== "idle"}
+                    loading={isResendingRejection}
                   >
                     Resend rejection email
                   </Button>
@@ -1016,6 +1067,7 @@ export default function CustomerDetailPage() {
                     variant="secondary"
                     onClick={() => fetcher.submit({ intent: "resendApproval" }, { method: "post" })}
                     disabled={fetcher.state !== "idle"}
+                    loading={isResendingApproval}
                   >
                     Resend approval email
                   </Button>
@@ -1028,7 +1080,19 @@ export default function CustomerDetailPage() {
               )}
               {resendResult && !resendResult.success && resendResult.error && showResendErrorBanner && (
                 <Banner tone="critical" onDismiss={() => setShowResendErrorBanner(false)}>
-                  {resendResult.error}
+                  <BlockStack gap="200">
+                    <Text as="p">{resendResult.error}</Text>
+                    {isRejectionEmailDisabled && (
+                      <InlineStack>
+                        <Button
+                          size="slim"
+                          onClick={() => navigate("/app/settings?section=email&sub=smtp")}
+                        >
+                          Go to SMTP setup
+                        </Button>
+                      </InlineStack>
+                    )}
+                  </BlockStack>
                 </Banner>
               )}
               {resendApprovalResult && resendApprovalResult.success && showResendApprovalSuccessBanner && (
@@ -1038,7 +1102,19 @@ export default function CustomerDetailPage() {
               )}
               {resendApprovalResult && !resendApprovalResult.success && resendApprovalResult.error && showResendApprovalErrorBanner && (
                 <Banner tone="critical" onDismiss={() => setShowResendApprovalErrorBanner(false)}>
-                  {resendApprovalResult.error}
+                  <BlockStack gap="200">
+                    <Text as="p">{resendApprovalResult.error}</Text>
+                    {isApprovalEmailDisabled && (
+                      <InlineStack>
+                        <Button
+                          size="slim"
+                          onClick={() => navigate("/app/settings?section=email&sub=smtp")}
+                        >
+                          Go to SMTP setup
+                        </Button>
+                      </InlineStack>
+                    )}
+                  </BlockStack>
                 </Banner>
               )}
               <input type="hidden" name="note" value={note} />
@@ -1086,6 +1162,8 @@ export default function CustomerDetailPage() {
                   variant="primary"
                   submit
                   disabled={isSaving || !!phoneError}
+                  loading={isSaving && activeSubmitAction === "save"}
+                  onClick={() => setActiveSubmitAction("save")}
                 >
                   Save changes
                 </Button>
@@ -1107,6 +1185,7 @@ export default function CustomerDetailPage() {
                   variant="primary"
                   tone="critical"
                   disabled={isSaving || deleteFetcher.state !== "idle"}
+                  loading={deleteFetcher.state !== "idle"}
                   onClick={() => setShowDeleteModal(true)}
                 >
                   Delete customer

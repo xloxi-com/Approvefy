@@ -21,6 +21,7 @@ import { sendApprovalEmail } from "../lib/approval-email.server";
 import { getShopNameAndEmail } from "../lib/shop-meta.server";
 import { sanitizeRegistrationRedirectForResponse } from "../lib/safe-registration-redirect";
 import { normalizeRegistrationPhone, validateStoredRegistrationPhone } from "../lib/registration-phone";
+import { getMerchantPlanForShop } from "../lib/merchant-plan.server";
 
 type CoreFieldRequirements = {
     firstName: boolean;
@@ -135,6 +136,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
 
         const shop = session?.shop || "";
+        const merchantPlan = shop ? await getMerchantPlanForShop(shop) : "standard";
         const formData = await request.formData();
 
         // Extract customer data
@@ -223,6 +225,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     customFields[key] = value;
                 }
             }
+        }
+
+        if (fileFieldsToUpload.length > 0 && merchantPlan !== "premium") {
+            return new Response(
+                JSON.stringify({
+                    error:
+                        "File uploads require the Premium plan. Remove file fields from your form or upgrade under Pricing.",
+                }),
+                {
+                    status: 403,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+                },
+            );
         }
 
         if (fileFieldsToUpload.length > 0) {

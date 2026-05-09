@@ -6,6 +6,7 @@
 import { createDecipheriv, scryptSync } from "node:crypto";
 import { ApiVersion } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
+import { normalizeMerchantPlan } from "../lib/merchant-plan.server";
 import { invalidateAnalyticsCache } from "./registration-analytics.server";
 import { deleteSupabaseFilesFromCustomData } from "../lib/supabase.server";
 import { formatNoteForShopify, isFileUploadValue } from "../lib/format-note";
@@ -975,8 +976,13 @@ export async function getCustomerApprovalModeForShop(shop: string): Promise<"aut
   try {
     const settings = await prisma.appSettings.findUnique({
       where: { shop },
-      select: { customerApprovalSettings: true },
+      select: { customerApprovalSettings: true, merchantPlan: true },
     });
+    const plan = normalizeMerchantPlan(settings?.merchantPlan ?? undefined);
+    if (plan === "basic") {
+      if (cacheKey) setBoundedCacheEntry(approvalModeCache, cacheKey, { value: "auto", at: Date.now() }, 200);
+      return "auto";
+    }
     const cas = (settings as { customerApprovalSettings?: unknown } | null)?.customerApprovalSettings;
     if (cas && typeof cas === "object" && !Array.isArray(cas)) {
       const raw = String((cas as Record<string, unknown>).approvalMode ?? "")

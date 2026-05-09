@@ -1547,7 +1547,7 @@ export default function Index() {
                           key={id}
                           selected={selectedResources.includes(id)}
                           position={index}
-                          onClick={() => {}}
+                          onClick={() => navigate(`/app/customer/${encodeURIComponent(id)}`)}
                         >
                           {tableColumns.map((columnKey) => {
                             if (columnKey === "name") {

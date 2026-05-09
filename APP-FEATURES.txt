@@ -1,0 +1,269 @@
+================================================================================
+APPROVEFY — FULL APPLICATION FEATURE LIST (PLAIN TEXT)
+================================================================================
+This document summarizes every user-facing area, integration, and backend
+capability implemented in this codebase, for merchants and developers.
+
+Product identity
+--------------------------------------------------------------------------------
+- Embedded Shopify admin app (Polaris UI, Shopify App Bridge).
+- Primary purpose: B2B-style customer registration with an approval workflow
+  (pending → approved or rejected), optional auto-approval, tagging, and email
+  notifications.
+- App listing / partner name in config: "Approvefy".
+- Storefront integration: App proxy (see Shopify config) exposes JSON and
+  registration endpoints under a public URL prefix (theme / liquid / app embed).
+
+
+--------------------------------------------------------------------------------
+ADMIN NAVIGATION (EMBEDDED APP)
+--------------------------------------------------------------------------------
+Main links in the app frame:
+- Customers
+- Form Builder (routes to form configuration list)
+- Pricing
+- Settings
+
+
+--------------------------------------------------------------------------------
+HOME / SETUP GUIDE (/app, default after install)
+--------------------------------------------------------------------------------
+- Full setup checklist with progress (e.g. 2 of 3 tasks) toward go-live.
+- Step 1 — Storefront activation: enable the Approvefy app embed in the theme
+  (deep link to theme editor); preview storefront.
+- Step 2 — Create a registration form: link to Form Builder; tracks whether at
+  least one form exists.
+- Step 3 — Configure settings: link to Settings; tracks whether shop settings
+  have been saved in the database.
+- Live registration pipeline panel: counts of Pending, Approved, and Rejected
+  registrations (derived from registration records in the database).
+- Secondary actions: View customers, Form Builder, Settings, Support (external).
+- Footer: support and documentation links, copyright.
+- If the database is unreachable, a banner explains checking DATABASE_URL /
+  DIRECT_URL (Supabase / pooler) configuration.
+
+
+--------------------------------------------------------------------------------
+CUSTOMERS LIST (/app/customers)
+--------------------------------------------------------------------------------
+- Tabbed views by approval status: typically All, Pending, Approved, Rejected
+  (exact tabs follow the implementation).
+- Search across customer/registration data.
+- Date range filter for registrations.
+- Pagination for large lists.
+- Index table with customizable columns (name, email, company, phone, status,
+  date joined, actions). Column visibility and order persist in the browser
+  (localStorage).
+- Per-row actions: open detail, approve, reject, delete (as implemented).
+- Bulk selection with bulk approve, bulk reject, and bulk delete.
+- Delete modes: remove from Shopify only, from the app database only, or both
+  (with confirmation messaging).
+- CSV export with a modal to choose scope: current filtered result, all matching
+  criteria, or only selected rows. Export includes standard columns plus dynamic
+  columns for custom form fields.
+- Registration analytics summary in the header area (ties into the same
+  analytics model as Home).
+- Manual refresh to reload data; analytics cache invalidation on relevant
+  actions.
+- Optional auto-approval behaviour and reconciliation of pending registrations
+  for shops configured for automatic approval (server-side).
+
+
+--------------------------------------------------------------------------------
+CUSTOMER DETAIL (/app/customer/:id)
+--------------------------------------------------------------------------------
+- View and edit registration fields (core fields + custom form data).
+- Custom field layout follows Form Builder configuration (labels and order).
+- Display and download file uploads: files may be stored in Supabase (downloaded
+  via authenticated proxy) or inline in the database (served via a dedicated
+  route for base64 file payloads).
+- Approval actions: approve or reject; optional resend of approval or
+  rejection emails.
+- Integration with Shopify Admin API to update the linked customer profile
+  where applicable.
+- Internal notes / review metadata as modeled in the approval layer.
+- Phone validation and normalization consistent with registration APIs.
+
+
+--------------------------------------------------------------------------------
+FORM CONFIGURATION LIST (/app/form-config)
+--------------------------------------------------------------------------------
+- Lists all registration forms for the shop: name, form type, enabled/disabled
+  status, field count, default flag, created date.
+- Form types include at least:
+  - Wholesale registration form (can appear across storefront per copy in UI).
+  - Multi-step form (restricted to customer account context after login per
+    copy in UI).
+- Actions: create new form, edit in Form Builder, duplicate, delete, set
+  default form.
+- Deep link to Shopify theme editor (customers/register template context) to
+  place the app block or embed.
+- Empty state when no forms exist.
+
+
+--------------------------------------------------------------------------------
+FORM BUILDER (/app/form-builder)
+--------------------------------------------------------------------------------
+- Visual, drag-and-drop field builder (reorder fields, add/remove fields).
+- Wide set of field types, including: first name, last name, email, password,
+  phone, company; address bundle (address, city, state/province, postal code,
+  country); text, textarea, number, date, dropdown, multi-checkbox, newsletter,
+  radio, heading, file upload; and more as listed in FIELD_TYPE_OPTIONS.
+- Per-field settings: label, required/optional, help text, placeholder, width,
+  multi-step step index, validation-related options where applicable.
+- Many date display format presets for date fields.
+- Form-level settings: enable/disable, default form, form type (wholesale vs
+  multi-step), naming.
+- Appearance: theme/appearance templates, customizable theme settings (colors,
+  typography, etc.), optional custom CSS pipeline, alignment with storefront
+  defaults and English copy defaults.
+- Tabbed builder sections (e.g. fields vs appearance — follow UI).
+- Unsaved-change guarding where implemented (blocker before navigation).
+
+
+--------------------------------------------------------------------------------
+SETTINGS (/app/settings)
+--------------------------------------------------------------------------------
+Organized in sidebar sections:
+
+Store
+- Store-related options and storefront UI strings (including messages for
+  logged-in customers blocked from checkout, registration screen copy for
+  pending approval state, optional auth tabs on registration, and related
+  toggles).
+
+Language
+- Choose which languages are active on the registration form and set the
+  default language.
+- Per-language tabs for translating form labels and storefront strings.
+- Core language list is curated; additional languages can be enabled from a
+  managed list.
+
+Approval
+- Approval mode: manual review vs automatic approval.
+- Approved customer tag (used for Shopify tagging and workflow rules).
+- After-submit behaviour: redirect to a URL vs show an inline success message.
+- Custom copy for pending-registration screen (title and message).
+- Storefront registration appearance template selection when custom CSS is not
+  overriding everything.
+- Options to send email on rejection; parallel structure for approval emails
+  in the email section.
+
+Email (sub-sections: SMTP, Template)
+- SMTP: custom mail server settings (host, port, TLS, credentials, from name
+  and address) for sending from the merchant’s own infrastructure when
+  configured.
+- Rejection email: subject/body, rich HTML editing, preset templates, branding
+  (logo URL and size, header title, colors, alignment), CTA button text/URL/
+  colors, Liquid-style placeholders resolved with shop/customer context.
+- Approval email: parallel preset and customization flow.
+- Template preset dropdowns with persistence so reload shows the correct preset
+  vs fully custom content.
+
+Global UX on this page
+- Shopify UI Save Bar pattern (Save / Discard) for unsaved changes.
+- Toasts on successful save.
+
+
+--------------------------------------------------------------------------------
+PRICING PAGE (/app/pricing)
+--------------------------------------------------------------------------------
+- Marketing/pricing page with three tiers (Basic, Standard, Premium) defined in
+  code (price display, taglines, feature bullets, 7-day trial note).
+- Call-to-action buttons link to the public app/marketing URL.
+
+
+--------------------------------------------------------------------------------
+MARKETING LANDING PAGE (ROOT /)
+--------------------------------------------------------------------------------
+- Public index route: short product pitch (custom registration, approval
+  workflow, auto-tagging).
+- Sign in button when Shopify login is configured.
+- If URL contains ?shop=..., redirects into the embedded app flow (/app).
+
+
+--------------------------------------------------------------------------------
+AUTHENTICATION & OAUTH
+--------------------------------------------------------------------------------
+- Standard Shopify app OAuth via /auth paths (session token / admin auth).
+- /api/auth: redirect shim so Partner Dashboard can register /api/auth as OAuth
+  URL — forwards to the real /auth handler.
+- Authenticated admin routes use authenticate.admin.
+
+
+--------------------------------------------------------------------------------
+STOREFRONT & APP PROXY API (PUBLIC/FROM THEME)
+--------------------------------------------------------------------------------
+These are used by the storefront theme app embed and registration flows:
+
+- GET .../api/config
+  - Loads merged form configuration, approval settings, translations,
+    computed theme CSS, appearance templates, locale handling, pending
+    registration lookups when customer context is passed, shop country hints for
+    formatting, and related JSON for the storefront script.
+
+- POST .../api/register
+  - Accepts registration submissions: validates required fields from config,
+    handles duplicate email/phone checks, creates or updates Shopify customers,
+    stores registration rows, uploads files to Supabase when applicable, applies
+    tags (e.g. status:pending), triggers approval emails when appropriate,
+    supports auto-approval paths, sanitizes redirect URLs after submit.
+
+- GET .../api/check-phone
+  - Returns whether a normalized phone is already registered (for inline
+    validation on the form).
+
+Proxy path (from shopify.app.toml): subpath "customer-approval" under prefix
+"apps" — developers should use the full storefront proxy URL Shopify generates.
+
+
+--------------------------------------------------------------------------------
+ADMIN JSON API ROUTES (SESSION-AUTHENTICATED)
+--------------------------------------------------------------------------------
+- /app/api/analytics — JSON snapshot of registration counts (total, pending,
+  denied).
+- /app/api/smtp — GET current SMTP settings; POST to upsert.
+- /app/api/email-templates — GET list; POST create template.
+- /app/api/email-templates/:id — GET one; PUT update; DELETE remove.
+- /app/api/template-selection — GET/POST for persisted approval/rejection email
+  preset id selection in app settings.
+
+
+--------------------------------------------------------------------------------
+FILE DOWNLOAD & EXPORT ROUTES
+--------------------------------------------------------------------------------
+- /app/download-file — Authenticated admin proxy: fetches a file from Supabase
+  storage URL and returns it as an attachment (host allowlist prevents open
+  SSRF).
+- /app/customer-file/:id — Serves a file embedded as base64 in registration
+  customData for a given field (used when storage is DB-backed).
+- /app/export-customers — CSV download with filters (query, status, date
+  range, optional id list) matching the Customers UI filters.
+
+
+--------------------------------------------------------------------------------
+WEBHOOKS (SHOPIFY)
+--------------------------------------------------------------------------------
+- customers/create — If the new customer has no "status:*" tag yet, adds
+  "status:pending" via GraphQL tagsAdd.
+- app/uninstalled — Deletes app session data for the shop.
+- app/scopes_update — Persists updated OAuth scopes on the session.
+- Compliance topics (customers/data_request, customers/redact, shop/redact) are
+  configured; POST /api/webhooks verifies HMAC and responds OK (placeholder
+  handling for GDPR flows).
+
+
+--------------------------------------------------------------------------------
+DATA & INFRASTRUCTURE (BEHAVIOUR, NOT A “SCREEN”)
+--------------------------------------------------------------------------------
+- Prisma + database: registrations, form configs, app settings, email
+  templates, SMTP settings, sessions, etc.
+- Optional Supabase: file object storage for uploads; DATABASE_URL-style
+  connection for Postgres.
+- Caching: short TTL cache for analytics counts; shop country cache for config;
+  invalidation hooks when data changes.
+- Email sending: approval and rejection flows with optional custom SMTP.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

@@ -13,7 +13,7 @@ import {
 import { flushSync } from "react-dom";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
-import { useLoaderData, useSubmit, useNavigation, useActionData, useNavigate, useBlocker, useRevalidator } from "react-router";
+import { useLoaderData, useSubmit, useNavigation, useActionData, useNavigate, useBlocker, useRevalidator, redirect } from "react-router";
 import {
     Page,
     Card,
@@ -41,7 +41,14 @@ import { invalidateFormFieldsCache } from "../lib/form-config-labels.server";
 import "../styles/form-builder.css";
 import "../styles/settings.css";
 import { FormAppearancePanel } from "../components/FormAppearancePanel";
+import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
 import { getAppearanceTemplateId, type AppearanceTemplateId } from "../lib/appearance-templates";
+import {
+    getMerchantPlanForShop,
+    sanitizeFormFieldsJsonForPlan,
+    sanitizeFormTypeForPlan,
+    type MerchantPlanId,
+} from "../lib/merchant-plan.server";
 import {
     buildThemeCss,
     normalizeThemeSettings,
@@ -137,6 +144,22 @@ const FIELD_TYPE_OPTIONS: { label: string; value: string }[] = [
 
 const DEFAULT_SYSTEM_FIELD_TYPES = new Set(["first_name", "last_name", "email"]);
 const CUSTOM_FIELD_TYPE_OPTIONS = FIELD_TYPE_OPTIONS.filter((opt) => !DEFAULT_SYSTEM_FIELD_TYPES.has(opt.value));
+const BASIC_ALLOWED_FIELD_TYPES = new Set([
+    "first_name",
+    "last_name",
+    "email",
+    "password",
+    "phone",
+    "company",
+    "address",
+    "city",
+    "state",
+    "zip_code",
+    "country",
+    "text",
+    "textarea",
+    "heading",
+]);
 const SINGLE_INSTANCE_FIELD_TYPES = new Set([
     "password",
     "phone",
@@ -174,6 +197,18 @@ function normalizeFieldType(value: unknown): string {
     if (["zip_code", "zip", "postal_code", "postcode", "zip / postal code"].includes(raw)) return "zip_code";
     if (raw === "country") return "country";
     return raw;
+}
+function normalizeFieldTypeLoose(raw: unknown): string {
+    return String(raw ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_");
+}
+function isCustomFieldTypeAllowedForPlanClient(fieldType: string, plan: MerchantPlanId): boolean {
+    const t = normalizeFieldTypeLoose(fieldType);
+    if (t === "file_upload") return plan === "premium";
+    if (plan === "basic") return BASIC_ALLOWED_FIELD_TYPES.has(t);
+    return true;
 }
 function getDefaultLabelForType(type: string): string {
     return FIELD_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? "New Field";
@@ -936,10 +971,16 @@ async function resolveShopCountryCode(
 export const loader = async ({ request }: LoaderFunctionArgs) => {
     const { admin, session } = await authenticate.admin(request);
     const shop = session.shop;
+    const merchantPlan = await getMerchantPlanForShop(shop);
     const url = new URL(request.url);
     const formIdParam = url.searchParams.get("formId");
     const isNew = url.searchParams.get("new") === "1";
     const formTypeParam = url.searchParams.get("formType") || "wholesale";
+
+    if (isNew && merchantPlan === "basic") {
+        const n = await prisma.formConfig.count({ where: { shop } });
+        if (n >= 1) throw redirect("/app/form-config");
+    }
 
     let shopCountryCode = "US";
     const shopCountryCodePromise = resolveShopCountryCode(admin, shop);
@@ -1107,6 +1148,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
     }
 
+    config.fields = sanitizeFormFieldsJsonForPlan(config.fields as unknown[], merchantPlan) as FormField[];
+    formType = sanitizeFormTypeForPlan(formType, merchantPlan);
+
     return {
         config,
         shopCountryCode,
@@ -1123,6 +1167,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         storefrontHeading,
         storefrontDescription,
         isNew,
+        merchantPlan,
     };
 };
 
@@ -1263,6 +1308,7 @@ async function persistShopAppearance(
 export const action = async ({ request }: ActionFunctionArgs) => {
     const { admin, session } = await authenticate.admin(request);
     const shop = session.shop;
+    const merchantPlan = await getMerchantPlanForShop(shop);
     const formData = await request.formData();
     const configStr = formData.get("config") as string | null;
     const formIdParam = (formData.get("formId") as string)?.trim() || null;
@@ -1287,9 +1333,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         config.fields = [];
     }
     const validatedFields = config.fields.map(validateField).filter((f): f is FormField => f != null);
-    const fieldsJson = JSON.parse(JSON.stringify(validatedFields));
+    const fieldsJson = sanitizeFormFieldsJsonForPlan(JSON.parse(JSON.stringify(validatedFields)), merchantPlan);
 
-    const safeFormType = ["wholesale", "multi_step"].includes(formType) ? formType : "wholesale";
+    const safeFormType = sanitizeFormTypeForPlan(
+        ["wholesale", "multi_step"].includes(formType) ? formType : "wholesale",
+        merchantPlan,
+    );
     const showProgressBar =
         safeFormType === "multi_step" && showProgressBarRaw !== "false" && showProgressBarRaw !== "0";
 
@@ -1307,8 +1356,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             appearancePayload = null;
         }
     }
+    if (merchantPlan === "basic") {
+        appearancePayload = null;
+    }
 
     try {
+        if (!formIdParam) {
+            const formCount = await prisma.formConfig.count({ where: { shop } });
+            if (merchantPlan === "basic" && formCount >= 1) {
+                return {
+                    success: false,
+                    error: "Basic includes one registration form. Upgrade on Pricing to add more.",
+                };
+            }
+        }
         if (isDefault) {
             await prisma.formConfig.updateMany({ where: { shop }, data: { isDefault: false } } as never);
         }
@@ -1356,7 +1417,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                                             namespace: "custom",
                                             key: "registration_form",
                                             type: "json",
-                                            value: JSON.stringify({ fields: validatedFields }),
+                                            value: JSON.stringify({ fields: fieldsJson }),
                                             ownerId: appInstallationId,
                                         },
                                     ],
@@ -1406,7 +1467,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                                             namespace: "custom",
                                             key: "registration_form",
                                             type: "json",
-                                            value: JSON.stringify({ fields: validatedFields }),
+                                            value: JSON.stringify({ fields: fieldsJson }),
                                             ownerId: appInstallationId,
                                         },
                                     ],
@@ -1470,7 +1531,10 @@ export default function FormBuilder() {
         customCss: loaderCustomCss,
         appearanceTemplateId: loaderAppearanceTemplateId,
         formUpdatedAt: loaderFormUpdatedAt,
+        merchantPlan: loaderMerchantPlan,
     } = useLoaderData<typeof loader>();
+    const merchantPlan: MerchantPlanId = loaderMerchantPlan ?? "standard";
+    const planBasic = merchantPlan === "basic";
     const actionData = useActionData<typeof action>();
     const submit = useSubmit();
     const navigation = useNavigation();
@@ -1588,6 +1652,17 @@ export default function FormBuilder() {
     const [previewStep, setPreviewStep] = useState(1);
     const [saveClicked, setSaveClicked] = useState(false);
     const [builderLeftTab, setBuilderLeftTab] = useState(0);
+    const builderLeftTabsEffective = useMemo(
+        () => (planBasic ? [FORM_BUILDER_LEFT_TABS[0]] : [...FORM_BUILDER_LEFT_TABS]),
+        [planBasic],
+    );
+    const formTypeSelectOptions = useMemo(
+        () => (planBasic ? FORM_TYPE_OPTIONS.slice(0, 1) : FORM_TYPE_OPTIONS),
+        [planBasic],
+    );
+    useEffect(() => {
+        if (planBasic && builderLeftTab > 0) setBuilderLeftTab(0);
+    }, [planBasic, builderLeftTab]);
     const formRef = useRef<HTMLFormElement>(null);
     const handleBack = useCallback(() => {
         if (window.history.length > 1) {
@@ -1725,23 +1800,25 @@ export default function FormBuilder() {
     const addableCustomFieldTypeOptions = useMemo(
         () =>
             getSelectableCustomTypeOptions(CUSTOM_FIELD_TYPE_OPTIONS).filter((opt) => {
+                if (!isCustomFieldTypeAllowedForPlanClient(opt.value, merchantPlan)) return false;
                 const normalizedType = normalizeFieldType(opt.value);
                 if (!SINGLE_INSTANCE_FIELD_TYPES.has(normalizedType)) return true;
                 return !fields.some((f) => normalizeFieldType(f.type) === normalizedType);
             }),
-        [fields]
+        [fields, merchantPlan],
     );
     const getAvailableCustomTypeOptionsForIndex = useCallback(
         (index: number) => {
             const currentType = normalizeFieldType(fields[index]?.type);
             return getSelectableCustomTypeOptions(CUSTOM_FIELD_TYPE_OPTIONS, currentType).filter((opt) => {
+                if (!isCustomFieldTypeAllowedForPlanClient(opt.value, merchantPlan)) return false;
                 const normalizedType = normalizeFieldType(opt.value);
                 if (!SINGLE_INSTANCE_FIELD_TYPES.has(normalizedType)) return true;
                 if (normalizedType === currentType) return true;
                 return !fields.some((f, i) => i !== index && normalizeFieldType(f.type) === normalizedType);
             });
         },
-        [fields]
+        [fields, merchantPlan],
     );
 
     const removeField = (index: number) => {
@@ -2071,9 +2148,15 @@ export default function FormBuilder() {
                         <Layout>
                             <Layout.Section variant="oneHalf">
                                 <div className="fb-layout-left">
-                                    <Tabs tabs={[...FORM_BUILDER_LEFT_TABS]} selected={builderLeftTab} onSelect={setBuilderLeftTab}>
+                                    <Tabs tabs={[...builderLeftTabsEffective]} selected={builderLeftTab} onSelect={setBuilderLeftTab}>
                                         <Box paddingBlockStart="300">
                                             <BlockStack gap="400">
+                                                {planBasic && (
+                                                    <PlanUpgradeBanner
+                                                        requiredPlan="Standard"
+                                                        message="Basic includes one wholesale form and starter field types. Upgrade for multi-step forms, full appearance controls, more field types, and multiple forms."
+                                                    />
+                                                )}
                                                 {builderLeftTab === 0 && (
                                                     <>
                                                         <Card>
@@ -2128,8 +2211,9 @@ export default function FormBuilder() {
                                                                         <div className="fb-form-type-select" style={{ minWidth: 0 }}>
                                                                             <Select
                                                                                 label="Form type"
-                                                                                options={FORM_TYPE_OPTIONS}
+                                                                                options={formTypeSelectOptions}
                                                                                 value={formType}
+                                                                                disabled={planBasic}
                                                                                 onChange={(v) => {
                                                                                     setFormType(v);
                                                                                     if (v === "multi_step") {
@@ -2138,6 +2222,11 @@ export default function FormBuilder() {
                                                                                         setShowProgressBar(false);
                                                                                     }
                                                                                 }}
+                                                                                helpText={
+                                                                                    planBasic
+                                                                                        ? "Multi-step forms require Standard or Premium (Pricing)."
+                                                                                        : undefined
+                                                                                }
                                                                             />
                                                                         </div>
                                                                         <Box paddingBlockStart="400">

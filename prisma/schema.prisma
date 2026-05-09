@@ -78,7 +78,10 @@ model AppSettings {
   themeSettings            Json?
   /// Customer approval + storefront copy: successMessage, pendingRegistrationScreenTitle, pendingRegistrationScreenMessage, etc.
   customerApprovalSettings Json?
+  /// ISO country code used as default for phone/country UX (e.g. "US", "IN").
   shopCountryCode          String?
+  /// basic | standard | premium — gates features (Shopify Billing can update later).
+  merchantPlan             String   @default("standard")
 }
 
 model B2BSettings {

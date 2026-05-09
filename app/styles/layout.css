@@ -220,3 +220,234 @@
   backdrop-filter: blur(3px);
 }
 
+/* Pricing: centered band, width matched to admin pane, responsive columns */
+.app-pricing-page .Polaris-Page__Content,
+.app-pricing-page .Polaris-Page-MainContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.app-pricing-page .app-pricing-wrap {
+  width: 100%;
+  max-width: min(70rem, min(100%, 96vw));
+  margin-inline: auto;
+  padding: var(--p-space-500);
+  box-sizing: border-box;
+  background: var(--p-color-bg-surface-secondary);
+  border-radius: var(--p-border-radius-300);
+}
+
+.app-pricing-page .app-pricing-hero {
+  width: 100%;
+  margin-block-end: var(--p-space-500);
+}
+
+.app-pricing-page .app-pricing-hero h1 {
+  margin: 0;
+  text-align: start;
+}
+
+.app-pricing-page .app-pricing-hero p {
+  margin: 0;
+  max-width: 52ch;
+  line-height: var(--p-font-line-height-500);
+  text-align: start;
+}
+
+.app-pricing-page .app-pricing-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--p-space-400);
+  align-items: stretch;
+}
+
+.app-pricing-page .app-pricing-grid-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Stretch card to row height so footers align across columns */
+.app-pricing-page .app-pricing-card-fill {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+}
+
+.app-pricing-page .app-pricing-card-fill > div {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Card = ShadowBevel → Box → tier-shell */
+.app-pricing-page .app-pricing-card-fill > div > * {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.app-pricing-page .app-pricing-tier-shell {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--p-space-500);
+  box-sizing: border-box;
+}
+
+.app-pricing-page .app-pricing-tier-body {
+  flex: 0 0 auto;
+}
+
+.app-pricing-page .app-pricing-tier-footer {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding-top: var(--p-space-300);
+}
+
+.app-pricing-page .app-pricing-trial-caption {
+  font-size: var(--p-font-size-325, 13px);
+  line-height: var(--p-font-line-height-500, 1.25rem);
+}
+
+/* Compare plans feature matrix */
+.app-pricing-page .app-pricing-compare {
+  width: 100%;
+  margin-block-start: var(--p-space-600);
+}
+
+.app-pricing-page .app-pricing-compare-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-inline: calc(-1 * var(--p-space-100));
+  padding-inline: var(--p-space-100);
+}
+
+.app-pricing-page .app-pricing-compare-table {
+  width: 100%;
+  min-width: min(40rem, 100%);
+  border-collapse: collapse;
+  font-size: var(--p-font-size-350);
+}
+
+.app-pricing-page .app-pricing-compare-table thead tr {
+  border-block-end: var(--p-border-width-025) solid var(--p-color-border-secondary);
+}
+
+.app-pricing-page .app-pricing-compare-table tbody tr {
+  border-block-end: var(--p-border-width-025) solid var(--p-color-border-secondary);
+}
+
+.app-pricing-page .app-pricing-compare-table tbody tr:last-child {
+  border-block-end: none;
+}
+
+.app-pricing-page .app-pricing-compare-th-feature,
+.app-pricing-page .app-pricing-compare-td-feature {
+  text-align: start;
+  vertical-align: middle;
+  padding: var(--p-space-300) var(--p-space-300) var(--p-space-300) 0;
+  min-width: 9rem;
+}
+
+.app-pricing-page .app-pricing-compare-th-plan,
+.app-pricing-page .app-pricing-compare-td-icon {
+  text-align: center;
+  vertical-align: middle;
+  padding: var(--p-space-300) var(--p-space-200);
+  width: 5.5rem;
+}
+
+.app-pricing-page .app-pricing-compare-th-feature,
+.app-pricing-page .app-pricing-compare-th-plan {
+  padding-block: var(--p-space-400);
+  background: var(--p-color-bg-surface-secondary);
+}
+
+.app-pricing-page .app-pricing-compare-row:nth-child(even) td,
+.app-pricing-page .app-pricing-compare-row:nth-child(even) th {
+  background: var(--p-color-bg-surface-secondary);
+}
+
+.app-pricing-page .app-pricing-compare-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.5rem;
+}
+
+/* Tablet: two columns; third tier centered on its own row */
+@media (min-width: 640px) {
+  .app-pricing-page .app-pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--p-space-400);
+    row-gap: var(--p-space-400);
+  }
+
+  .app-pricing-page .app-pricing-grid-cell:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: 100%;
+    max-width: min(32rem, 100%);
+  }
+}
+
+/* Desktop: three equal columns */
+@media (min-width: 992px) {
+  .app-pricing-page .app-pricing-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--p-space-400);
+  }
+
+  .app-pricing-page .app-pricing-grid-cell:last-child:nth-child(odd) {
+    grid-column: auto;
+    justify-self: stretch;
+    max-width: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .app-pricing-page .app-pricing-wrap {
+    padding: var(--p-space-400);
+  }
+
+  .app-pricing-page .app-pricing-tier-shell {
+    padding: var(--p-space-400);
+  }
+
+  .app-pricing-page .app-pricing-tier-footer {
+    padding-top: var(--p-space-200);
+  }
+
+  .app-pricing-page .app-pricing-grid {
+    gap: var(--p-space-300);
+  }
+}
+
+@media (max-width: 768px) {
+  .app-pricing-page .Polaris-Page__Content,
+  .app-pricing-page .Polaris-Page-MainContent {
+    align-items: stretch;
+  }
+
+  .app-pricing-page .app-pricing-wrap {
+    max-width: 100%;
+    padding-block: var(--p-space-400);
+    padding-inline: 0;
+    border-radius: var(--p-border-radius-0);
+  }
+}
+

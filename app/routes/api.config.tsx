@@ -6,6 +6,11 @@ import { CORE_LANGUAGES, normalizeLangCode } from "../lib/languages";
 import { buildThemeCss, getGoogleFontName, normalizeThemeSettings } from "../lib/theme-settings";
 import { appendAppearanceTemplateCss, getAppearanceTemplateId } from "../lib/appearance-templates";
 import { BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE } from "../lib/settings-ui-i18n";
+import {
+    filterStorefrontFieldsForPlan,
+    getMerchantPlanForShop,
+    sanitizeFormTypeForPlan,
+} from "../lib/merchant-plan.server";
 
 /** App proxy / storefront must not cache JSON — appearance saves should show after reload or tab return. */
 const CONFIG_JSON_HEADERS: Record<string, string> = {
@@ -96,6 +101,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 headers: CONFIG_JSON_HEADERS,
             });
         }
+
+        const merchantPlan = await getMerchantPlanForShop(shop);
 
         /** Computed early so pending-registration lookup can run in parallel with form + settings. */
         const pendingCheckDigits =
@@ -443,13 +450,44 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             return f;
         });
 
+        let effectiveLocale = locale;
+        let effectiveAvailableLocales = availableLocales;
+        if (merchantPlan === "basic") {
+            effectiveLocale = "en";
+            effectiveAvailableLocales = ["en"];
+            const ftAll =
+                shop && settings
+                    ? ((settings.formTranslations as Record<string, Record<string, string>>) || {})
+                    : {};
+            const enOnly: Record<string, Record<string, string>> = {};
+            if (ftAll.en && typeof ftAll.en === "object") {
+                enOnly.en = ftAll.en;
+            }
+            translations = getLangTranslations(enOnly, "en", DEFAULT_TRANSLATIONS_EN, DEFAULT_TRANSLATIONS_BY_LANG);
+            if (customerApprovalSettings) {
+                customerApprovalSettings = {
+                    ...customerApprovalSettings,
+                    approvalMode: "auto",
+                    approvedTag: "status:approved",
+                    showAuthTabsOnRegistration: false,
+                };
+            }
+        }
+
+        const tierFilteredFields = filterStorefrontFieldsForPlan(fieldsForStorefront, merchantPlan);
+        const resolvedFormType =
+            typeof config.formType === "string"
+                ? sanitizeFormTypeForPlan(config.formType, merchantPlan)
+                : sanitizeFormTypeForPlan("wholesale", merchantPlan);
+
         const payload = {
             ...config,
-            fields: fieldsForStorefront,
+            formType: resolvedFormType,
+            fields: tierFilteredFields,
             shopCountryCode,
             translations,
-            availableLocales,
-            locale,
+            availableLocales: effectiveAvailableLocales,
+            locale: effectiveLocale,
             customCss,
             googleFont,
             customerApprovalSettings,

@@ -25,6 +25,8 @@ import { SectionCard } from "../components/SectionCard";
 import { EditIcon, DeleteIcon, PlusIcon, ClipboardIcon, DuplicateIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getMerchantPlanForShop, type MerchantPlanId } from "../lib/merchant-plan.server";
+import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
 
 export const FORM_TYPES = [
     { value: "wholesale", label: "Wholesale registration form", description: "Wholesale registration form helps streamline the registration process for companies that sell products to retailers or distributors.", displayCondition: "This form can show on all pages of the store-front." },
@@ -92,6 +94,9 @@ async function fetchFormsForShop(shop: string): Promise<FormConfigItem[]> {
 
 export type FormConfigLoaderData = {
     themeEditorUrl: string;
+    merchantPlan: MerchantPlanId;
+    /** Used to disable Create before the full form list resolves. */
+    formCount: number;
     /** Resolved progressively — wrap in `<Await>` + `<Suspense>` with a skeleton fallback. */
     forms: Promise<FormConfigItem[]>;
 };
@@ -102,9 +107,13 @@ export const loader = async ({ request }: LoaderFunctionArgs): Promise<FormConfi
 
     const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
     const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?template=customers/register&context=apps`;
+    const merchantPlan = await getMerchantPlanForShop(shop);
+    const formCount = await prisma.formConfig.count({ where: { shop } });
 
     return {
         themeEditorUrl,
+        merchantPlan,
+        formCount,
         forms: fetchFormsForShop(shop),
     };
 };
@@ -129,6 +138,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const formId = formData.get("formId") as string | null;
         if (!formId) return { success: false, error: "Missing form ID" };
         try {
+            const plan = await getMerchantPlanForShop(shop);
+            const existingCount = await prisma.formConfig.count({ where: { shop } });
+            if (plan === "basic" && existingCount >= 1) {
+                return {
+                    success: false,
+                    error: "Basic includes one registration form. Upgrade on Pricing to duplicate or add more.",
+                };
+            }
             const source = await prisma.formConfig.findFirst({ where: { id: formId, shop } });
             if (!source) return { success: false, error: "Form not found" };
             const row = source as {
@@ -212,21 +229,25 @@ function formTypeLabel(value: string): string {
 type FormConfigDataViewProps = {
     forms: FormConfigItem[];
     themeEditorUrl: string;
+    merchantPlan: MerchantPlanId;
     navigate: ReturnType<typeof useNavigate>;
     onCopyFormId: (formId: string) => void;
     onDeleteClick: (form: FormConfigItem) => void;
     onCloneForm: (form: FormConfigItem) => void;
     onOpenCreate: () => void;
+    basicBlocksNewForm: boolean;
 };
 
 function FormConfigDataView({
     forms,
     themeEditorUrl,
+    merchantPlan,
     navigate,
     onCopyFormId,
     onDeleteClick,
     onCloneForm,
     onOpenCreate,
+    basicBlocksNewForm,
 }: FormConfigDataViewProps) {
     const resourceName = { singular: "form", plural: "forms" };
     const { selectedResources, allResourcesSelected, handleSelectionChange } = useIndexResourceState(forms);
@@ -234,13 +255,25 @@ function FormConfigDataView({
     const emptyStateMarkup = !forms.length ? (
         <EmptyState
             heading="No forms configured"
-            action={{
-                content: "Create form",
-                onAction: onOpenCreate,
-            }}
+            action={
+                basicBlocksNewForm
+                    ? undefined
+                    : {
+                          content: "Create form",
+                          onAction: onOpenCreate,
+                      }
+            }
             image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
         >
             <p>Build your first registration form to start collecting B2B customer applications.</p>
+            {basicBlocksNewForm && (
+                <Box paddingBlockStart="300">
+                    <PlanUpgradeBanner
+                        requiredPlan="Standard"
+                        message="Basic includes one registration form. Upgrade to add more forms, multi-step layouts, and appearance controls."
+                    />
+                </Box>
+            )}
         </EmptyState>
     ) : null;
 
@@ -283,7 +316,7 @@ function FormConfigDataView({
                         accessibilityLabel="Edit form"
                         onClick={() => navigate(`/app/form-builder?formId=${encodeURIComponent(form.id)}`)}
                     />
-                    <Button variant="plain" icon={DuplicateIcon} accessibilityLabel="Clone form" onClick={() => onCloneForm(form)} />
+                    <Button variant="plain" icon={DuplicateIcon} accessibilityLabel="Clone form" disabled={basicBlocksNewForm} onClick={() => onCloneForm(form)} />
                     <Button variant="plain" icon={DeleteIcon} accessibilityLabel="Delete form" tone="critical" onClick={() => onDeleteClick(form)} />
                 </InlineStack>
             </IndexTable.Cell>
@@ -292,6 +325,14 @@ function FormConfigDataView({
 
     return (
         <>
+            {merchantPlan === "basic" && forms.length >= 1 && (
+                <Box paddingBlockEnd="300">
+                    <PlanUpgradeBanner
+                        requiredPlan="Standard"
+                        message="You're on Basic (one form). Create another form, clone, or use multi-step only after upgrading."
+                    />
+                </Box>
+            )}
             {forms.length > 0 && (
                 <Box paddingBlockEnd="300">
                     <Banner tone="info">
@@ -332,7 +373,7 @@ function FormConfigDataView({
 }
 
 export default function FormConfig() {
-    const { forms, themeEditorUrl } = useLoaderData<FormConfigLoaderData>();
+    const { forms, themeEditorUrl, merchantPlan, formCount } = useLoaderData<FormConfigLoaderData>();
     const actionData = useActionData<{ success?: boolean; clonedFormId?: string; error?: string }>();
     const navigate = useNavigate();
     const submit = useSubmit();
@@ -389,8 +430,15 @@ export default function FormConfig() {
         }
     }, [actionData?.success, actionData?.clonedFormId, revalidator]);
 
+    const [errorToast, setErrorToast] = useState(false);
+    useEffect(() => {
+        if (actionData?.error) setErrorToast(true);
+    }, [actionData?.error]);
+
+    const basicBlocksNewForm = merchantPlan === "basic" && formCount >= 1;
+
     const createFormAction = (
-        <Button variant="primary" icon={PlusIcon} onClick={() => setCreateModalOpen(true)}>
+        <Button variant="primary" icon={PlusIcon} disabled={basicBlocksNewForm} onClick={() => setCreateModalOpen(true)}>
             Create form
         </Button>
     );
@@ -432,7 +480,9 @@ export default function FormConfig() {
                             Choose the form layout that best matches how you want customers to register. You can edit all fields later.
                         </Text>
                         <InlineGrid columns={{ xs: 1, sm: 2 }} gap="400">
-                            {FORM_TYPES.map((t) => (
+                            {FORM_TYPES.map((t) => {
+                                const multiLocked = merchantPlan === "basic" && t.value === "multi_step";
+                                return (
                                 <SectionCard key={t.value}>
                                     <BlockStack gap="300">
                                         <Text as="h2" variant="headingMd" fontWeight="bold">
@@ -441,11 +491,19 @@ export default function FormConfig() {
                                         <Text as="p" variant="bodyMd" tone="subdued">
                                             {t.description}
                                         </Text>
+                                        {multiLocked && (
+                                            <PlanUpgradeBanner
+                                                requiredPlan="Standard"
+                                                message="Multi-step registration forms require Standard or Premium."
+                                            />
+                                        )}
                                         <Box paddingBlockStart="200">
                                             <Button
                                                 fullWidth
                                                 variant="primary"
+                                                disabled={multiLocked}
                                                 onClick={() => {
+                                                    if (multiLocked) return;
                                                     setCreateModalOpen(false);
                                                     navigate(`/app/form-builder?new=1&formType=${encodeURIComponent(t.value)}`);
                                                 }}
@@ -458,7 +516,8 @@ export default function FormConfig() {
                                         </Text>
                                     </BlockStack>
                                 </SectionCard>
-                            ))}
+                            );
+                            })}
                         </InlineGrid>
                     </BlockStack>
                 </Modal.Section>
@@ -468,6 +527,9 @@ export default function FormConfig() {
             )}
             {cloneToast && (
                 <Toast content="Form cloned successfully. The new form appears in the list." onDismiss={() => setCloneToast(false)} />
+            )}
+            {errorToast && (
+                <Toast content={actionData?.error ?? "Something went wrong"} error onDismiss={() => setErrorToast(false)} />
             )}
             <Page title="Form configuration" backAction={{ content: "Back", onAction: handleBack }} primaryAction={createFormAction}>
                 <div className="app-nav-tabs-mobile">
@@ -509,11 +571,13 @@ export default function FormConfig() {
                                     <FormConfigDataView
                                         forms={resolvedForms}
                                         themeEditorUrl={themeEditorUrl}
+                                        merchantPlan={merchantPlan}
                                         navigate={navigate}
                                         onCopyFormId={handleCopyFormId}
                                         onDeleteClick={handleDeleteClick}
                                         onCloneForm={handleCloneForm}
                                         onOpenCreate={() => setCreateModalOpen(true)}
+                                        basicBlocksNewForm={basicBlocksNewForm}
                                     />
                                 )}
                             </Await>

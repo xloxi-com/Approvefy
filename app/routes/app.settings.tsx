@@ -45,6 +45,12 @@ import {
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
+import {
+    getMerchantPlanForShop,
+    mergeIncomingApprovalSettingsForBasicSave,
+    type MerchantPlanId,
+} from "../lib/merchant-plan.server";
 import { getSmtpSettings, upsertSmtpSettings } from "../lib/smtp.server";
 import { getEmailTemplateBySlug, upsertRejectionTemplate, upsertApprovalTemplate } from "../models/email-template.server";
 import { CORE_LANGUAGES, normalizeLangCode, coreLanguageName, type LanguageOption as CoreLanguageOption } from "../lib/languages";
@@ -339,7 +345,6 @@ type ShopMetaForClient = {
 async function fetchShopMetaFromAdmin(
     admin: Awaited<ReturnType<typeof authenticate.admin>>["admin"],
     shop: string,
-    settings: Awaited<ReturnType<typeof prisma.appSettings.findUnique>>,
 ): Promise<ShopMetaForClient> {
     let storeName = "Store";
     let storeEmail = "";
@@ -391,17 +396,6 @@ async function fetchShopMetaFromAdmin(
     } catch (e) {
         console.warn("[Settings] Shop GraphQL batch failed:", e instanceof Error ? e.message : String(e));
     }
-    if (shopCountryCode && settings) {
-        prisma.appSettings.update({ where: { shop }, data: { shopCountryCode } }).catch(() => {});
-    } else if (shopCountryCode) {
-        prisma.appSettings
-            .upsert({
-                where: { shop },
-                create: { shop, defaultLanguage: "en", shopCountryCode },
-                update: { shopCountryCode },
-            })
-            .catch(() => {});
-    }
     return { storeName, storeEmail, storeLogoUrl };
 }
 
@@ -414,6 +408,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         authenticate.admin(request),
     ]);
     const shop = session?.shop || "";
+    const merchantPlan: MerchantPlanId = shop ? await getMerchantPlanForShop(shop) : "standard";
 
     const shopMetaDefault: ShopMetaForClient = { storeName: "Store", storeEmail: "", storeLogoUrl: null };
     let shopMetaPromise: Promise<ShopMetaForClient> = Promise.resolve(shopMetaDefault);
@@ -449,20 +444,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                     storeEmail: cachedShopMeta.storeEmail,
                     storeLogoUrl: cachedShopMeta.storeLogoUrl,
                 });
-                const shopCountryCode = cachedShopMeta.shopCountryCode;
-                if (shopCountryCode && settings) {
-                    prisma.appSettings.update({ where: { shop }, data: { shopCountryCode } }).catch(() => {});
-                } else if (shopCountryCode) {
-                    prisma.appSettings
-                        .upsert({
-                            where: { shop },
-                            create: { shop, defaultLanguage: "en", shopCountryCode },
-                            update: { shopCountryCode },
-                        })
-                        .catch(() => {});
-                }
             } else {
-                shopMetaPromise = fetchShopMetaFromAdmin(admin, shop, settings);
+                shopMetaPromise = fetchShopMetaFromAdmin(admin, shop);
             }
         } catch (dbErr) {
             console.warn("Settings load failed:", dbErr);
@@ -669,6 +652,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         };
     }
 
+    if (merchantPlan === "basic") {
+        defaultLanguage = "en";
+        languageOptions = [{ code: "en", name: "English" }];
+        customerApprovalSettings = {
+            ...customerApprovalSettings,
+            approvalMode: "auto",
+            approvedTag: "status:approved",
+            showAuthTabsOnRegistration: false,
+        };
+    }
+
     const allLangs = [...CORE_LANGUAGES];
 
     const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
@@ -684,6 +678,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         smtpSettings,
         appSettingsUpdatedAt,
         storeDomain: storeHandle,
+        merchantPlan,
         /** Resolved after DB work — stream first paint via `<Await>` + `<Suspense>`. */
         shopMeta: shopMetaPromise,
     };
@@ -696,13 +691,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         return { error: "No shop" };
     }
 
+    const merchantPlan = await getMerchantPlanForShop(shop);
+
     const formData = await request.formData();
     const intent = formData.get("intent") as string;
     if (intent === "saveTranslations") {
         const translationsJson = formData.get("formTranslations") as string;
         try {
             const parsed = translationsJson ? (JSON.parse(translationsJson) as Record<string, Record<string, string>>) : {};
-            const formTranslations = sanitizeFormTranslations(parsed);
+            let formTranslations = sanitizeFormTranslations(parsed);
+            if (merchantPlan === "basic") {
+                const enBlock = formTranslations.en && typeof formTranslations.en === "object" ? formTranslations.en : {};
+                formTranslations = sanitizeFormTranslations({ en: enBlock });
+            }
             const existing = await prisma.appSettings.findUnique({ where: { shop } });
             const base = existing || { defaultLanguage: "en", languageOptions: [] };
             await prisma.appSettings.upsert({
@@ -789,11 +790,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         })
         .filter((l): l is LanguageOption => !!l);
     languageOptions = ensureCoreLanguagesEnabled(sanitizeLanguageOptions(languageOptions));
+    if (merchantPlan === "basic") {
+        languageOptions = [{ code: "en", name: "English" }];
+    }
 
-    const safeDefaultLanguage = normalizeLangCode(defaultLanguage) || "en";
+    const safeDefaultLanguage =
+        merchantPlan === "basic" ? "en" : normalizeLangCode(defaultLanguage) || "en";
 
     if (formTranslations && typeof formTranslations === "object" && !Array.isArray(formTranslations)) {
         formTranslations = sanitizeFormTranslations(formTranslations);
+        if (merchantPlan === "basic") {
+            const en = formTranslations.en;
+            formTranslations = sanitizeFormTranslations(en && typeof en === "object" ? { en } : {});
+        }
     }
 
     let customerApprovalSettings: CustomerApprovalSettings | undefined;
@@ -874,7 +883,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             // ignore invalid JSON
         }
     }
-    const settingsToPersist = customerApprovalSettings ?? CUSTOMER_APPROVAL_DEFAULTS;
+    let settingsToPersist = customerApprovalSettings ?? CUSTOMER_APPROVAL_DEFAULTS;
+
+    let previousCasForBasic: Record<string, unknown> | null = null;
+    const rawPrevCas = existingRow?.customerApprovalSettings;
+    if (rawPrevCas && typeof rawPrevCas === "object" && !Array.isArray(rawPrevCas)) {
+        previousCasForBasic = rawPrevCas as Record<string, unknown>;
+    }
+    if (merchantPlan === "basic") {
+        settingsToPersist = mergeIncomingApprovalSettingsForBasicSave(
+            settingsToPersist as unknown as Record<string, unknown>,
+            previousCasForBasic,
+        ) as CustomerApprovalSettings;
+    }
 
     function isValidGuestCheckoutRedirectUrl(s: string): boolean {
         const t = s.trim();
@@ -955,26 +976,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 customerApprovalSettings: settingsToPersist as unknown as Prisma.InputJsonValue,
             } as AppSettingsUpsertCreate,
         });
-        if (smtpHost && smtpFromEmail) {
-            await upsertSmtpSettings(shop, {
-                host: smtpHost,
-                port: smtpPort,
-                secure: smtpSecure,
-                user: smtpUser || undefined,
-                password: smtpPassword || undefined,
-                fromEmail: smtpFromEmail,
-                fromName: smtpFromName || undefined,
+        if (merchantPlan !== "basic") {
+            if (smtpHost && smtpFromEmail) {
+                await upsertSmtpSettings(shop, {
+                    host: smtpHost,
+                    port: smtpPort,
+                    secure: smtpSecure,
+                    user: smtpUser || undefined,
+                    password: smtpPassword || undefined,
+                    fromEmail: smtpFromEmail,
+                    fromName: smtpFromName || undefined,
+                });
+            }
+            // Store subject + body in email_template so loader can read last-saved template and infer preset if needed
+            await upsertRejectionTemplate(shop, {
+                subject: settingsToPersist.rejectEmailSubject,
+                bodyHtml: settingsToPersist.rejectEmailBody,
+            });
+            await upsertApprovalTemplate(shop, {
+                subject: settingsToPersist.approveEmailSubject,
+                bodyHtml: settingsToPersist.approveEmailBody,
             });
         }
-        // Store subject + body in email_template so loader can read last-saved template and infer preset if needed
-        await upsertRejectionTemplate(shop, {
-            subject: settingsToPersist.rejectEmailSubject,
-            bodyHtml: settingsToPersist.rejectEmailBody,
-        });
-        await upsertApprovalTemplate(shop, {
-            subject: settingsToPersist.approveEmailSubject,
-            bodyHtml: settingsToPersist.approveEmailBody,
-        });
         const fresh = await prisma.appSettings.findUnique({ where: { shop }, select: { updatedAt: true } });
         return { success: true, settingsUpdatedAt: fresh?.updatedAt.toISOString() ?? null };
     } catch (e) {
@@ -1157,6 +1180,7 @@ type SettingsPageLoaderData = {
     /** Server `AppSettings.updatedAt` when a row exists (for “last saved” + discard reset). */
     appSettingsUpdatedAt: string | null;
     storeDomain: string;
+    merchantPlan: MerchantPlanId;
     storeName: string;
     storeEmail: string;
     storeLogoUrl: string | null;
@@ -1209,7 +1233,9 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
         storeName: initialStoreName,
         storeEmail: initialStoreEmail,
         storeDomain: initialStoreDomain,
+        merchantPlan,
     } = data;
+    const planBasic = merchantPlan === "basic";
     const actionData = useActionData<typeof action>();
     const submit = useSubmit();
     const navigation = useNavigation();
@@ -1734,6 +1760,23 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
         [],
     );
 
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const section = (params.get("section") ?? "").toLowerCase();
+        const sub = (params.get("sub") ?? "").toLowerCase();
+        if (section !== "email") return;
+
+        const emailIndex = settingsSidebarNav.findIndex((item) => item.id === "email-setting");
+        if (emailIndex >= 0 && mainTabIndex !== emailIndex) {
+            setMainTabIndex(emailIndex);
+        }
+
+        const targetSubIndex: 0 | 1 = sub === "template" ? 1 : 0; // default to SMTP
+        if (emailSettingSubIndex !== targetSubIndex) {
+            setEmailSettingSubIndex(targetSubIndex);
+        }
+    }, [location.search, settingsSidebarNav, mainTabIndex, emailSettingSubIndex]);
+
     const activeMainSectionId = settingsSidebarNav[mainTabIndex]?.id ?? "store-setting";
 
     const handleSaveTranslations = () => {
@@ -1811,6 +1854,14 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                 backAction={{ content: "Back", onAction: handleBack }}
             >
                 <form ref={settingsFormRef} onSubmit={handleSaveBarSubmit} onReset={handleSaveBarReset}>
+                {planBasic && (
+                    <Box paddingBlockEnd="400">
+                        <PlanUpgradeBanner
+                            requiredPlan="Standard"
+                            message="Basic keeps auto approval and English-only storefront copy. Manual approval, multiple languages, SMTP, and editable email templates unlock on Standard or Premium."
+                        />
+                    </Box>
+                )}
                 <div className="app-nav-tabs-mobile">
                 <Box paddingBlockEnd="200">
                     <InlineStack gap="100" wrap>
@@ -1938,6 +1989,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                                         options={enabledDefaultOptions.length > 0 ? enabledDefaultOptions : [{ label: "English", value: "en" }]}
                                                         value={effectiveDefault}
                                                         onChange={setSelectedDefault}
+                                                        disabled={planBasic}
                                                     />
                                                     <Text as="p" tone="subdued" variant="bodySm">
                                                         Selected:{" "}
@@ -1967,6 +2019,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                                         <Button
                                                             onClick={() => setLangDropdownActive(!langDropdownActive)}
                                                             disclosure={langDropdownActive ? "up" : "down"}
+                                                            disabled={planBasic}
                                                         >
                                                             Manage languages
                                                         </Button>
@@ -2154,7 +2207,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                         <button
                                             type="button"
                                             onClick={handleSaveTranslations}
-                                            disabled={isSaving}
+                                            disabled={isSaving || planBasic}
                                             style={{
                                                 padding: "10px 20px",
                                                 background: "#008060",
@@ -2185,6 +2238,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                             { label: "Auto approval", value: "auto" },
                                         ]}
                                         selected={[customerApprovalSettings.approvalMode]}
+                                        disabled={planBasic}
                                         onChange={(selected) =>
                                             setCustomerApprovalSettings((prev) => ({
                                                 ...prev,
@@ -2195,6 +2249,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                     <TextField
                                         label="Approved customer tag"
                                         value={customerApprovalSettings.approvedTag}
+                                        disabled={planBasic}
                                         onChange={(val) =>
                                             setCustomerApprovalSettings((prev) => ({ ...prev, approvedTag: val }))
                                         }
@@ -2275,6 +2330,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                             <div className="settings-email-subcard">
                             <SectionCard title={emailSettingSubIndex === 0 ? "SMTP" : "Email templates"}>
                                         {emailSettingSubIndex === 0 ? (
+                                <fieldset disabled={planBasic} style={{ border: "none", margin: 0, padding: 0, minWidth: 0 }}>
                                 <BlockStack gap="400">
                                     <Text as="p" variant="bodyMd" tone="subdued">
                                         Connect your email server to send rejection emails. Use Gmail for a quick setup or enter your own SMTP details.
@@ -2376,7 +2432,9 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                         </Text>
                                     </Box>
                                 </BlockStack>
+                                </fieldset>
                                         ) : (
+                                <fieldset disabled={planBasic} style={{ border: "none", margin: 0, padding: 0, minWidth: 0 }}>
                                 <BlockStack gap="500">
                                     <Text as="p" variant="bodyMd" tone="subdued">
                                         Customize the emails sent when you approve or reject a customer. Expand each section to edit the template.
@@ -3437,6 +3495,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                         </Text>
                                     </Box>
                                 </BlockStack>
+                                </fieldset>
                                         )}
                             </SectionCard>
                             </div>
@@ -3465,6 +3524,7 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                             <Checkbox
                                                 label={storeUi.showAuthTabsLabel}
                                                 checked={customerApprovalSettings.showAuthTabsOnRegistration}
+                                                disabled={planBasic}
                                                 onChange={(checked) =>
                                                     setCustomerApprovalSettings((prev) => ({
                                                         ...prev,
