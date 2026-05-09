@@ -42,7 +42,16 @@
   font-size: 14px;
   padding-block: 6px;
 }
+.app-customers-page .app-index-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 @media (max-width: 640px) {
+  .app-customers-page .app-index-toolbar {
+    align-items: stretch;
+  }
   .app-index-toolbar .app-index-toolbar-search {
     flex: 1 1 100%;
     min-width: 0;
@@ -50,6 +59,29 @@
   .app-index-toolbar .app-index-toolbar-actions {
     flex: 1 1 100%;
     min-width: 0;
+  }
+  .app-customers-page .app-index-toolbar .Polaris-ButtonGroup {
+    width: 100%;
+  }
+  .app-customers-page .app-index-toolbar-actions > * {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 120px;
+  }
+  .app-customers-page .app-index-toolbar-actions > :first-child {
+    flex: 0 0 auto;
+    min-width: 44px;
+  }
+  .app-customers-page .app-index-toolbar > .Polaris-Popover__Activator {
+    width: 100%;
+  }
+  .app-customers-page .app-index-toolbar > .Polaris-Popover__Activator .Polaris-Button {
+    width: 100%;
+    justify-content: center;
+  }
+  .app-customers-page .app-index-pagination-row .Polaris-InlineStack {
+    width: 100%;
+    justify-content: space-between;
+    row-gap: 8px;
   }
 }
 

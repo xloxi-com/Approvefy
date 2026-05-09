@@ -1356,7 +1356,7 @@ export default function Index() {
         </Modal.Section>
       </Modal>
 
-      <Page title="Customers" fullWidth>
+      <Page title="Customers" fullWidth className="app-customers-page">
         <div className="app-nav-tabs-mobile" style={{ marginBottom: 12 }}>
         <BlockStack gap="200" inlineAlign="start">
           <InlineStack gap="100" wrap>
@@ -1627,8 +1627,8 @@ export default function Index() {
                     );
                   })()}
                   {totalCount > 0 && (
-                    <div style={{ padding: "12px 16px", borderTop: "1px solid var(--p-color-border-secondary)" }}>
-                      <InlineStack gap="400" blockAlign="center" align="space-between" wrap={false}>
+                    <div className="app-index-pagination-row" style={{ padding: "12px 16px", borderTop: "1px solid var(--p-color-border-secondary)" }}>
+                      <InlineStack gap="400" blockAlign="center" align="space-between" wrap>
                         <InlineStack gap="300" blockAlign="center">
                           <Select
                             label="Per page"
