@@ -5,6 +5,16 @@
 
 export const SHOPIFY_EMBED_HOST_STORAGE_KEY = "approvefy_shopify_embed_host";
 
+/** Client-only: read cached embed `host` (used when URL lost it after in-app nav). */
+export function readStoredEmbedHost(): string {
+    if (typeof window === "undefined") return "";
+    try {
+        return sessionStorage.getItem(SHOPIFY_EMBED_HOST_STORAGE_KEY)?.trim() ?? "";
+    } catch {
+        return "";
+    }
+}
+
 /** Route-only params that shouldn’t leak onto other embedded app URLs. */
 const APP_NAV_SEARCH_PARAM_DROP = new Set(["formId", "billing"]);
 

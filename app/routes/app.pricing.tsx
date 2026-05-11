@@ -27,7 +27,7 @@ import {
   PRICING_TRIAL_CTA_NOTE,
   PRICING_TIERS,
 } from "../lib/pricing-tiers";
-import { SHOPIFY_EMBED_HOST_STORAGE_KEY } from "../lib/shopify-embed-navigation";
+import { readStoredEmbedHost, SHOPIFY_EMBED_HOST_STORAGE_KEY } from "../lib/shopify-embed-navigation";
 
 type BillingSubscribeResponse =
   | { ok: true; confirmationUrl: string }
@@ -70,7 +70,8 @@ export default function PricingPage() {
     useState<PricingTierId | null>(null);
 
   const hostFromUrl = searchParams.get("host")?.trim() ?? "";
-  const [persistedEmbedHost, setPersistedEmbedHost] = useState("");
+  /** Read cache on first paint (client) — avoids Subscribe staying disabled until a late effect runs. */
+  const [persistedEmbedHost, setPersistedEmbedHost] = useState(() => readStoredEmbedHost());
 
   useEffect(() => {
     try {

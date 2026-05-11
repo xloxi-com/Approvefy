@@ -3,6 +3,7 @@ import {
   Outlet,
   useLoaderData,
   useRouteError,
+  useSearchParams,
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
@@ -10,6 +11,7 @@ import { AppProvider as PolarisAppProvider, Frame } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
 
 import { authenticate } from "../shopify.server";
+import { mergeEmbedParamsForAppPath } from "../lib/shopify-embed-navigation";
 import "../styles/layout.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -20,15 +22,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
+  const [searchParams] = useSearchParams();
+
+  /** Keep Shopify `shop` / `host` on nav URLs so Pricing + billing stay enabled inside admin. */
+  const nav = (path: string) => mergeEmbedParamsForAppPath(path, searchParams);
 
   return (
     <AppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={translations}>
         <s-app-nav>
-          <s-link href="/app/customers">Customers</s-link>
-          <s-link href="/app/form-config">Form Builder</s-link>
-          <s-link href="/app/pricing">Pricing</s-link>
-          <s-link href="/app/settings">Settings</s-link>
+          <s-link href={nav("/app/customers")}>Customers</s-link>
+          <s-link href={nav("/app/form-config")}>Form Builder</s-link>
+          <s-link href={nav("/app/pricing")}>Pricing</s-link>
+          <s-link href={nav("/app/settings")}>Settings</s-link>
         </s-app-nav>
         <Frame>
           <Outlet />
