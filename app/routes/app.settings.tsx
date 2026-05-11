@@ -2230,6 +2230,22 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                 <p style={{ marginBottom: 16, color: "#6d7175" }}>
                                     Configure how new registrations are approved and what happens after form submit.
                                 </p>
+                                {planBasic ? (
+                                    <Box paddingBlockEnd="400">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                            <Text as="span" fontWeight="semibold">
+                                                Standard or Premium:
+                                            </Text>{" "}
+                                            Manual approval and the approved-customer tag below are editable on Standard
+                                            or Premium. Basic keeps automatic approval only—upgrade from the banner at
+                                            the top of Settings or open{" "}
+                                            <Text as="span" fontWeight="semibold">
+                                                Pricing
+                                            </Text>
+                                            .
+                                        </Text>
+                                    </Box>
+                                ) : null}
                                 <BlockStack gap="400">
                                     <ChoiceList
                                         title="Approval mode"
@@ -2255,7 +2271,11 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                         }
                                         placeholder="status:approved"
                                         autoComplete="off"
-                                        helpText="Customers with this Shopify customer tag are treated as approved. The storefront uses this to hide the registration form and allow approved-customer flows."
+                                        helpText={
+                                            planBasic
+                                                ? "Standard or Premium: set the Shopify tag used to treat customers as approved. Upgrade to edit this value."
+                                                : "Customers with this Shopify customer tag are treated as approved. The storefront uses this to hide the registration form and allow approved-customer flows."
+                                        }
                                     />
                                     <ChoiceList
                                         title="After submit"

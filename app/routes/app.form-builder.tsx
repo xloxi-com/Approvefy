@@ -32,7 +32,6 @@ import {
     Divider,
     Layout,
     Popover,
-    OptionList,
     Tabs,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
@@ -209,6 +208,29 @@ function isCustomFieldTypeAllowedForPlanClient(fieldType: string, plan: Merchant
     if (t === "file_upload") return plan === "premium";
     if (plan === "basic") return BASIC_ALLOWED_FIELD_TYPES.has(t);
     return true;
+}
+
+type FieldTypeSelectOption = { label: string; value: string; lockedByPlan?: boolean };
+
+/** Group plan-locked picker options so each tier shows once (not repeated per row). Sync with `isCustomFieldTypeAllowedForPlanClient`. */
+function partitionPlanLockedFieldOptions(options: FieldTypeSelectOption[]): {
+    available: FieldTypeSelectOption[];
+    standardTierLocked: FieldTypeSelectOption[];
+    premiumTierLocked: FieldTypeSelectOption[];
+} {
+    const available: FieldTypeSelectOption[] = [];
+    const standardTierLocked: FieldTypeSelectOption[] = [];
+    const premiumTierLocked: FieldTypeSelectOption[] = [];
+    for (const opt of options) {
+        if (!opt.lockedByPlan) {
+            available.push(opt);
+            continue;
+        }
+        const t = normalizeFieldTypeLoose(opt.value);
+        if (t === "file_upload") premiumTierLocked.push(opt);
+        else standardTierLocked.push(opt);
+    }
+    return { available, standardTierLocked, premiumTierLocked };
 }
 function getDefaultLabelForType(type: string): string {
     return FIELD_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? "New Field";
@@ -531,7 +553,7 @@ const SortableFieldRow = memo(function SortableFieldRow({
     onToggleExpand: (i: number) => void;
     onUpdate: (i: number, key: keyof FormField, val: string | boolean | number | string[]) => void;
     onRemove: (i: number) => void;
-    typeOptions: { label: string; value: string }[];
+    typeOptions: FieldTypeSelectOption[];
     shopCountryCode: string;
     showStepField?: boolean;
 }) {
@@ -560,6 +582,34 @@ const SortableFieldRow = memo(function SortableFieldRow({
     useEffect(() => {
         if (!isExpanded) setTypePopoverActive(false);
     }, [isExpanded]);
+
+    const groupedTypePickerOptions = partitionPlanLockedFieldOptions(typeOptions);
+
+    function renderTypePickerOptionRow(opt: FieldTypeSelectOption) {
+        const optNorm = normalizeFieldType(opt.value);
+        const planLockedTarget = !!opt.lockedByPlan && optNorm !== normalizedFieldType;
+        const unusable = isDefault || isAddressBundleField || planLockedTarget;
+        return (
+            <Box key={opt.value} paddingBlockStart="025" paddingBlockEnd="025">
+                <Button
+                    fullWidth
+                    textAlign="start"
+                    variant="plain"
+                    disabled={unusable}
+                    pressed={optNorm === normalizedFieldType}
+                    onClick={() => {
+                        if (unusable) return;
+                        onUpdate(index, "type", opt.value);
+                        setTypePopoverActive(false);
+                    }}
+                >
+                    <Text as="span" variant="bodyMd" tone={unusable ? "subdued" : undefined}>
+                        {opt.label}
+                    </Text>
+                </Button>
+            </Box>
+        );
+    }
 
     const style = {
         transform: CSS.Transform.toString(transform),
@@ -769,22 +819,57 @@ const SortableFieldRow = memo(function SortableFieldRow({
                                 }
                             >
                                 <Popover.Pane maxHeight="min(320px, 50vh)">
-                                    <OptionList
-                                        options={typeOptions.map((o) => ({
-                                            value: o.value,
-                                            label: o.label,
-                                        }))}
-                                        selected={[field.type]}
-                                        onChange={(selected) => {
-                                            if (isAddressBundleField) {
-                                                setTypePopoverActive(false);
-                                                return;
-                                            }
-                                            const next = selected[0];
-                                            if (next) onUpdate(index, "type", next);
-                                            setTypePopoverActive(false);
-                                        }}
-                                    />
+                                    <Box padding="200">
+                                        <BlockStack gap="0">
+                                            {groupedTypePickerOptions.available.map(renderTypePickerOptionRow)}
+                                            {groupedTypePickerOptions.standardTierLocked.length > 0 ? (
+                                                <>
+                                                    {groupedTypePickerOptions.available.length > 0 ? (
+                                                        <Box paddingBlockStart="150" paddingBlockEnd="050">
+                                                            <Divider />
+                                                        </Box>
+                                                    ) : null}
+                                                    <Box paddingBlockStart="025" paddingBlockEnd="100">
+                                                        <BlockStack gap="050">
+                                                            <Text as="span" variant="headingSm" tone="subdued">
+                                                                Standard & Premium fields
+                                                            </Text>
+                                                            <Text as="span" variant="bodySm" tone="subdued">
+                                                                Included on Standard and Premium. Upgrade in Pricing to
+                                                                unlock.
+                                                            </Text>
+                                                        </BlockStack>
+                                                    </Box>
+                                                    {groupedTypePickerOptions.standardTierLocked.map(
+                                                        renderTypePickerOptionRow,
+                                                    )}
+                                                </>
+                                            ) : null}
+                                            {groupedTypePickerOptions.premiumTierLocked.length > 0 ? (
+                                                <>
+                                                    {groupedTypePickerOptions.available.length > 0 ||
+                                                    groupedTypePickerOptions.standardTierLocked.length > 0 ? (
+                                                        <Box paddingBlockStart="150" paddingBlockEnd="050">
+                                                            <Divider />
+                                                        </Box>
+                                                    ) : null}
+                                                    <Box paddingBlockStart="025" paddingBlockEnd="100">
+                                                        <BlockStack gap="050">
+                                                            <Text as="span" variant="headingSm" tone="subdued">
+                                                                Premium fields
+                                                            </Text>
+                                                            <Text as="span" variant="bodySm" tone="subdued">
+                                                                Included on Premium. Upgrade in Pricing to unlock.
+                                                            </Text>
+                                                        </BlockStack>
+                                                    </Box>
+                                                    {groupedTypePickerOptions.premiumTierLocked.map(
+                                                        renderTypePickerOptionRow,
+                                                    )}
+                                                </>
+                                            ) : null}
+                                        </BlockStack>
+                                    </Box>
                                 </Popover.Pane>
                             </Popover>
                         </BlockStack>
@@ -1652,17 +1737,19 @@ export default function FormBuilder() {
     const [previewStep, setPreviewStep] = useState(1);
     const [saveClicked, setSaveClicked] = useState(false);
     const [builderLeftTab, setBuilderLeftTab] = useState(0);
-    const builderLeftTabsEffective = useMemo(
-        () => (planBasic ? [FORM_BUILDER_LEFT_TABS[0]] : [...FORM_BUILDER_LEFT_TABS]),
-        [planBasic],
-    );
+    /** Show all form types; gated options are disabled on Basic with upgrade hint. */
     const formTypeSelectOptions = useMemo(
-        () => (planBasic ? FORM_TYPE_OPTIONS.slice(0, 1) : FORM_TYPE_OPTIONS),
+        () =>
+            FORM_TYPE_OPTIONS.map((o) => ({
+                label:
+                    planBasic && o.value === "multi_step"
+                        ? `${o.label} (Standard or Premium)`
+                        : o.label,
+                value: o.value,
+                disabled: planBasic && o.value === "multi_step",
+            })),
         [planBasic],
     );
-    useEffect(() => {
-        if (planBasic && builderLeftTab > 0) setBuilderLeftTab(0);
-    }, [planBasic, builderLeftTab]);
     const formRef = useRef<HTMLFormElement>(null);
     const handleBack = useCallback(() => {
         if (window.history.length > 1) {
@@ -1773,6 +1860,10 @@ export default function FormBuilder() {
     const addFieldWithType = (type: string) => {
         const normalizedType = normalizeFieldType(type);
         const requestedType = ADDRESS_BUNDLE_CHILD_TYPES.has(normalizedType) ? "address" : normalizedType;
+        if (!isCustomFieldTypeAllowedForPlanClient(requestedType, merchantPlan)) {
+            setAddFieldPopoverActive(false);
+            return;
+        }
         if (
             SINGLE_INSTANCE_FIELD_TYPES.has(requestedType) &&
             fields.some((f) => normalizeFieldType(f.type) === requestedType)
@@ -1797,26 +1888,36 @@ export default function FormBuilder() {
         setExpandedIndex(nextIndex);
         setAddFieldPopoverActive(false);
     };
-    const addableCustomFieldTypeOptions = useMemo(
-        () =>
-            getSelectableCustomTypeOptions(CUSTOM_FIELD_TYPE_OPTIONS).filter((opt) => {
-                if (!isCustomFieldTypeAllowedForPlanClient(opt.value, merchantPlan)) return false;
+    const addableCustomFieldTypeOptions = useMemo((): FieldTypeSelectOption[] => {
+        return getSelectableCustomTypeOptions(CUSTOM_FIELD_TYPE_OPTIONS)
+            .filter((opt) => {
                 const normalizedType = normalizeFieldType(opt.value);
                 if (!SINGLE_INSTANCE_FIELD_TYPES.has(normalizedType)) return true;
                 return !fields.some((f) => normalizeFieldType(f.type) === normalizedType);
-            }),
-        [fields, merchantPlan],
+            })
+            .map((opt) => ({
+                ...opt,
+                lockedByPlan: !isCustomFieldTypeAllowedForPlanClient(opt.value, merchantPlan),
+            }));
+    }, [fields, merchantPlan]);
+    const groupedAddFieldOptions = useMemo(
+        () => partitionPlanLockedFieldOptions(addableCustomFieldTypeOptions),
+        [addableCustomFieldTypeOptions],
     );
     const getAvailableCustomTypeOptionsForIndex = useCallback(
-        (index: number) => {
+        (index: number): FieldTypeSelectOption[] => {
             const currentType = normalizeFieldType(fields[index]?.type);
-            return getSelectableCustomTypeOptions(CUSTOM_FIELD_TYPE_OPTIONS, currentType).filter((opt) => {
-                if (!isCustomFieldTypeAllowedForPlanClient(opt.value, merchantPlan)) return false;
-                const normalizedType = normalizeFieldType(opt.value);
-                if (!SINGLE_INSTANCE_FIELD_TYPES.has(normalizedType)) return true;
-                if (normalizedType === currentType) return true;
-                return !fields.some((f, i) => i !== index && normalizeFieldType(f.type) === normalizedType);
-            });
+            return getSelectableCustomTypeOptions(CUSTOM_FIELD_TYPE_OPTIONS, currentType)
+                .filter((opt) => {
+                    const normalizedType = normalizeFieldType(opt.value);
+                    if (!SINGLE_INSTANCE_FIELD_TYPES.has(normalizedType)) return true;
+                    if (normalizedType === currentType) return true;
+                    return !fields.some((f, i) => i !== index && normalizeFieldType(f.type) === normalizedType);
+                })
+                .map((opt) => ({
+                    ...opt,
+                    lockedByPlan: !isCustomFieldTypeAllowedForPlanClient(opt.value, merchantPlan),
+                }));
         },
         [fields, merchantPlan],
     );
@@ -1875,6 +1976,9 @@ export default function FormBuilder() {
         }
         if (key === "type") {
             const nextType = normalizeFieldType(value);
+            if (!isCustomFieldTypeAllowedForPlanClient(nextType, merchantPlan)) {
+                return;
+            }
             if (
                 SINGLE_INSTANCE_FIELD_TYPES.has(nextType) &&
                 newFields.some((f, i) => i !== index && normalizeFieldType(f.type) === nextType)
@@ -2055,7 +2159,14 @@ export default function FormBuilder() {
             ? `Last saved: ${new Date(lastSavedAtDisplay).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
             : undefined;
 
-    const typeOptions = FIELD_TYPE_OPTIONS;
+    const defaultRowTypeOptions = useMemo(
+        () =>
+            FIELD_TYPE_OPTIONS.map((o) => ({
+                ...o,
+                lockedByPlan: !isCustomFieldTypeAllowedForPlanClient(o.value, merchantPlan),
+            })),
+        [merchantPlan],
+    );
 
     const getInputType = (fieldType: string) => {
         const map: Record<string, string> = {
@@ -2148,7 +2259,7 @@ export default function FormBuilder() {
                         <Layout>
                             <Layout.Section variant="oneHalf">
                                 <div className="fb-layout-left">
-                                    <Tabs tabs={[...builderLeftTabsEffective]} selected={builderLeftTab} onSelect={setBuilderLeftTab}>
+                                    <Tabs tabs={[...FORM_BUILDER_LEFT_TABS]} selected={builderLeftTab} onSelect={setBuilderLeftTab}>
                                         <Box paddingBlockStart="300">
                                             <BlockStack gap="400">
                                                 {planBasic && (
@@ -2213,8 +2324,10 @@ export default function FormBuilder() {
                                                                                 label="Form type"
                                                                                 options={formTypeSelectOptions}
                                                                                 value={formType}
-                                                                                disabled={planBasic}
                                                                                 onChange={(v) => {
+                                                                                    if (planBasic && v === "multi_step") {
+                                                                                        return;
+                                                                                    }
                                                                                     setFormType(v);
                                                                                     if (v === "multi_step") {
                                                                                         setShowProgressBar(true);
@@ -2224,7 +2337,7 @@ export default function FormBuilder() {
                                                                                 }}
                                                                                 helpText={
                                                                                     planBasic
-                                                                                        ? "Multi-step forms require Standard or Premium (Pricing)."
+                                                                                        ? "All form types are listed here. Multi-step is locked on Basic — upgrade on Pricing (Standard or Premium)."
                                                                                         : undefined
                                                                                 }
                                                                             />
@@ -2277,7 +2390,13 @@ export default function FormBuilder() {
                                                                             onToggleExpand={toggleExpand}
                                                                             onUpdate={updateField}
                                                                             onRemove={removeField}
-                                                                            typeOptions={field.isDefault ? typeOptions : getAvailableCustomTypeOptionsForIndex(index)}
+                                                                            typeOptions={
+                                                                                field.isDefault
+                                                                                    ? defaultRowTypeOptions
+                                                                                    : getAvailableCustomTypeOptionsForIndex(
+                                                                                          index,
+                                                                                      )
+                                                                            }
                                                                             shopCountryCode={shopCountryCode}
                                                                             showStepField={formType === "multi_step"}
                                                                         />
@@ -2307,17 +2426,148 @@ export default function FormBuilder() {
                                                                     }
                                                                 >
                                                                     <Popover.Pane maxHeight="min(320px, 50vh)">
-                                                                        <OptionList
-                                                                            options={addableCustomFieldTypeOptions.map((o) => ({
-                                                                                value: o.value,
-                                                                                label: o.label,
-                                                                            }))}
-                                                                            selected={[]}
-                                                                            onChange={(selected) => {
-                                                                                const v = selected[0];
-                                                                                if (v) addFieldWithType(v);
-                                                                            }}
-                                                                        />
+                                                                        <Box padding="200">
+                                                                            <BlockStack gap="0">
+                                                                                {groupedAddFieldOptions.available.map((opt) => (
+                                                                                    <Box
+                                                                                        key={opt.value}
+                                                                                        paddingBlockStart="025"
+                                                                                        paddingBlockEnd="025"
+                                                                                    >
+                                                                                        <Button
+                                                                                            fullWidth
+                                                                                            textAlign="start"
+                                                                                            variant="plain"
+                                                                                            onClick={() => addFieldWithType(opt.value)}
+                                                                                        >
+                                                                                            <Text as="span" variant="bodyMd">
+                                                                                                {opt.label}
+                                                                                            </Text>
+                                                                                        </Button>
+                                                                                    </Box>
+                                                                                ))}
+                                                                                {groupedAddFieldOptions.standardTierLocked.length > 0 ? (
+                                                                                    <>
+                                                                                        {groupedAddFieldOptions.available.length >
+                                                                                        0 ? (
+                                                                                            <Box
+                                                                                                paddingBlockStart="150"
+                                                                                                paddingBlockEnd="050"
+                                                                                            >
+                                                                                                <Divider />
+                                                                                            </Box>
+                                                                                        ) : null}
+                                                                                        <Box
+                                                                                            paddingBlockStart="025"
+                                                                                            paddingBlockEnd="100"
+                                                                                        >
+                                                                                            <BlockStack gap="050">
+                                                                                                <Text
+                                                                                                    as="span"
+                                                                                                    variant="headingSm"
+                                                                                                    tone="subdued"
+                                                                                                >
+                                                                                                    Standard & Premium fields
+                                                                                                </Text>
+                                                                                                <Text
+                                                                                                    as="span"
+                                                                                                    variant="bodySm"
+                                                                                                    tone="subdued"
+                                                                                                >
+                                                                                                    Included on Standard and Premium.
+                                                                                                    Upgrade in Pricing to unlock.
+                                                                                                </Text>
+                                                                                            </BlockStack>
+                                                                                        </Box>
+                                                                                        {groupedAddFieldOptions.standardTierLocked.map(
+                                                                                            (opt) => (
+                                                                                                <Box
+                                                                                                    key={opt.value}
+                                                                                                    paddingBlockStart="025"
+                                                                                                    paddingBlockEnd="025"
+                                                                                                >
+                                                                                                    <Button
+                                                                                                        fullWidth
+                                                                                                        textAlign="start"
+                                                                                                        variant="plain"
+                                                                                                        disabled
+                                                                                                    >
+                                                                                                        <Text
+                                                                                                            as="span"
+                                                                                                            variant="bodyMd"
+                                                                                                            tone="subdued"
+                                                                                                        >
+                                                                                                            {opt.label}
+                                                                                                        </Text>
+                                                                                                    </Button>
+                                                                                                </Box>
+                                                                                            ),
+                                                                                        )}
+                                                                                    </>
+                                                                                ) : null}
+                                                                                {groupedAddFieldOptions.premiumTierLocked.length > 0 ? (
+                                                                                    <>
+                                                                                        {groupedAddFieldOptions.available.length >
+                                                                                            0 ||
+                                                                                        groupedAddFieldOptions.standardTierLocked
+                                                                                            .length > 0 ? (
+                                                                                            <Box
+                                                                                                paddingBlockStart="150"
+                                                                                                paddingBlockEnd="050"
+                                                                                            >
+                                                                                                <Divider />
+                                                                                            </Box>
+                                                                                        ) : null}
+                                                                                        <Box
+                                                                                            paddingBlockStart="025"
+                                                                                            paddingBlockEnd="100"
+                                                                                        >
+                                                                                            <BlockStack gap="050">
+                                                                                                <Text
+                                                                                                    as="span"
+                                                                                                    variant="headingSm"
+                                                                                                    tone="subdued"
+                                                                                                >
+                                                                                                    Premium fields
+                                                                                                </Text>
+                                                                                                <Text
+                                                                                                    as="span"
+                                                                                                    variant="bodySm"
+                                                                                                    tone="subdued"
+                                                                                                >
+                                                                                                    Included on Premium.
+                                                                                                    Upgrade in Pricing to unlock.
+                                                                                                </Text>
+                                                                                            </BlockStack>
+                                                                                        </Box>
+                                                                                        {groupedAddFieldOptions.premiumTierLocked.map(
+                                                                                            (opt) => (
+                                                                                                <Box
+                                                                                                    key={opt.value}
+                                                                                                    paddingBlockStart="025"
+                                                                                                    paddingBlockEnd="025"
+                                                                                                >
+                                                                                                    <Button
+                                                                                                        fullWidth
+                                                                                                        textAlign="start"
+                                                                                                        variant="plain"
+                                                                                                        disabled
+                                                                                                    >
+                                                                                                        <Text
+                                                                                                            as="span"
+                                                                                                            variant="bodyMd"
+                                                                                                            tone="subdued"
+                                                                                                        >
+                                                                                                            {opt.label}
+                                                                                                        </Text>
+                                                                                                    </Button>
+                                                                                                </Box>
+                                                                                            ),
+                                                                                        )}
+                                                                                    </>
+                                                                                ) : null}
+                                                                            </BlockStack>
+                                                                        </Box>
                                                                     </Popover.Pane>
                                                                 </Popover>
                                                             </Box>
@@ -2325,6 +2575,13 @@ export default function FormBuilder() {
                                                     </>
                                                 )}
                                                 {builderLeftTab === 1 && (
+                                                    <>
+                                                    {planBasic ? (
+                                                        <Text as="p" variant="bodySm" tone="subdued">
+                                                            Appearance is visible here on every plan; controls are read-only on Basic. Upgrade
+                                                            on Pricing (Standard or Premium) to customize templates, colors, fonts, and CSS.
+                                                        </Text>
+                                                    ) : null}
                                                     <FormAppearancePanel
                                                         themeSettings={themeSettings}
                                                         setThemeSettings={setThemeSettings}
@@ -2332,9 +2589,10 @@ export default function FormBuilder() {
                                                         setCustomCss={setCustomCss}
                                                         appearanceTemplateId={appearanceTemplateId}
                                                         setAppearanceTemplateId={setAppearanceTemplateId}
-                                                        disabled={isSaving}
+                                                        disabled={planBasic || isSaving}
                                                         saveActionLabel="Save"
                                                     />
+                                                    </>
                                                 )}
                                             </BlockStack>
                                         </Box>

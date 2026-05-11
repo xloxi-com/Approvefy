@@ -1,4 +1,6 @@
+import { useNavigate, useSearchParams } from "react-router";
 import { Banner, Button, InlineStack } from "@shopify/polaris";
+import { mergeEmbedParamsForAppPath } from "../lib/shopify-embed-navigation";
 
 export type PlanUpgradeBannerProps = {
   /** Short headline shown inside the banner */
@@ -15,11 +17,20 @@ export function PlanUpgradeBanner({
   message,
   requiredPlan = "Standard",
 }: PlanUpgradeBannerProps) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
   return (
     <Banner tone="info" title={title}>
       <InlineStack gap="300" blockAlign="center" wrap>
         <span>{message}</span>
-        <Button url="/app/pricing" variant="plain">
+        <Button
+          variant="plain"
+          accessibilityLabel={`Open Pricing to upgrade to ${requiredPlan} or higher`}
+          onClick={() =>
+            navigate(mergeEmbedParamsForAppPath("/app/pricing", searchParams))
+          }
+        >
           {`Upgrade — ${requiredPlan}+`}
         </Button>
       </InlineStack>

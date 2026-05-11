@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
+import type { LoaderFunctionArgs } from "react-router";
+import { useFetcher, useLoaderData, useSearchParams } from "react-router";
 import {
   Badge,
+  Banner,
   BlockStack,
   Box,
   Button,
@@ -12,8 +16,10 @@ import {
 } from "@shopify/polaris";
 import { CheckIcon, XIcon } from "@shopify/polaris-icons";
 
-import { APP_URL } from "../lib/app-constants";
+import { authenticate } from "../shopify.server";
+import { syncMerchantPlanFromActiveSubscription } from "../lib/sync-merchant-plan-from-billing.server";
 import {
+  type PricingTierId,
   PRICING_COMPARE_ROWS,
   PRICING_COMPARE_TITLE,
   PRICING_PAGE_INTRO,
@@ -21,6 +27,27 @@ import {
   PRICING_TRIAL_CTA_NOTE,
   PRICING_TIERS,
 } from "../lib/pricing-tiers";
+import { SHOPIFY_EMBED_HOST_STORAGE_KEY } from "../lib/shopify-embed-navigation";
+
+type BillingSubscribeResponse =
+  | { ok: true; confirmationUrl: string }
+  | { ok: false; error: string };
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin, session } = await authenticate.admin(request);
+  const shop = session.shop;
+  /** Resolved from Shopify active subscription (Basic / Standard / Premium), or null if none. */
+  const subscribedPlan = await syncMerchantPlanFromActiveSubscription(admin, shop);
+
+  const url = new URL(request.url);
+  const billingFlow = url.searchParams.get("billing");
+  /** Set after Shopify sends the merchant back from the charge approval page. */
+  const billingReturned = billingFlow === "callback";
+  /** Required for billing return URL; client also persists this when URL params survive navigation. */
+  const embeddedHost = url.searchParams.get("host")?.trim() ?? "";
+
+  return { billingReturned, embeddedHost, subscribedPlan };
+};
 
 function CompareCell({ included }: { included: boolean }) {
   return (
@@ -35,10 +62,87 @@ function CompareCell({ included }: { included: boolean }) {
 }
 
 export default function PricingPage() {
+  const { billingReturned, embeddedHost: hostFromLoader, subscribedPlan } =
+    useLoaderData<typeof loader>();
+  const [searchParams] = useSearchParams();
+  const fetcher = useFetcher<BillingSubscribeResponse>();
+  const [billingSubmittingTier, setBillingSubmittingTier] =
+    useState<PricingTierId | null>(null);
+
+  const hostFromUrl = searchParams.get("host")?.trim() ?? "";
+  const [persistedEmbedHost, setPersistedEmbedHost] = useState("");
+
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem(SHOPIFY_EMBED_HOST_STORAGE_KEY);
+      if (cached) setPersistedEmbedHost((prev) => prev || cached);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    const fromUrl = hostFromUrl || hostFromLoader;
+    if (!fromUrl) return;
+    setPersistedEmbedHost(fromUrl);
+    try {
+      sessionStorage.setItem(SHOPIFY_EMBED_HOST_STORAGE_KEY, fromUrl);
+    } catch {
+      /* ignore */
+    }
+  }, [hostFromLoader, hostFromUrl]);
+
+  const resolvedEmbedHost = hostFromUrl || hostFromLoader || persistedEmbedHost;
+
+  useEffect(() => {
+    const d = fetcher.data;
+    if (!d || !d.ok) return;
+    if (d.confirmationUrl && typeof window !== "undefined") {
+      const target = window.top ?? window;
+      target.location.href = d.confirmationUrl;
+    }
+  }, [fetcher.data]);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !billingSubmittingTier) return;
+    if (fetcher.data && fetcher.data.ok !== true) {
+      setBillingSubmittingTier(null);
+    }
+  }, [fetcher.state, fetcher.data, billingSubmittingTier]);
+
+  const billingError =
+    fetcher.state === "idle" && fetcher.data && !fetcher.data.ok
+      ? fetcher.data.error
+      : undefined;
+
   return (
     <div className="app-pricing-page">
       <Page fullWidth>
         <div className="app-pricing-wrap">
+          {(billingReturned || billingError || !resolvedEmbedHost) && (
+            <Box paddingBlockEnd="400">
+              <BlockStack gap="300">
+                {billingReturned ? (
+                  <Banner tone="info" title="Billing">
+                    Thanks — If you approved the charge, your plan is updating. Reload this page if features
+                    do not unlock right away.
+                  </Banner>
+                ) : null}
+                {billingError ? (
+                  <Banner tone="critical" title="Billing could not start">
+                    {billingError}
+                  </Banner>
+                ) : null}
+                {!resolvedEmbedHost ? (
+                  <Banner tone="warning" title="Subscribe from Shopify admin">
+                    Open Pricing from Apps → Approvefy inside your Shopify admin so subscription billing can return you
+                    to the embedded app correctly.
+                  </Banner>
+                ) : null}
+              </BlockStack>
+            </Box>
+          )}
+
           <div className="app-pricing-hero">
             <Card padding="500">
               <BlockStack gap="200">
@@ -53,7 +157,9 @@ export default function PricingPage() {
           </div>
 
           <div className="app-pricing-grid">
-            {PRICING_TIERS.map((tier) => (
+            {PRICING_TIERS.map((tier) => {
+              const isCurrentPlan = subscribedPlan != null && tier.id === subscribedPlan;
+              return (
               <div className="app-pricing-grid-cell" key={tier.id}>
                 <div className="app-pricing-card-fill">
                   <Card padding="0">
@@ -99,12 +205,33 @@ export default function PricingPage() {
                       <div className="app-pricing-tier-footer">
                         <BlockStack gap="150" inlineAlign="center">
                           <Button
-                            url={APP_URL}
-                            external
-                            variant={tier.highlight ? "primary" : "secondary"}
+                            variant={
+                              isCurrentPlan ? "secondary" : tier.highlight ? "primary" : "secondary"
+                            }
                             fullWidth
+                            loading={
+                              !isCurrentPlan &&
+                              fetcher.state !== "idle" &&
+                              billingSubmittingTier === tier.id
+                            }
+                            disabled={
+                              isCurrentPlan ||
+                              fetcher.state !== "idle" ||
+                              !resolvedEmbedHost
+                            }
+                            onClick={() => {
+                              if (isCurrentPlan || !resolvedEmbedHost) return;
+                              setBillingSubmittingTier(tier.id);
+                              fetcher.submit(
+                                { plan: tier.id, host: resolvedEmbedHost },
+                                {
+                                  method: "POST",
+                                  action: "/app/billing/subscribe",
+                                },
+                              );
+                            }}
                           >
-                            {tier.ctaLabel}
+                            {isCurrentPlan ? "Current" : tier.ctaLabel}
                           </Button>
                           <Text
                             as="p"
@@ -122,7 +249,8 @@ export default function PricingPage() {
                   </Card>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="app-pricing-compare">

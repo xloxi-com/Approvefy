@@ -23,6 +23,7 @@ import {
   type RegistrationDetailLayoutItem,
 } from "../lib/form-config-labels.server";
 import { normalizeRegistrationPhone, validateStoredRegistrationPhone } from "../lib/registration-phone";
+import { getMerchantPlanForShop, type MerchantPlanId } from "../lib/merchant-plan.server";
 
 type RegistrationLite = NonNullable<
   Awaited<ReturnType<typeof getRegistrationDetails>>
@@ -44,6 +45,7 @@ type LoaderData =
       reviewedAt: string | null;
       customDataLabels: Record<string, string>;
       registrationLayout: RegistrationDetailLayoutItem[];
+      merchantPlan: MerchantPlanId;
     });
 
 type ActionJson = { success: boolean; error?: string; resendRejection?: boolean; resendApproval?: boolean };
@@ -188,6 +190,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     const customDataLabels = buildCustomDataLabels(formFields);
     const registrationLayout = buildRegistrationAdminLayout(formFields);
+    const merchantPlan = await getMerchantPlanForShop(shop);
 
     return {
       id: params.id ?? "",
@@ -196,6 +199,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       reviewedAt: details.reviewedAt?.toISOString() ?? null,
       customDataLabels,
       registrationLayout,
+      merchantPlan,
     };
   } catch (error) {
     console.error("Error loading customer details", error);
@@ -244,6 +248,15 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     if (intent === "resendApproval") {
+      const merchantPlan = await getMerchantPlanForShop(shop);
+      if (merchantPlan === "basic") {
+        return {
+          success: false,
+          error:
+            "Resending approval emails requires Standard or Premium. Upgrade under Settings → Pricing.",
+          resendApproval: true,
+        };
+      }
       const email = currentRegistration.email?.trim();
       if (email) {
         const { shopName, shopEmail } = await getShopNameAndEmail(admin, shop);
@@ -732,6 +745,8 @@ export default function CustomerDetailPage() {
     );
   }
 
+  const planBasic = data.merchantPlan === "basic";
+
   return (
     <Page
       title={`${data.firstName} ${data.lastName}`}
@@ -1062,16 +1077,26 @@ export default function CustomerDetailPage() {
                 </InlineStack>
               )}
               {data.status === "approved" && (
-                <InlineStack gap="200" blockAlign="start">
-                  <Button
-                    variant="secondary"
-                    onClick={() => fetcher.submit({ intent: "resendApproval" }, { method: "post" })}
-                    disabled={fetcher.state !== "idle"}
-                    loading={isResendingApproval}
-                  >
-                    Resend approval email
-                  </Button>
-                </InlineStack>
+                <BlockStack gap="150">
+                  <InlineStack gap="200" blockAlign="start">
+                    <Button
+                      variant="secondary"
+                      onClick={() => fetcher.submit({ intent: "resendApproval" }, { method: "post" })}
+                      disabled={planBasic || fetcher.state !== "idle"}
+                      loading={isResendingApproval}
+                    >
+                      Resend approval email
+                    </Button>
+                  </InlineStack>
+                  {planBasic ? (
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      <Text as="span" fontWeight="semibold">
+                        Standard or Premium:
+                      </Text>{" "}
+                      Resending the approval email from this page unlocks after you upgrade (Settings → Pricing).
+                    </Text>
+                  ) : null}
+                </BlockStack>
               )}
               {resendResult && resendResult.success && showResendSuccessBanner && (
                 <Banner tone="success" onDismiss={() => setShowResendSuccessBanner(false)}>
