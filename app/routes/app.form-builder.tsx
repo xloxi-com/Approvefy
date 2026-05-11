@@ -33,6 +33,8 @@ import {
     Layout,
     Popover,
     Tabs,
+    ActionList,
+    Scrollable,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -232,6 +234,44 @@ function partitionPlanLockedFieldOptions(options: FieldTypeSelectOption[]): {
     }
     return { available, standardTierLocked, premiumTierLocked };
 }
+
+/** Field-type menu rows using Polaris ActionList (not plain/link buttons). */
+function addFieldOptionsToActionListItems(options: FieldTypeSelectOption[], onPick: (value: string) => void) {
+    return options.map((opt) => ({
+        content: opt.label,
+        onAction: () => onPick(opt.value),
+    }));
+}
+
+function lockedFieldOptionsToActionListItems(options: FieldTypeSelectOption[]) {
+    return options.map((opt) => ({
+        content: opt.label,
+        disabled: true,
+    }));
+}
+
+function typePickerOptionsToActionListItems(
+    options: FieldTypeSelectOption[],
+    ctx: {
+        normalizedFieldType: string;
+        isDefault: boolean;
+        isAddressBundleField: boolean;
+        onPick: (value: string) => void;
+    },
+) {
+    return options.map((opt) => {
+        const optNorm = normalizeFieldType(opt.value);
+        const planLockedTarget = !!opt.lockedByPlan && optNorm !== ctx.normalizedFieldType;
+        const unusable = ctx.isDefault || ctx.isAddressBundleField || planLockedTarget;
+        return {
+            content: opt.label,
+            disabled: unusable,
+            active: optNorm === ctx.normalizedFieldType,
+            onAction: unusable ? undefined : () => ctx.onPick(opt.value),
+        };
+    });
+}
+
 function getDefaultLabelForType(type: string): string {
     return FIELD_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? "New Field";
 }
@@ -585,31 +625,36 @@ const SortableFieldRow = memo(function SortableFieldRow({
 
     const groupedTypePickerOptions = partitionPlanLockedFieldOptions(typeOptions);
 
-    function renderTypePickerOptionRow(opt: FieldTypeSelectOption) {
-        const optNorm = normalizeFieldType(opt.value);
-        const planLockedTarget = !!opt.lockedByPlan && optNorm !== normalizedFieldType;
-        const unusable = isDefault || isAddressBundleField || planLockedTarget;
-        return (
-            <Box key={opt.value} paddingBlockStart="025" paddingBlockEnd="025">
-                <Button
-                    fullWidth
-                    textAlign="start"
-                    variant="plain"
-                    disabled={unusable}
-                    pressed={optNorm === normalizedFieldType}
-                    onClick={() => {
-                        if (unusable) return;
-                        onUpdate(index, "type", opt.value);
-                        setTypePopoverActive(false);
-                    }}
-                >
-                    <Text as="span" variant="bodyMd" tone={unusable ? "subdued" : undefined}>
-                        {opt.label}
-                    </Text>
-                </Button>
-            </Box>
-        );
-    }
+    const pickFieldType = useCallback(
+        (value: string) => {
+            onUpdate(index, "type", value);
+            setTypePopoverActive(false);
+        },
+        [index, onUpdate],
+    );
+
+    const typePickerCtx = useMemo(
+        () => ({
+            normalizedFieldType,
+            isDefault,
+            isAddressBundleField,
+            onPick: pickFieldType,
+        }),
+        [normalizedFieldType, isDefault, isAddressBundleField, pickFieldType],
+    );
+
+    const availableTypePickerItems = useMemo(
+        () => typePickerOptionsToActionListItems(groupedTypePickerOptions.available, typePickerCtx),
+        [groupedTypePickerOptions.available, typePickerCtx],
+    );
+    const standardLockedTypePickerItems = useMemo(
+        () => typePickerOptionsToActionListItems(groupedTypePickerOptions.standardTierLocked, typePickerCtx),
+        [groupedTypePickerOptions.standardTierLocked, typePickerCtx],
+    );
+    const premiumLockedTypePickerItems = useMemo(
+        () => typePickerOptionsToActionListItems(groupedTypePickerOptions.premiumTierLocked, typePickerCtx),
+        [groupedTypePickerOptions.premiumTierLocked, typePickerCtx],
+    );
 
     const style = {
         transform: CSS.Transform.toString(transform),
@@ -819,9 +864,11 @@ const SortableFieldRow = memo(function SortableFieldRow({
                                 }
                             >
                                 <Popover.Pane maxHeight="min(320px, 50vh)">
-                                    <Box padding="200">
+                                    <Scrollable style={{ maxHeight: "min(320px, 50vh)" }} scrollbarWidth="thin">
                                         <BlockStack gap="0">
-                                            {groupedTypePickerOptions.available.map(renderTypePickerOptionRow)}
+                                            {availableTypePickerItems.length > 0 ? (
+                                                <ActionList actionRole="menuitem" items={availableTypePickerItems} />
+                                            ) : null}
                                             {groupedTypePickerOptions.standardTierLocked.length > 0 ? (
                                                 <>
                                                     {groupedTypePickerOptions.available.length > 0 ? (
@@ -829,7 +876,7 @@ const SortableFieldRow = memo(function SortableFieldRow({
                                                             <Divider />
                                                         </Box>
                                                     ) : null}
-                                                    <Box paddingBlockStart="025" paddingBlockEnd="100">
+                                                    <Box paddingInline="300" paddingBlockStart="200" paddingBlockEnd="100">
                                                         <BlockStack gap="050">
                                                             <Text as="span" variant="headingSm" tone="subdued">
                                                                 Standard & Premium fields
@@ -840,9 +887,7 @@ const SortableFieldRow = memo(function SortableFieldRow({
                                                             </Text>
                                                         </BlockStack>
                                                     </Box>
-                                                    {groupedTypePickerOptions.standardTierLocked.map(
-                                                        renderTypePickerOptionRow,
-                                                    )}
+                                                    <ActionList actionRole="menuitem" items={standardLockedTypePickerItems} />
                                                 </>
                                             ) : null}
                                             {groupedTypePickerOptions.premiumTierLocked.length > 0 ? (
@@ -853,7 +898,7 @@ const SortableFieldRow = memo(function SortableFieldRow({
                                                             <Divider />
                                                         </Box>
                                                     ) : null}
-                                                    <Box paddingBlockStart="025" paddingBlockEnd="100">
+                                                    <Box paddingInline="300" paddingBlockStart="200" paddingBlockEnd="100">
                                                         <BlockStack gap="050">
                                                             <Text as="span" variant="headingSm" tone="subdued">
                                                                 Premium fields
@@ -863,13 +908,11 @@ const SortableFieldRow = memo(function SortableFieldRow({
                                                             </Text>
                                                         </BlockStack>
                                                     </Box>
-                                                    {groupedTypePickerOptions.premiumTierLocked.map(
-                                                        renderTypePickerOptionRow,
-                                                    )}
+                                                    <ActionList actionRole="menuitem" items={premiumLockedTypePickerItems} />
                                                 </>
                                             ) : null}
                                         </BlockStack>
-                                    </Box>
+                                    </Scrollable>
                                 </Popover.Pane>
                             </Popover>
                         </BlockStack>
@@ -2426,26 +2469,17 @@ export default function FormBuilder() {
                                                                     }
                                                                 >
                                                                     <Popover.Pane maxHeight="min(320px, 50vh)">
-                                                                        <Box padding="200">
+                                                                        <Scrollable style={{ maxHeight: "min(320px, 50vh)" }} scrollbarWidth="thin">
                                                                             <BlockStack gap="0">
-                                                                                {groupedAddFieldOptions.available.map((opt) => (
-                                                                                    <Box
-                                                                                        key={opt.value}
-                                                                                        paddingBlockStart="025"
-                                                                                        paddingBlockEnd="025"
-                                                                                    >
-                                                                                        <Button
-                                                                                            fullWidth
-                                                                                            textAlign="start"
-                                                                                            variant="plain"
-                                                                                            onClick={() => addFieldWithType(opt.value)}
-                                                                                        >
-                                                                                            <Text as="span" variant="bodyMd">
-                                                                                                {opt.label}
-                                                                                            </Text>
-                                                                                        </Button>
-                                                                                    </Box>
-                                                                                ))}
+                                                                                {groupedAddFieldOptions.available.length > 0 ? (
+                                                                                    <ActionList
+                                                                                        actionRole="menuitem"
+                                                                                        items={addFieldOptionsToActionListItems(
+                                                                                            groupedAddFieldOptions.available,
+                                                                                            addFieldWithType,
+                                                                                        )}
+                                                                                    />
+                                                                                ) : null}
                                                                                 {groupedAddFieldOptions.standardTierLocked.length > 0 ? (
                                                                                     <>
                                                                                         {groupedAddFieldOptions.available.length >
@@ -2458,7 +2492,8 @@ export default function FormBuilder() {
                                                                                             </Box>
                                                                                         ) : null}
                                                                                         <Box
-                                                                                            paddingBlockStart="025"
+                                                                                            paddingInline="300"
+                                                                                            paddingBlockStart="200"
                                                                                             paddingBlockEnd="100"
                                                                                         >
                                                                                             <BlockStack gap="050">
@@ -2479,30 +2514,12 @@ export default function FormBuilder() {
                                                                                                 </Text>
                                                                                             </BlockStack>
                                                                                         </Box>
-                                                                                        {groupedAddFieldOptions.standardTierLocked.map(
-                                                                                            (opt) => (
-                                                                                                <Box
-                                                                                                    key={opt.value}
-                                                                                                    paddingBlockStart="025"
-                                                                                                    paddingBlockEnd="025"
-                                                                                                >
-                                                                                                    <Button
-                                                                                                        fullWidth
-                                                                                                        textAlign="start"
-                                                                                                        variant="plain"
-                                                                                                        disabled
-                                                                                                    >
-                                                                                                        <Text
-                                                                                                            as="span"
-                                                                                                            variant="bodyMd"
-                                                                                                            tone="subdued"
-                                                                                                        >
-                                                                                                            {opt.label}
-                                                                                                        </Text>
-                                                                                                    </Button>
-                                                                                                </Box>
-                                                                                            ),
-                                                                                        )}
+                                                                                        <ActionList
+                                                                                            actionRole="menuitem"
+                                                                                            items={lockedFieldOptionsToActionListItems(
+                                                                                                groupedAddFieldOptions.standardTierLocked,
+                                                                                            )}
+                                                                                        />
                                                                                     </>
                                                                                 ) : null}
                                                                                 {groupedAddFieldOptions.premiumTierLocked.length > 0 ? (
@@ -2519,7 +2536,8 @@ export default function FormBuilder() {
                                                                                             </Box>
                                                                                         ) : null}
                                                                                         <Box
-                                                                                            paddingBlockStart="025"
+                                                                                            paddingInline="300"
+                                                                                            paddingBlockStart="200"
                                                                                             paddingBlockEnd="100"
                                                                                         >
                                                                                             <BlockStack gap="050">
@@ -2540,34 +2558,16 @@ export default function FormBuilder() {
                                                                                                 </Text>
                                                                                             </BlockStack>
                                                                                         </Box>
-                                                                                        {groupedAddFieldOptions.premiumTierLocked.map(
-                                                                                            (opt) => (
-                                                                                                <Box
-                                                                                                    key={opt.value}
-                                                                                                    paddingBlockStart="025"
-                                                                                                    paddingBlockEnd="025"
-                                                                                                >
-                                                                                                    <Button
-                                                                                                        fullWidth
-                                                                                                        textAlign="start"
-                                                                                                        variant="plain"
-                                                                                                        disabled
-                                                                                                    >
-                                                                                                        <Text
-                                                                                                            as="span"
-                                                                                                            variant="bodyMd"
-                                                                                                            tone="subdued"
-                                                                                                        >
-                                                                                                            {opt.label}
-                                                                                                        </Text>
-                                                                                                    </Button>
-                                                                                                </Box>
-                                                                                            ),
-                                                                                        )}
+                                                                                        <ActionList
+                                                                                            actionRole="menuitem"
+                                                                                            items={lockedFieldOptionsToActionListItems(
+                                                                                                groupedAddFieldOptions.premiumTierLocked,
+                                                                                            )}
+                                                                                        />
                                                                                     </>
                                                                                 ) : null}
                                                                             </BlockStack>
-                                                                        </Box>
+                                                                        </Scrollable>
                                                                     </Popover.Pane>
                                                                 </Popover>
                                                             </Box>
