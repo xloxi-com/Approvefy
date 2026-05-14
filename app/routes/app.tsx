@@ -12,16 +12,23 @@ import translations from "@shopify/polaris/locales/en.json";
 
 import { authenticate } from "../shopify.server";
 import { mergeEmbedParamsForAppPath } from "../lib/shopify-embed-navigation";
+import { CrispChatWidget } from "../components/CrispChatWidget";
 import "../styles/layout.css";
+
+/** Default Crisp site; override with `CRISP_WEBSITE_ID` in `.env` for staging / white-label. */
+const DEFAULT_CRISP_WEBSITE_ID = "37838a46-8fb5-457f-8976-f8ebfca547b1";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
 
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  const crispWebsiteId =
+    (process.env.CRISP_WEBSITE_ID || "").trim() || DEFAULT_CRISP_WEBSITE_ID;
+
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", crispWebsiteId };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, crispWebsiteId } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
 
   /** Keep Shopify `shop` / `host` on nav URLs so Pricing + billing stay enabled inside admin. */
@@ -29,6 +36,7 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
+      <CrispChatWidget websiteId={crispWebsiteId} />
       <PolarisAppProvider i18n={translations}>
         <s-app-nav>
           <s-link href={nav("/app/customers")}>Customers</s-link>
