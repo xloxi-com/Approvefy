@@ -1,7 +1,7 @@
 import prisma from "../db.server";
+import { invalidateMerchantPlanCache, type MerchantPlanId } from "./merchant-plan.server";
 import type { PricingTierId } from "./pricing-tiers";
 import { SUBSCRIPTION_AMOUNT_USD } from "./billing-plans";
-import type { MerchantPlanId } from "./merchant-plan.server";
 
 type AdminGraphql = (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response>;
 
@@ -112,6 +112,7 @@ export async function syncMerchantPlanFromActiveSubscription(
       create: { shop, merchantPlan: detected },
       update: { merchantPlan: detected },
     });
+    invalidateMerchantPlanCache(shop);
   } catch {
     /* ignore — still return detected so Pricing can show “Current” */
   }

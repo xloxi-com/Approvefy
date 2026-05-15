@@ -107,8 +107,10 @@ export const loader = async ({ request }: LoaderFunctionArgs): Promise<FormConfi
 
     const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
     const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?template=customers/register&context=apps`;
-    const merchantPlan = await getMerchantPlanForShop(shop);
-    const formCount = await prisma.formConfig.count({ where: { shop } });
+    const [merchantPlan, formCount] = await Promise.all([
+        getMerchantPlanForShop(shop),
+        prisma.formConfig.count({ where: { shop } }),
+    ]);
 
     return {
         themeEditorUrl,

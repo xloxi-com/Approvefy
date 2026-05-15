@@ -49,10 +49,16 @@ import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
 import {
     getMerchantPlanForShop,
     mergeIncomingApprovalSettingsForBasicSave,
+    resolveMerchantPlan,
     type MerchantPlanId,
 } from "../lib/merchant-plan.server";
 import { getSmtpSettings, upsertSmtpSettings } from "../lib/smtp.server";
-import { getEmailTemplateBySlug, upsertRejectionTemplate, upsertApprovalTemplate } from "../models/email-template.server";
+import {
+    getEmailTemplatesBySlugs,
+    upsertRejectionTemplate,
+    upsertApprovalTemplate,
+    type EmailTemplateRecord,
+} from "../models/email-template.server";
 import { CORE_LANGUAGES, normalizeLangCode, coreLanguageName, type LanguageOption as CoreLanguageOption } from "../lib/languages";
 import { normalizeThemeSettings, THEME_DEFAULTS, type ThemeSettings } from "../lib/theme-settings";
 import { getAppearanceTemplateId } from "../lib/appearance-templates";
@@ -408,7 +414,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         authenticate.admin(request),
     ]);
     const shop = session?.shop || "";
-    const merchantPlan: MerchantPlanId = shop ? await getMerchantPlanForShop(shop) : "standard";
+    let merchantPlan: MerchantPlanId = "standard";
 
     const shopMetaDefault: ShopMetaForClient = { storeName: "Store", storeEmail: "", storeLogoUrl: null };
     let shopMetaPromise: Promise<ShopMetaForClient> = Promise.resolve(shopMetaDefault);
@@ -423,20 +429,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (shop) {
         let settings: Awaited<ReturnType<typeof prisma.appSettings.findUnique>> = null;
         let smtp: Awaited<ReturnType<typeof getSmtpSettings>> = null;
-        let rejectionTemplate: Awaited<ReturnType<typeof getEmailTemplateBySlug>> = null;
-        let approvalTemplate: Awaited<ReturnType<typeof getEmailTemplateBySlug>> = null;
+        let rejectionTemplate: EmailTemplateRecord | null = null;
+        let approvalTemplate: EmailTemplateRecord | null = null;
         const cachedShopMeta = getCachedShopMeta(shop);
         try {
-            const [settingsResult, smtpResult, rejectionTemplateResult, approvalTemplateResult] = await Promise.all([
+            const [settingsResult, smtpResult, emailTemplatesBySlug] = await Promise.all([
                 prisma.appSettings.findUnique({ where: { shop } }),
                 getSmtpSettings(shop),
-                getEmailTemplateBySlug(shop, "rejection"),
-                getEmailTemplateBySlug(shop, "approval"),
+                getEmailTemplatesBySlugs(shop, ["rejection", "approval"]),
             ]);
             settings = settingsResult;
             smtp = smtpResult;
-            rejectionTemplate = rejectionTemplateResult;
-            approvalTemplate = approvalTemplateResult;
+            rejectionTemplate = emailTemplatesBySlug.get("rejection") ?? null;
+            approvalTemplate = emailTemplatesBySlug.get("approval") ?? null;
+            merchantPlan = resolveMerchantPlan(settingsResult?.merchantPlan ?? undefined);
             smtpSettings = smtp;
             if (cachedShopMeta) {
                 shopMetaPromise = Promise.resolve({

@@ -229,18 +229,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Wall-clock for the awaited DB fan-out — emitted as `Server-Timing: db;dur=…` so we
   // can spot regressions (slow Supabase pool, missing index) directly from DevTools.
-  const t0 = performance.now();
-  const [initialCustomersData, initialAnalytics, approvalMode] = await Promise.all([
-    getCustomers(...loadParams),
-    getAnalytics(shop),
-    getCustomerApprovalModeForShop(shop),
-  ]);
-  let dbMs = Math.round(performance.now() - t0);
-  let customersData = initialCustomersData;
-  let analytics = initialAnalytics;
-
-  // Auto-approval: reconcile stuck "pending" rows against Shopify — throttled so every navigation
-  // / revalidate does not fire dozens of Admin API calls (add ?sync=1 to force once).
   const secPurpose = request.headers.get("Sec-Fetch-Purpose");
   const isPrefetch =
     secPurpose === "prefetch" || request.headers.get("Purpose") === "prefetch";
@@ -252,6 +240,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     !from &&
     !to;
 
+  const t0 = performance.now();
+  const [initialCustomersData, initialAnalytics, approvalMode] = await Promise.all([
+    getCustomers(...loadParams),
+    getAnalytics(shop),
+    canReconcileListNow && !isPrefetch
+      ? getCustomerApprovalModeForShop(shop)
+      : Promise.resolve("manual" as const),
+  ]);
+  let dbMs = Math.round(performance.now() - t0);
+  let customersData = initialCustomersData;
+  let analytics = initialAnalytics;
+
+  // Auto-approval: reconcile stuck "pending" rows against Shopify — throttled so every navigation
+  // / revalidate does not fire dozens of Admin API calls (add ?sync=1 to force once).
   if (
     !isPrefetch &&
     canReconcileListNow &&

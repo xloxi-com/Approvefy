@@ -48,6 +48,26 @@ export async function getEmailTemplateBySlug(
   return row;
 }
 
+/** One round-trip for rejection + approval templates (settings loader). */
+export async function getEmailTemplatesBySlugs(
+  shop: string,
+  slugs: string[],
+): Promise<Map<string, EmailTemplateRecord>> {
+  const unique = [...new Set(slugs.map((s) => s.trim().toLowerCase()).filter(Boolean))];
+  if (!unique.length) return new Map();
+
+  const rows = await prisma.emailTemplate.findMany({
+    where: { shop, slug: { in: unique } },
+    select: emailTemplateSelect,
+  });
+
+  const out = new Map<string, EmailTemplateRecord>();
+  for (const row of rows) {
+    out.set(row.slug, row);
+  }
+  return out;
+}
+
 export async function getEmailTemplateById(
   shop: string,
   id: string

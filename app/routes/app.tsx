@@ -10,7 +10,6 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { AppProvider as PolarisAppProvider, Frame } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
 
-import { authenticate } from "../shopify.server";
 import { mergeEmbedParamsForAppPath } from "../lib/shopify-embed-navigation";
 import { CrispChatWidget } from "../components/CrispChatWidget";
 import "../styles/layout.css";
@@ -19,8 +18,6 @@ import "../styles/layout.css";
 const DEFAULT_CRISP_WEBSITE_ID = "37838a46-8fb5-457f-8976-f8ebfca547b1";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-
   const crispWebsiteId =
     (process.env.CRISP_WEBSITE_ID || "").trim() || DEFAULT_CRISP_WEBSITE_ID;
 

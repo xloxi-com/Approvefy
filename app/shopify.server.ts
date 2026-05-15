@@ -49,7 +49,26 @@ const shopify = shopifyApp({
 export default shopify;
 export const apiVersion = ApiVersion.October25;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
-export const authenticate = shopify.authenticate;
+
+/** One `authenticate.admin` per HTTP request — layout + leaf loaders share the same session lookup. */
+const adminAuthByRequest = new WeakMap<
+  Request,
+  ReturnType<typeof shopify.authenticate.admin>
+>();
+
+function authenticateAdmin(request: Request) {
+  let pending = adminAuthByRequest.get(request);
+  if (!pending) {
+    pending = shopify.authenticate.admin(request);
+    adminAuthByRequest.set(request, pending);
+  }
+  return pending;
+}
+
+export const authenticate = {
+  ...shopify.authenticate,
+  admin: authenticateAdmin,
+};
 export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;

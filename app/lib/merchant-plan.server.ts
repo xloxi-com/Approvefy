@@ -15,23 +15,53 @@ export function normalizeMerchantPlan(raw: string | null | undefined): MerchantP
   return "standard";
 }
 
-/** Override entire DB plan for local QA — optional env MERCHANT_PLAN_OVERRIDE=basic|standard|premium */
-export async function getMerchantPlanForShop(shop: string): Promise<MerchantPlanId> {
+const MERCHANT_PLAN_CACHE_TTL_MS = 30_000;
+const merchantPlanCache = new Map<string, { value: MerchantPlanId; at: number }>();
+
+function setBoundedCacheEntry<V>(map: Map<string, V>, key: string, value: V, max: number): void {
+  map.set(key, value);
+  if (map.size > max) {
+    const oldest = map.keys().next().value;
+    if (oldest != null) map.delete(oldest);
+  }
+}
+
+/** Env override + DB value — no extra query when the row is already loaded. */
+export function resolveMerchantPlan(raw: string | null | undefined): MerchantPlanId {
   const o = process.env.MERCHANT_PLAN_OVERRIDE?.trim().toLowerCase();
   if (o === "basic" || o === "standard" || o === "premium") return o;
+  return normalizeMerchantPlan(raw);
+}
 
-  const key = (shop || "").trim();
+/** Override entire DB plan for local QA — optional env MERCHANT_PLAN_OVERRIDE=basic|standard|premium */
+export async function getMerchantPlanForShop(shop: string): Promise<MerchantPlanId> {
+  const override = process.env.MERCHANT_PLAN_OVERRIDE?.trim().toLowerCase();
+  if (override === "basic" || override === "standard" || override === "premium") return override;
+
+  const key = (shop || "").trim().toLowerCase();
   if (!key) return "standard";
+
+  const cached = merchantPlanCache.get(key);
+  if (cached && Date.now() - cached.at < MERCHANT_PLAN_CACHE_TTL_MS) {
+    return cached.value;
+  }
 
   try {
     const row = await prisma.appSettings.findUnique({
       where: { shop: key },
       select: { merchantPlan: true },
     });
-    return normalizeMerchantPlan(row?.merchantPlan ?? undefined);
+    const plan = resolveMerchantPlan(row?.merchantPlan ?? undefined);
+    setBoundedCacheEntry(merchantPlanCache, key, { value: plan, at: Date.now() }, 200);
+    return plan;
   } catch {
     return "standard";
   }
+}
+
+export function invalidateMerchantPlanCache(shop: string): void {
+  const key = (shop || "").trim().toLowerCase();
+  if (key) merchantPlanCache.delete(key);
 }
 
 export function allowMerchantPlanDevSelector(): boolean {
