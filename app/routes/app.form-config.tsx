@@ -20,7 +20,7 @@ import {
     InlineStack,
     Toast,
 } from "@shopify/polaris";
-import { FormConfigTableSkeleton } from "../components/AppPageSkeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SectionCard } from "../components/SectionCard";
 import { EditIcon, DeleteIcon, PlusIcon, ClipboardIcon, DuplicateIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -188,6 +188,38 @@ const FORM_INDEX_TABLE_HEADINGS = [
     { title: "Actions" },
 ] as const;
 
+function FormConfigListLoading() {
+    const rowKeys = ["s1", "s2", "s3", "s4", "s5"] as const;
+    return (
+        <div className="app-backend-card">
+            <Card padding="0">
+                <div
+                    className="flex min-h-[240px] flex-col gap-4 p-4"
+                    role="status"
+                    aria-label="Loading forms"
+                >
+                    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)] gap-3">
+                        {FORM_INDEX_TABLE_HEADINGS.map((h) => (
+                            <Skeleton key={h.title} className="h-4 w-20" />
+                        ))}
+                    </div>
+                    {rowKeys.map((key) => (
+                        <div
+                            key={key}
+                            className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)] items-center gap-3"
+                        >
+                            <Skeleton className="h-4 w-full max-w-[140px]" />
+                            <Skeleton className="h-4 w-full max-w-[180px]" />
+                            <Skeleton className="h-4 w-28" />
+                            <Skeleton className="h-4 w-20" />
+                            <Skeleton className="h-4 w-24" />
+                        </div>
+                    ))}
+                </div>
+            </Card>
+        </div>
+    );
+}
 
 function formTypeLabel(value: string): string {
     const v = (value || "").toLowerCase();
@@ -522,7 +554,7 @@ export default function FormConfig() {
                 </div>
                 <Layout>
                     <Layout.Section>
-                        <Suspense fallback={<FormConfigTableSkeleton />}>
+                        <Suspense fallback={<FormConfigListLoading />}>
                             <Await
                                 resolve={forms}
                                 errorElement={

@@ -18,7 +18,6 @@ import {
 } from "@shopify/polaris";
 import { CheckCircleIcon, ViewIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
-import { CardBodySkeleton } from "../components/AppPageSkeletons";
 import prisma from "../db.server";
 import { getAnalytics } from "../models/registration-analytics.server";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
@@ -402,7 +401,15 @@ export default function Index() {
                 title="Registration pipeline"
                 description="Counts update as customers submit applications and you approve or reject them."
               >
-                <Suspense fallback={<CardBodySkeleton lines={3} />}>
+                <Suspense
+                  fallback={
+                    <Card padding="500">
+                      <Text as="p" variant="bodySm" tone="subdued">
+                        Loading live status…
+                      </Text>
+                    </Card>
+                  }
+                >
                   <Await
                     resolve={analytics}
                     errorElement={
