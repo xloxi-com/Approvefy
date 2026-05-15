@@ -1,4 +1,4 @@
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import type { HeadersFunction } from "react-router";
 import {
   Outlet,
   useLoaderData,
@@ -17,7 +17,7 @@ import "../styles/layout.css";
 /** Default Crisp site; override with `CRISP_WEBSITE_ID` in `.env` for staging / white-label. */
 const DEFAULT_CRISP_WEBSITE_ID = "37838a46-8fb5-457f-8976-f8ebfca547b1";
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
+export const loader = async () => {
   const crispWebsiteId =
     (process.env.CRISP_WEBSITE_ID || "").trim() || DEFAULT_CRISP_WEBSITE_ID;
 
