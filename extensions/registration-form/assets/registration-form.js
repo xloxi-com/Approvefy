@@ -620,10 +620,109 @@
     return configPromise;
   }
 
+  var approvefyInitSeq = 0;
+
+  function getRegistrationFormElement() {
+    return document.getElementById('custom-registration-form');
+  }
+
+  /** True when the shopper has started filling the form (or is focused in it). */
+  function isRegistrationFormDirty() {
+    var form = getRegistrationFormElement();
+    if (!form) return false;
+    try {
+      if (document.activeElement && form.contains(document.activeElement)) return true;
+    } catch (focusErr) {
+      void focusErr;
+    }
+    var els = form.querySelectorAll(
+      'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select'
+    );
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.disabled || el.readOnly) continue;
+      if (el.type === 'file') continue;
+      if (String(el.value || '').trim() !== '') return true;
+    }
+    if (form.querySelector('input[type="checkbox"]:checked, input[type="radio"]:checked')) return true;
+    return false;
+  }
+
+  function captureRegistrationFormFieldValues() {
+    var form = getRegistrationFormElement();
+    if (!form) return null;
+    var snapshot = { inputs: {}, checkboxes: {}, radios: {} };
+    form.querySelectorAll('input, textarea, select').forEach(function (el) {
+      var name = el.name;
+      if (!name || el.disabled) return;
+      if (el.type === 'checkbox') {
+        if (!el.checked) return;
+        if (!snapshot.checkboxes[name]) snapshot.checkboxes[name] = [];
+        snapshot.checkboxes[name].push(el.value);
+      } else if (el.type === 'radio') {
+        if (el.checked) snapshot.radios[name] = el.value;
+      } else if (el.type === 'file') {
+        return;
+      } else {
+        snapshot.inputs[name] = el.value;
+      }
+    });
+    return snapshot;
+  }
+
+  function restoreRegistrationFormFieldValues(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    var form = getRegistrationFormElement();
+    if (!form) return;
+    var inputs = snapshot.inputs || {};
+    Object.keys(inputs).forEach(function (name) {
+      var els = form.querySelectorAll('[name="' + name.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'file') continue;
+        el.value = inputs[name];
+        break;
+      }
+    });
+    var radios = snapshot.radios || {};
+    Object.keys(radios).forEach(function (name) {
+      var val = radios[name];
+      var radio = form.querySelector(
+        'input[type="radio"][name="' + name.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"][value="' + String(val).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]'
+      );
+      if (radio) radio.checked = true;
+    });
+    var checkboxes = snapshot.checkboxes || {};
+    Object.keys(checkboxes).forEach(function (name) {
+      var values = checkboxes[name];
+      if (!Array.isArray(values)) return;
+      form.querySelectorAll('input[type="checkbox"][name="' + name.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]').forEach(function (cb) {
+        cb.checked = values.indexOf(cb.value) !== -1;
+      });
+    });
+  }
+
+  function configStructureFingerprint(cfg) {
+    if (!cfg || typeof cfg !== 'object') return '';
+    return JSON.stringify({
+      fields: cfg.fields || [],
+      customerApprovalSettings: cfg.customerApprovalSettings || null,
+      customCss: cfg.customCss || '',
+      translations: cfg.translations || {},
+      availableLocales: cfg.availableLocales || [],
+      storefrontHeading: cfg.storefrontHeading || '',
+      storefrontDescription: cfg.storefrontDescription || '',
+      showProgressBar: cfg.showProgressBar !== false
+    });
+  }
+
   function refreshConfigAndForm() {
+    if (isRegistrationFormDirty()) return;
     fetchFreshConfig().then(function () {
+      if (isRegistrationFormDirty()) return;
       var inlineBlock = document.querySelector('[data-approvefy-registration-block]');
       if (inlineBlock) inlineBlock.removeAttribute('data-approvefy-mounted');
+      window.__approvefyRegistrationFormMounted = false;
       init(shop);
     });
   }
@@ -1382,6 +1481,7 @@
   }
   
   async function init(shopDomain) {
+    var initSeq = ++approvefyInitSeq;
     var inlineRoot = document.querySelector('[data-approvefy-registration-block]');
     var isRegisterPage = window.location.pathname.indexOf('/account/register') !== -1;
     var isInline = !!(inlineRoot && !isRegisterPage);
@@ -1398,6 +1498,9 @@
 
     if (isInline && inlineRoot.getAttribute('data-approvefy-mounted') === '1') {
       return;
+    }
+    if (!isInline && window.__approvefyRegistrationFormMounted && getRegistrationFormElement()) {
+      if (isRegistrationFormDirty()) return;
     }
 
     // Find the main content area and the existing Shopify registration form
@@ -1427,28 +1530,13 @@
         // Background sync: if backend config changed, remount with fresh data.
         configPromise.then(function (latestConfig) {
           try {
+            if (initSeq !== approvefyInitSeq) return;
             if (!latestConfig || typeof latestConfig !== 'object') return;
-            var cachedFingerprint = JSON.stringify({
-              fields: cachedConfig.fields || [],
-              customerApprovalSettings: cachedConfig.customerApprovalSettings || null,
-              customCss: cachedConfig.customCss || '',
-              translations: cachedConfig.translations || {},
-              availableLocales: cachedConfig.availableLocales || [],
-              storefrontHeading: cachedConfig.storefrontHeading || '',
-              storefrontDescription: cachedConfig.storefrontDescription || '',
-              showProgressBar: cachedConfig.showProgressBar !== false
-            });
-            var latestFingerprint = JSON.stringify({
-              fields: latestConfig.fields || [],
-              customerApprovalSettings: latestConfig.customerApprovalSettings || null,
-              customCss: latestConfig.customCss || '',
-              translations: latestConfig.translations || {},
-              availableLocales: latestConfig.availableLocales || [],
-              storefrontHeading: latestConfig.storefrontHeading || '',
-              storefrontDescription: latestConfig.storefrontDescription || '',
-              showProgressBar: latestConfig.showProgressBar !== false
-            });
+            writeCachedConfig(latestConfig);
+            var cachedFingerprint = configStructureFingerprint(cachedConfig);
+            var latestFingerprint = configStructureFingerprint(latestConfig);
             if (cachedFingerprint !== latestFingerprint) {
+              if (isRegistrationFormDirty()) return;
               refreshConfigAndForm();
             }
           } catch (bgErr) {
@@ -1488,6 +1576,8 @@
       clearFloatingInlineLoader();
       clearRegisterSpinnerLoader();
     }
+
+    if (initSeq !== approvefyInitSeq) return;
 
     if (config && typeof config === 'object') {
       var cas0 = config.customerApprovalSettings;
@@ -1882,6 +1972,10 @@
       }
     }
 
+    if (initSeq !== approvefyInitSeq) return;
+
+    var preservedFormValues = captureRegistrationFormFieldValues();
+
     if (isInline && inlineRoot) {
       var mountPt = inlineRoot.querySelector('.approvefy-registration-mount');
       if (!mountPt) {
@@ -1905,6 +1999,7 @@
 
       container.outerHTML = formHTML;
     }
+    window.__approvefyRegistrationFormMounted = true;
     if (typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(injectGoogleFontDeferred);
@@ -1932,9 +2027,11 @@
     
     const form = document.getElementById('custom-registration-form');
     if (!form) return;
+    if (initSeq !== approvefyInitSeq) return;
 
     prefillLoggedInCustomerRegistrationFields(form, config);
     lockLoggedInCustomerEmailField(form);
+    if (preservedFormValues) restoreRegistrationFormFieldValues(preservedFormValues);
 
     if (cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId) !== '') {
       var hidCid = document.createElement('input');
