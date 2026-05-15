@@ -72,7 +72,7 @@ import {
 import "../styles/settings.css";
 import { REJECTION_EMAIL_PRESETS, getRejectionPresetById } from "../lib/rejection-email-presets";
 import { APPROVAL_EMAIL_PRESETS, getApprovalPresetById } from "../lib/approval-email-presets";
-import { Skeleton } from "@/components/ui/skeleton";
+import { RichTextEditorSkeleton, SettingsPageSkeleton } from "../components/AppPageSkeletons";
 
 const LazyRichTextEditor = lazy(() =>
     import("../components/RichTextEditor").then((m) => ({ default: m.RichTextEditor })),
@@ -81,13 +81,7 @@ const LazyRichTextEditor = lazy(() =>
 function DeferredRichTextEditor(props: RichTextEditorProps) {
     const min = props.minHeight ?? 120;
     return (
-        <Suspense
-            fallback={
-                <Box paddingBlockStart="200" minHeight={`${min}px`}>
-                    <Skeleton className="h-24 w-full rounded-md" />
-                </Box>
-            }
-        >
+        <Suspense fallback={<RichTextEditorSkeleton minHeight={min} />}>
             <LazyRichTextEditor {...props} />
         </Suspense>
     );
@@ -1192,30 +1186,11 @@ type SettingsPageLoaderData = {
     storeLogoUrl: string | null;
 };
 
-function SettingsRouteSkeleton() {
-    return (
-        <Page title="Settings">
-            <div
-                className="settings-route-loading"
-                style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    minHeight: "min(60vh, 480px)",
-                    width: "100%",
-                }}
-            >
-                <s-spinner accessibilityLabel="Loading" size="large-100" />
-            </div>
-        </Page>
-    );
-}
-
 export default function Settings() {
     const raw = useLoaderData<typeof loader>();
     const { shopMeta, ...staticPart } = raw;
     return (
-        <Suspense fallback={<SettingsRouteSkeleton />}>
+        <Suspense fallback={<SettingsPageSkeleton />}>
             <Await resolve={shopMeta}>
                 {(meta) => <SettingsPage data={{ ...staticPart, ...meta } as SettingsPageLoaderData} />}
             </Await>
