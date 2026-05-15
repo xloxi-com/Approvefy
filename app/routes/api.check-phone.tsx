@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
+import { shopHasActiveAppSubscription } from "../lib/app-subscription.server";
 import { checkPhoneExists } from "../models/approval.server";
 import { normalizeRegistrationPhone } from "../lib/registration-phone";
 
@@ -21,6 +22,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           },
         }
       );
+    }
+
+    if (!(await shopHasActiveAppSubscription(admin, session.shop))) {
+      return new Response(JSON.stringify({ taken: false, subscriptionRequired: true }), {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
     }
 
     const url = new URL(request.url);

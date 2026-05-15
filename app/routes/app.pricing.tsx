@@ -120,9 +120,15 @@ export default function PricingPage() {
     <div className="app-pricing-page">
       <Page fullWidth>
         <div className="app-pricing-wrap">
-          {(billingReturned || billingError || !resolvedEmbedHost) && (
+          {(billingReturned || billingError || !resolvedEmbedHost || subscribedPlan == null) && (
             <Box paddingBlockEnd="400">
               <BlockStack gap="300">
+                {subscribedPlan == null && !billingReturned ? (
+                  <Banner tone="info" title="Choose a plan to get started">
+                    Select Basic, Standard, or Premium below to unlock Customers, Form Builder, Settings, and your
+                    storefront registration form.
+                  </Banner>
+                ) : null}
                 {billingReturned ? (
                   <Banner tone="info" title="Billing">
                     Thanks — If you approved the charge, your plan is updating. Reload this page if features

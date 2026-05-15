@@ -18,6 +18,19 @@ export function readStoredEmbedHost(): string {
 /** Route-only params that shouldn’t leak onto other embedded app URLs. */
 const APP_NAV_SEARCH_PARAM_DROP = new Set(["formId", "billing"]);
 
+/** Server-side redirect helper — preserves Shopify embed params from the incoming request. */
+export function mergeEmbedParamsForServerPath(
+    pathname: string,
+    searchParams: URLSearchParams,
+): string {
+    const next = new URLSearchParams();
+    searchParams.forEach((value, key) => {
+        if (!APP_NAV_SEARCH_PARAM_DROP.has(key)) next.append(key, value);
+    });
+    const qs = next.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+}
+
 /**
  * Builds a relative path (`/app/...`) with the same embed context as the current page.
  * Use with React Router `navigate()`, not `<a href="/app/foo">`.

@@ -21,6 +21,7 @@ import { sendApprovalEmail } from "../lib/approval-email.server";
 import { getShopNameAndEmail } from "../lib/shop-meta.server";
 import { sanitizeRegistrationRedirectForResponse } from "../lib/safe-registration-redirect";
 import { normalizeRegistrationPhone, validateStoredRegistrationPhone } from "../lib/registration-phone";
+import { shopHasActiveAppSubscription } from "../lib/app-subscription.server";
 import { getMerchantPlanForShop } from "../lib/merchant-plan.server";
 
 type CoreFieldRequirements = {
@@ -136,6 +137,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
 
         const shop = session?.shop || "";
+
+        if (shop && !(await shopHasActiveAppSubscription(admin, shop))) {
+            return new Response(
+                JSON.stringify({
+                    error: "subscription_required",
+                    message: "Choose a subscription plan in Approvefy admin (Pricing) before accepting registrations.",
+                }),
+                {
+                    status: 403,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*",
+                    },
+                },
+            );
+        }
+
         const merchantPlan = shop ? await getMerchantPlanForShop(shop) : "standard";
         const formData = await request.formData();
 

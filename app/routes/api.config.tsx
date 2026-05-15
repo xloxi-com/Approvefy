@@ -6,6 +6,7 @@ import { CORE_LANGUAGES, normalizeLangCode } from "../lib/languages";
 import { buildThemeCss, getGoogleFontName, normalizeThemeSettings } from "../lib/theme-settings";
 import { appendAppearanceTemplateCss, getAppearanceTemplateId } from "../lib/appearance-templates";
 import { BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE } from "../lib/settings-ui-i18n";
+import { shopHasActiveAppSubscription } from "../lib/app-subscription.server";
 import {
     filterStorefrontFieldsForPlan,
     getMerchantPlanForShop,
@@ -100,6 +101,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 status: 400,
                 headers: CONFIG_JSON_HEADERS,
             });
+        }
+
+        if (!admin || !(await shopHasActiveAppSubscription(admin, shop))) {
+            return new Response(
+                JSON.stringify({
+                    fields: [],
+                    subscriptionRequired: true,
+                    error: "Choose a subscription plan in Approvefy admin (Pricing) to activate the registration form.",
+                }),
+                { status: 403, headers: CONFIG_JSON_HEADERS },
+            );
         }
 
         const merchantPlan = await getMerchantPlanForShop(shop);
