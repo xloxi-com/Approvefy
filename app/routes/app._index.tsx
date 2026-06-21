@@ -1,6 +1,6 @@
-import { Suspense, useId, type ReactNode } from "react";
+import { Suspense, useEffect, useId, type ReactNode } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { Await, data, useLoaderData, useNavigate, Link } from "react-router";
+import { Await, data, useLoaderData, useNavigate, Link, useRevalidator } from "react-router";
 import {
   Page,
   Text,
@@ -29,6 +29,8 @@ const SETUP_TUTORIAL_URL = `${APP_URL.replace(/\/?$/, "")}/`;
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
+  const url = new URL(request.url);
+  const billingPending = url.searchParams.get("billing") === "callback";
 
   let formsCount = 0;
   let hasSettings = false;
@@ -72,6 +74,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       setupTasksComplete,
       setupTasksTotal,
       analytics: analyticsPromise,
+      billingPending,
     },
     { headers: { "Server-Timing": `db;dur=${dbMs}` } },
   );
@@ -210,8 +213,10 @@ export default function Index() {
     setupTasksComplete,
     setupTasksTotal,
     analytics,
+    billingPending,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
   const progressLabelId = useId();
   const progressPercent = setupTasksTotal
     ? Math.min(100, Math.round((100 * setupTasksComplete) / setupTasksTotal))
@@ -226,6 +231,12 @@ export default function Index() {
 
   const formDone = formsCount > 0;
   const settingsDone = hasSettings;
+
+  useEffect(() => {
+    if (!billingPending) return;
+    const timer = window.setInterval(() => revalidator.revalidate(), 2000);
+    return () => window.clearInterval(timer);
+  }, [billingPending, revalidator]);
 
   return (
     <div className="app-home-page">
@@ -262,6 +273,12 @@ export default function Index() {
                 </BlockStack>
               </Box>
             </div>
+
+            {billingPending && (
+              <Banner tone="info" title="Activating your plan">
+                Thanks for subscribing — your plan is being confirmed. This page will refresh automatically.
+              </Banner>
+            )}
 
             {dbUnavailable && (
               <Banner tone="critical" title="Database connection issue detected">

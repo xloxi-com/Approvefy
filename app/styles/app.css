@@ -16,3 +16,24 @@
   outline: 2px solid var(--p-color-border-info);
   outline-offset: 2px;
 }
+
+/* ─── App error pages (404, network, server) ─── */
+.app-error-page {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+}
+
+.app-error-page-wrap {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: var(--p-space-400);
+}
+
+.app-error-page-code {
+  font-size: 4rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--p-color-text-secondary);
+  letter-spacing: -0.04em;
+}

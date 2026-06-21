@@ -5,6 +5,24 @@
 
 export const SHOPIFY_EMBED_HOST_STORAGE_KEY = "approvefy_shopify_embed_host";
 
+/** Root `/` must not render the public landing page when Shopify opens the embedded app. */
+export function isEmbeddedShopifyAdminEntry(request: Request, url: URL): boolean {
+    if (url.searchParams.get("shop")?.trim()) return true;
+    if (url.searchParams.get("host")?.trim()) return true;
+    if (url.searchParams.get("embedded") === "1") return true;
+    if (url.searchParams.get("appLoadId")) return true;
+    const auth = request.headers.get("Authorization");
+    if (auth?.startsWith("Bearer ")) return true;
+    return false;
+}
+
+/** Query string for `/app` entry — drops Shopify-only load correlation params. */
+export function redirectSearchParamsForAppEntry(searchParams: URLSearchParams): string {
+    const params = new URLSearchParams(searchParams);
+    params.delete("appLoadId");
+    return params.toString();
+}
+
 /** Client-only: read cached embed `host` (used when URL lost it after in-app nav). */
 export function readStoredEmbedHost(): string {
     if (typeof window === "undefined") return "";

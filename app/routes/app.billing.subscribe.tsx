@@ -96,8 +96,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     shop,
     host,
   });
-  /** After approve/decline Shopify redirects here with enough context to re-enter the iframe. */
-  const returnUrl = `${appUrl}/app/pricing?${returnParams.toString()}`;
+  /** After approve/decline Shopify redirects to Home with enough context to re-enter the iframe. */
+  const returnUrl = `${appUrl}/app?${returnParams.toString()}`;
 
   const test = await shouldUseTestBilling(admin);
   const trialDays = trialDaysFromCopy();

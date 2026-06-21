@@ -26,11 +26,15 @@ import translations from "@shopify/polaris/locales/en.json";
 
 import {
 
+  invalidateAppSubscriptionCache,
+
   isBillingExemptAppPath,
 
   shopHasActiveAppSubscription,
 
 } from "../lib/app-subscription.server";
+
+import { syncMerchantPlanFromActiveSubscription } from "../lib/sync-merchant-plan-from-billing.server";
 
 import {
 
@@ -42,7 +46,9 @@ import {
 
 import { authenticate } from "../shopify.server";
 
+import { AppErrorPage } from "../components/AppErrorPage";
 import { CrispChatWidget } from "../components/CrispChatWidget";
+import { shouldUseShopifyBoundary } from "../lib/route-error";
 
 import "../styles/layout.css";
 
@@ -62,13 +68,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const pathname = url.pathname;
 
+  const billingCallback = url.searchParams.get("billing") === "callback";
 
+  if (billingCallback) {
+    invalidateAppSubscriptionCache(session.shop);
+    await syncMerchantPlanFromActiveSubscription(admin, session.shop);
+  }
 
   const hasActiveSubscription = await shopHasActiveAppSubscription(admin, session.shop);
 
+  /** After plan approval, land on Home (not Pricing). */
+  if (billingCallback && hasActiveSubscription) {
+    throw redirect(mergeEmbedParamsForServerPath("/app", url.searchParams));
+  }
+
   if (!isBillingExemptAppPath(pathname) && !hasActiveSubscription) {
-    const pricingPath = mergeEmbedParamsForServerPath("/app/pricing", url.searchParams);
-    throw redirect(pricingPath);
+    /** Allow Home while Shopify activates the charge (return URL includes billing=callback). */
+    const awaitingBillingActivation = billingCallback && pathname === "/app";
+    if (!awaitingBillingActivation) {
+      const pricingPath = mergeEmbedParamsForServerPath("/app/pricing", url.searchParams);
+      throw redirect(pricingPath);
+    }
   }
 
 
@@ -158,9 +178,13 @@ export default function App() {
 // Shopify needs React Router to catch some thrown responses, so that their headers are included in the response.
 
 export function ErrorBoundary() {
+  const error = useRouteError();
 
-  return boundary.error(useRouteError());
+  if (shouldUseShopifyBoundary(error)) {
+    return boundary.error(error);
+  }
 
+  return <AppErrorPage error={error} />;
 }
 
 

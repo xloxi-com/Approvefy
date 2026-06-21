@@ -1,7 +1,9 @@
 import type { LinksFunction } from "react-router";
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import { Links, Meta, Outlet, Scripts, ScrollRestoration, useRouteError } from "react-router";
 import polarisStylesHref from "@shopify/polaris/build/esm/styles.css?url";
 import appStylesHref from "./styles/app.css?url";
+import { AppErrorPage } from "./components/AppErrorPage";
+import { shouldUseShopifyBoundary } from "./lib/route-error";
 
 export const links: LinksFunction = () => [
   // Preload critical CSS to reduce first paint delay.
@@ -55,6 +57,29 @@ export default function App() {
       <body>
         <Outlet />
         <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+
+  if (shouldUseShopifyBoundary(error)) {
+    throw error;
+  }
+
+  return (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        <AppErrorPage error={error} homePath="/" pageTitle="Approvefy" />
         <Scripts />
       </body>
     </html>

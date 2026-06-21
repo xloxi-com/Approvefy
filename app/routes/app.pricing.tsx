@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useFetcher, useLoaderData, useNavigate, useRevalidator, useSearchParams } from "react-router";
 import {
   Badge,
   Banner,
@@ -27,7 +27,13 @@ import {
   PRICING_TRIAL_CTA_NOTE,
   PRICING_TIERS,
 } from "../lib/pricing-tiers";
-import { readStoredEmbedHost, SHOPIFY_EMBED_HOST_STORAGE_KEY } from "../lib/shopify-embed-navigation";
+import { invalidateAppSubscriptionCache } from "../lib/app-subscription.server";
+import {
+  mergeEmbedParamsForAppPath,
+  mergeEmbedParamsForServerPath,
+  readStoredEmbedHost,
+  SHOPIFY_EMBED_HOST_STORAGE_KEY,
+} from "../lib/shopify-embed-navigation";
 
 type BillingSubscribeResponse =
   | { ok: true; confirmationUrl: string }
@@ -36,13 +42,23 @@ type BillingSubscribeResponse =
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
-  /** Resolved from Shopify active subscription (Basic / Standard / Premium), or null if none. */
-  const subscribedPlan = await syncMerchantPlanFromActiveSubscription(admin, shop);
-
   const url = new URL(request.url);
   const billingFlow = url.searchParams.get("billing");
   /** Set after Shopify sends the merchant back from the charge approval page. */
   const billingReturned = billingFlow === "callback";
+
+  if (billingReturned) {
+    invalidateAppSubscriptionCache(shop);
+  }
+
+  /** Resolved from Shopify active subscription (Basic / Standard / Premium), or null if none. */
+  const subscribedPlan = await syncMerchantPlanFromActiveSubscription(admin, shop);
+
+  /** Legacy return URLs still hit /app/pricing — send merchants to Home once subscribed. */
+  if (billingReturned && subscribedPlan != null) {
+    throw redirect(mergeEmbedParamsForServerPath("/app", url.searchParams));
+  }
+
   /** Required for billing return URL; client also persists this when URL params survive navigation. */
   const embeddedHost = url.searchParams.get("host")?.trim() ?? "";
 
@@ -65,6 +81,8 @@ export default function PricingPage() {
   const { billingReturned, embeddedHost: hostFromLoader, subscribedPlan } =
     useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const revalidator = useRevalidator();
   const fetcher = useFetcher<BillingSubscribeResponse>();
   const [billingSubmittingTier, setBillingSubmittingTier] =
     useState<PricingTierId | null>(null);
@@ -111,6 +129,16 @@ export default function PricingPage() {
     }
   }, [fetcher.state, fetcher.data, billingSubmittingTier]);
 
+  useEffect(() => {
+    if (!billingReturned) return;
+    if (subscribedPlan != null) {
+      navigate(mergeEmbedParamsForAppPath("/app", searchParams), { replace: true });
+      return;
+    }
+    const timer = window.setTimeout(() => revalidator.revalidate(), 1500);
+    return () => window.clearTimeout(timer);
+  }, [billingReturned, subscribedPlan, navigate, searchParams, revalidator]);
+
   const billingError =
     fetcher.state === "idle" && fetcher.data && !fetcher.data.ok
       ? fetcher.data.error
@@ -129,10 +157,9 @@ export default function PricingPage() {
                     storefront registration form.
                   </Banner>
                 ) : null}
-                {billingReturned ? (
-                  <Banner tone="info" title="Billing">
-                    Thanks — If you approved the charge, your plan is updating. Reload this page if features
-                    do not unlock right away.
+                {billingReturned && subscribedPlan == null ? (
+                  <Banner tone="info" title="Activating your plan">
+                    Thanks — your subscription is being confirmed. You will be redirected to Home shortly.
                   </Banner>
                 ) : null}
                 {billingError ? (

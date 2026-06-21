@@ -1,6 +1,10 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { redirect, useLoaderData } from "react-router";
 
+import {
+  isEmbeddedShopifyAdminEntry,
+  redirectSearchParamsForAppEntry,
+} from "../../lib/shopify-embed-navigation";
 import { login } from "../../shopify.server";
 
 import styles from "./styles.module.css";
@@ -8,10 +12,8 @@ import styles from "./styles.module.css";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
 
-  if (url.searchParams.get("shop")) {
-    const params = new URLSearchParams(url.searchParams);
-    params.delete("appLoadId");
-    const qs = params.toString();
+  if (isEmbeddedShopifyAdminEntry(request, url)) {
+    const qs = redirectSearchParamsForAppEntry(url.searchParams);
     throw redirect(qs ? `/app?${qs}` : "/app");
   }
 
