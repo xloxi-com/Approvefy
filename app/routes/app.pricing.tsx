@@ -132,6 +132,7 @@ export default function PricingPage() {
   useEffect(() => {
     if (!billingReturned) return;
     if (subscribedPlan != null) {
+      revalidator.revalidate();
       navigate(mergeEmbedParamsForAppPath("/app", searchParams), { replace: true });
       return;
     }

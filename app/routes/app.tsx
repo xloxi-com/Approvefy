@@ -72,10 +72,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   if (billingCallback) {
     invalidateAppSubscriptionCache(session.shop);
-    await syncMerchantPlanFromActiveSubscription(admin, session.shop);
   }
 
-  const hasActiveSubscription = await shopHasActiveAppSubscription(admin, session.shop);
+  /** Sync before nav/gating so Pricing "Current" and sidebar links stay aligned (avoids stale 60s cache). */
+  const subscribedPlan = await syncMerchantPlanFromActiveSubscription(admin, session.shop);
+  invalidateAppSubscriptionCache(session.shop);
+
+  const hasActiveSubscription =
+    subscribedPlan != null ||
+    (await shopHasActiveAppSubscription(admin, session.shop));
 
   /** After plan approval, land on Home (not Pricing). */
   if (billingCallback && hasActiveSubscription) {
@@ -140,6 +145,8 @@ export default function App() {
           {hasActiveSubscription ? (
 
             <>
+
+              <s-link href={nav("/app")}>Home</s-link>
 
               <s-link href={nav("/app/customers")}>Customers</s-link>
 
