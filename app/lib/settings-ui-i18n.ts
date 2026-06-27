@@ -11,6 +11,9 @@ export type SettingsStoreUiStrings = {
     redirectGuestsHelp: string;
     showAuthTabsLabel: string;
     showAuthTabsHelp: string;
+    redirectSignInLinksLabel: string;
+    redirectSignInLinksHelp: string;
+    customerAccountHeading: string;
     redirectUrlLabel: string;
     redirectUrlPlaceholder: string;
     redirectUrlHelp: string;
@@ -33,9 +36,13 @@ const EN: SettingsStoreUiStrings = {
     redirectGuestsHelp: "Enable the app embed (or Registration Form block) in your theme.",
     showAuthTabsLabel: "Show Log in / Sign up switch on registration form",
     showAuthTabsHelp: "Turn off to hide the switch above the signup form in storefront.",
-    redirectUrlLabel: "Redirect URL",
-    redirectUrlPlaceholder: "/pages/contact or https://…",
-    redirectUrlHelp: "Where guests are sent when blocked.",
+    redirectSignInLinksLabel: "Redirect header customer account icon to registration form page",
+    redirectSignInLinksHelp:
+        "When enabled, guests who click the customer account icon in the theme header are sent to your registration form page. Other sign-in links are not redirected. When disabled, /pages/customer-registration is not available on the storefront.",
+    customerAccountHeading: "Customer account icon",
+    redirectUrlLabel: "Registration form page URL",
+    redirectUrlPlaceholder: "/pages/customer-registration or https://…",
+    redirectUrlHelp: "Used for sign-in redirects and guest checkout blocking. Auto-filled as /pages/customer-registration when you create a form.",
     loggedInCustomersHeading: "Logged-in customers",
     blockLoggedInLabel: "Redirect customers without the approved tag",
     popupMessageLabel: "Popup message",
@@ -51,7 +58,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "Activez l’intégration d’application (ou le bloc Formulaire d’inscription) dans votre thème.",
         showAuthTabsLabel: "Afficher le sélecteur Connexion / Inscription sur le formulaire",
         showAuthTabsHelp: "Désactivez pour masquer ce sélecteur au-dessus du formulaire d’inscription.",
-        redirectUrlLabel: "URL de redirection",
+        redirectSignInLinksLabel: "Rediriger les liens de connexion vers la page du formulaire d’inscription",
+        redirectSignInLinksHelp:
+            "Si activé, l’icône compte client et les liens Connexion / Inscription envoient les invités vers votre page de formulaire.",
+        customerAccountHeading: "Liens compte client",
+        redirectUrlLabel: "URL de la page du formulaire d’inscription",
         redirectUrlPlaceholder: "/pages/contact ou https://…",
         redirectUrlHelp: "Destination des invités lorsqu’ils sont bloqués.",
         loggedInCustomersHeading: "Clients connectés",
@@ -68,7 +79,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "App-Einbettung (oder Registrierungsformular-Block) im Theme aktivieren.",
         showAuthTabsLabel: "Schalter „Anmelden / Registrieren“ im Registrierungsformular anzeigen",
         showAuthTabsHelp: "Deaktivieren, um den Schalter über dem Formular auszublenden.",
-        redirectUrlLabel: "Weiterleitungs-URL",
+        redirectSignInLinksLabel: "Anmelde-Links zur Registrierungsformular-Seite weiterleiten",
+        redirectSignInLinksHelp:
+            "Wenn aktiv, leiten Konto-Symbol und Anmelde-Links Gäste zu Ihrer Registrierungsformular-Seite.",
+        customerAccountHeading: "Kundenkonto-Links",
+        redirectUrlLabel: "URL der Registrierungsformular-Seite",
         redirectUrlPlaceholder: "/pages/contact oder https://…",
         redirectUrlHelp: "Wohin Gäste geschickt werden, wenn sie blockiert sind.",
         loggedInCustomersHeading: "Angemeldete Kunden",
@@ -85,7 +100,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "Activa la incrustación de la app (o el bloque Formulario de registro) en tu tema.",
         showAuthTabsLabel: "Mostrar conmutador Iniciar sesión / Registrarse en el formulario",
         showAuthTabsHelp: "Desactívalo para ocultar el conmutador sobre el formulario de registro.",
-        redirectUrlLabel: "URL de redirección",
+        redirectSignInLinksLabel: "Redirigir enlaces de inicio de sesión a la página del formulario de registro",
+        redirectSignInLinksHelp:
+            "Si está activado, el icono de cuenta y los enlaces de inicio de sesión envían invitados a su página de formulario.",
+        customerAccountHeading: "Enlaces de cuenta de cliente",
+        redirectUrlLabel: "URL de la página del formulario de registro",
         redirectUrlPlaceholder: "/pages/contact o https://…",
         redirectUrlHelp: "A dónde se envía a los invitados cuando se bloquean.",
         loggedInCustomersHeading: "Clientes con sesión iniciada",
@@ -102,7 +121,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "Abilita l’embed dell’app (o il blocco Modulo di registrazione) nel tema.",
         showAuthTabsLabel: "Mostra selettore Accedi / Registrati nel modulo",
         showAuthTabsHelp: "Disattiva per nascondere il selettore sopra il modulo di registrazione.",
-        redirectUrlLabel: "URL di reindirizzamento",
+        redirectSignInLinksLabel: "Reindirizza i link di accesso alla pagina del modulo di registrazione",
+        redirectSignInLinksHelp:
+            "Se attivo, l’icona account e i link di accesso inviano gli ospiti alla pagina del modulo.",
+        customerAccountHeading: "Link account cliente",
+        redirectUrlLabel: "URL pagina modulo di registrazione",
         redirectUrlPlaceholder: "/pages/contact o https://…",
         redirectUrlHelp: "Dove vengono inviati gli ospiti quando vengono bloccati.",
         loggedInCustomersHeading: "Clienti connessi",
@@ -119,7 +142,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "Schakel de app-embed (of het registratieformulierblok) in je thema in.",
         showAuthTabsLabel: "Toon Inloggen / Registreren-schakelaar op registratieformulier",
         showAuthTabsHelp: "Zet uit om de schakelaar boven het registratieformulier te verbergen.",
-        redirectUrlLabel: "Redirect-URL",
+        redirectSignInLinksLabel: "Inloglinks doorsturen naar registratieformulierpagina",
+        redirectSignInLinksHelp:
+            "Indien ingeschakeld sturen het accountpictogram en inloglinks gasten naar uw registratiepagina.",
+        customerAccountHeading: "Klantaccountlinks",
+        redirectUrlLabel: "URL registratieformulierpagina",
         redirectUrlPlaceholder: "/pages/contact of https://…",
         redirectUrlHelp: "Waar gasten naartoe gaan als ze worden geblokkeerd.",
         loggedInCustomersHeading: "Ingelogde klanten",
@@ -136,7 +163,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "Włącz osadzenie aplikacji (lub blok formularza rejestracji) w motywie.",
         showAuthTabsLabel: "Pokaż przełącznik Logowanie / Rejestracja nad formularzem",
         showAuthTabsHelp: "Wyłącz, aby ukryć przełącznik nad formularzem rejestracji.",
-        redirectUrlLabel: "URL przekierowania",
+        redirectSignInLinksLabel: "Przekieruj linki logowania na stronę formularza rejestracji",
+        redirectSignInLinksHelp:
+            "Po włączeniu ikona konta i linki logowania kierują gości na stronę formularza.",
+        customerAccountHeading: "Linki konta klienta",
+        redirectUrlLabel: "URL strony formularza rejestracji",
         redirectUrlPlaceholder: "/pages/contact lub https://…",
         redirectUrlHelp: "Dokąd trafiają goście po zablokowaniu.",
         loggedInCustomersHeading: "Zalogowani klienci",
@@ -153,7 +184,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "Ative a incorporação da app (ou o bloco Formulário de registo) no tema.",
         showAuthTabsLabel: "Mostrar alternador Iniciar sessão / Registar no formulário",
         showAuthTabsHelp: "Desative para ocultar o alternador acima do formulário de registo.",
-        redirectUrlLabel: "URL de redirecionamento",
+        redirectSignInLinksLabel: "Redirecionar links de início de sessão para a página do formulário de registo",
+        redirectSignInLinksHelp:
+            "Se ativo, o ícone de conta e links de início de sessão enviam convidados para a página do formulário.",
+        customerAccountHeading: "Links da conta de cliente",
+        redirectUrlLabel: "URL da página do formulário de registo",
         redirectUrlPlaceholder: "/pages/contact ou https://…",
         redirectUrlHelp: "Para onde os convidados são enviados quando bloqueados.",
         loggedInCustomersHeading: "Clientes com sessão iniciada",
@@ -170,7 +205,11 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         redirectGuestsHelp: "தீமில் ஆப் எம்பெட் (அல்லது பதிவுப் படிவத் தொகுதி) இயக்கவும்.",
         showAuthTabsLabel: "பதிவு படிவத்தின் மேலே Log in / Sign up மாற்றியை காட்டு",
         showAuthTabsHelp: "இந்த மாற்றியை மறைக்க Off செய்யவும்.",
-        redirectUrlLabel: "திருப்பும் URL",
+        redirectSignInLinksLabel: "Header customer account icon-ஐ பதிவுப் படிவப் பக்கத்திற்குத் திருப்பு",
+        redirectSignInLinksHelp:
+            "இயக்கும்போது, theme header-ல் உள்ள customer account icon-ஐ விருந்தினர் கிளிக் செய்தால் மட்டும் பதிவுப் படிவப் பக்கத்திற்கு அனுப்பப்படுவார்கள். முடக்கும்போது /pages/customer-registration storefront-ல் வேலை செய்யாது.",
+        customerAccountHeading: "Customer account icon",
+        redirectUrlLabel: "பதிவுப் படிவப் பக்க URL",
         redirectUrlPlaceholder: "/pages/contact அல்லது https://…",
         redirectUrlHelp: "தடுக்கப்படும்போது விருந்தினர்கள் அனுப்பப்படும் இடம்.",
         loggedInCustomersHeading: "உள்நுழைந்த வாடிக்கையாளர்கள்",

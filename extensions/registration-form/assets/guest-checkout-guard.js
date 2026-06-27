@@ -70,8 +70,44 @@
     guardTranslations = (data && data.translations) || null;
     var cas = data && data.customerApprovalSettings;
     guardConfig = cas || null;
+    writeGuardConfigCache(data);
     return guardConfig;
   }
+
+  var GUARD_CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
+  var GUARD_CONFIG_CACHE_KEY = 'approvefy_guard_config_' + shop;
+
+  function readGuardConfigCache() {
+    try {
+      if (!window.sessionStorage) return null;
+      var raw = sessionStorage.getItem(GUARD_CONFIG_CACHE_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (parsed.ts && Date.now() - parsed.ts > GUARD_CONFIG_CACHE_TTL_MS) return null;
+      return parsed.data && typeof parsed.data === 'object' ? parsed.data : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeGuardConfigCache(data) {
+    try {
+      if (!window.sessionStorage || !data || typeof data !== 'object') return;
+      sessionStorage.setItem(
+        GUARD_CONFIG_CACHE_KEY,
+        JSON.stringify({ ts: Date.now(), data: data })
+      );
+    } catch (e) {
+      void e;
+    }
+  }
+
+  var cachedGuardConfig = readGuardConfigCache();
+  if (cachedGuardConfig) {
+    applyGuardConfig(cachedGuardConfig);
+  }
+
   var guardReady =
     window.__approvefyConfigPromise && typeof window.__approvefyConfigPromise.then === 'function'
       ? window.__approvefyConfigPromise.then(applyGuardConfig).catch(function () {
@@ -105,6 +141,312 @@
       return '';
     }
     return s;
+  }
+
+  var DEFAULT_REGISTRATION_PAGE_PATH = '/pages/customer-registration';
+
+  function signInRedirectDestination() {
+    var dest = redirectDestination();
+    if (dest) {
+      return dest;
+    }
+    if (guardConfig) {
+      var regPath = guardConfig.registrationPagePath;
+      if (regPath && String(regPath).trim() && !isUnsafeRegistrationRedirectUrl(String(regPath).trim())) {
+        return String(regPath).trim();
+      }
+    }
+    if (cfg && cfg.registrationPagePath && String(cfg.registrationPagePath).trim()) {
+      var fromCfg = String(cfg.registrationPagePath).trim();
+      if (!isUnsafeRegistrationRedirectUrl(fromCfg)) {
+        return fromCfg;
+      }
+    }
+    return DEFAULT_REGISTRATION_PAGE_PATH;
+  }
+
+  function shouldRedirectSignInLinks() {
+    if (cfg.customerLoggedIn) {
+      return false;
+    }
+    if (!guardConfig || guardConfig.redirectSignInLinksToFormPage !== true) {
+      return false;
+    }
+    return !!signInRedirectDestination();
+  }
+
+  function normalizePathForCompare(pathname, search) {
+    var p = (pathname || '/').replace(/\/+$/, '') || '/';
+    var q = search || '';
+    return (p + q).toLowerCase();
+  }
+
+  function isAlreadyOnRedirectDestination(dest) {
+    if (!dest) {
+      return false;
+    }
+    var current = normalizePathForCompare(window.location.pathname, window.location.search);
+    try {
+      var d = dest.trim();
+      if (d.indexOf('http://') === 0 || d.indexOf('https://') === 0 || d.indexOf('//') === 0) {
+        var u = new URL(d.indexOf('//') === 0 ? 'https:' + d : d);
+        if (u.origin !== window.location.origin) {
+          return false;
+        }
+        return current === normalizePathForCompare(u.pathname, u.search);
+      }
+      var rel = d.indexOf('/') === 0 ? d : '/' + d;
+      var parts = rel.split('?');
+      return current === normalizePathForCompare(parts[0], parts[1] ? '?' + parts[1] : '');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function pathWithoutLocaleSegment(pathname) {
+    var p = (pathname || '/').toLowerCase();
+    var m = p.match(/^(\/[a-z]{2}(?:-[a-z]{2})?)(\/.*|$)/);
+    if (m && m[1] && m[1].length <= 6) {
+      return m[2] && m[2].length > 0 ? m[2] : '/';
+    }
+    return p;
+  }
+
+  function normalizeComparePathForRegistration(pathnameOrUrl) {
+    var raw = String(pathnameOrUrl || '').trim();
+    if (!raw) {
+      return '/';
+    }
+    try {
+      if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0 || raw.indexOf('//') === 0) {
+        var abs = new URL(raw.indexOf('//') === 0 ? 'https:' + raw : raw);
+        raw = abs.pathname || '/';
+      }
+    } catch (ePath) {
+      void ePath;
+    }
+    var pathOnly = raw.split('?')[0];
+    var stripped = pathWithoutLocaleSegment(pathOnly).replace(/\/+$/, '') || '/';
+    return stripped.toLowerCase();
+  }
+
+  function isDedicatedRegistrationPagePath(cas) {
+    var current = normalizeComparePathForRegistration(window.location.pathname);
+    if (/\/pages\/customer-registration\/?$/i.test(current)) {
+      return true;
+    }
+    var candidates = ['/pages/customer-registration'];
+    if (cfg && cfg.registrationPagePath) {
+      candidates.push(cfg.registrationPagePath);
+    }
+    if (cas && cas.registrationPagePath) {
+      candidates.push(cas.registrationPagePath);
+    }
+    var i;
+    for (i = 0; i < candidates.length; i++) {
+      if (normalizeComparePathForRegistration(candidates[i]) === current) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function storefrontHomeHref() {
+    try {
+      if (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) {
+        return window.Shopify.routes.root;
+      }
+    } catch (eHome) {
+      void eHome;
+    }
+    return '/';
+  }
+
+  function maybeLeaveDisabledRegistrationPage() {
+    if (!isDedicatedRegistrationPagePath(null)) {
+      return;
+    }
+    guardReady.then(function (cas) {
+      if (cas && cas.redirectSignInLinksToFormPage === true) {
+        return;
+      }
+      var home = storefrontHomeHref();
+      if (normalizeComparePathForRegistration(window.location.pathname) === normalizeComparePathForRegistration(home)) {
+        return;
+      }
+      window.location.replace(home);
+    });
+  }
+
+  function pathIsCustomerAccountEntry(pathname) {
+    var p = pathWithoutLocaleSegment(pathname).replace(/\/+$/, '') || '/';
+    if (p.indexOf('/account/logout') === 0) {
+      return false;
+    }
+    if (p === '/account') {
+      return true;
+    }
+    if (/\/account\/(?:login|register)(?:\/|\?|$)/.test(p)) {
+      return true;
+    }
+    if (p === '/customer_authentication') {
+      return true;
+    }
+    if (/\/customer_authentication\/(?:login|register|profile)(?:\/|\?|$)/.test(p)) {
+      return true;
+    }
+    return false;
+  }
+
+  function hrefLooksLikeSignInOrRegister(href) {
+    if (!href || typeof href !== 'string') {
+      return false;
+    }
+    var h = href.trim().toLowerCase();
+    if (!h || h === '#') {
+      return false;
+    }
+    if (h.indexOf('javascript:') === 0 || h.indexOf('mailto:') === 0 || h.indexOf('tel:') === 0) {
+      return false;
+    }
+    try {
+      var u = new URL(href, window.location.origin);
+      var host = (u.hostname || '').toLowerCase();
+      if (host === 'shopify.com' || host === 'www.shopify.com' || host.indexOf('shopify.com') !== -1) {
+        return true;
+      }
+      if (host && host !== window.location.hostname.toLowerCase()) {
+        return false;
+      }
+      return pathIsCustomerAccountEntry(u.pathname || '/');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isInsideSiteHeader(el) {
+    return !!el.closest(
+      'header, .header, .shopify-section-header, .section-header, .header-wrapper, shop-header'
+    );
+  }
+
+  function isHeaderAccountIconElement(el) {
+    if (!el || !el.closest || el.nodeType !== 1) {
+      return false;
+    }
+    if (isInsideApprovefyAuthTabs(el)) {
+      return false;
+    }
+    if (!isInsideSiteHeader(el)) {
+      return false;
+    }
+    var accountEl = el.closest(
+      [
+        '.header__icon--account',
+        'a.header__icon--account',
+        '.header__icons .header__icon--account',
+        'a.header__icon[href*="account"]',
+        'a.header__icon[href*="customer_authentication"]',
+      ].join(', ')
+    );
+    if (!accountEl) {
+      return false;
+    }
+    if (accountEl.nodeName === 'A') {
+      var h = accountEl.getAttribute('href') || accountEl.href || '';
+      if (!h || h === '#') {
+        return true;
+      }
+      return hrefLooksLikeSignInOrRegister(h);
+    }
+    var parentA = accountEl.closest('a[href]');
+    if (!parentA) {
+      return true;
+    }
+    var ph = parentA.getAttribute('href') || parentA.href || '';
+    if (!ph || ph === '#') {
+      return true;
+    }
+    return hrefLooksLikeSignInOrRegister(ph);
+  }
+
+  function isInsideApprovefyAuthTabs(node) {
+    return !!(node && node.closest && node.closest('.approvefy-auth-tabs'));
+  }
+
+  function goToSignInRedirect(dest) {
+    if (!dest || isAlreadyOnRedirectDestination(dest)) {
+      return;
+    }
+    go(dest);
+  }
+
+  function findHeaderAccountIconClick(event) {
+    var nodes = composedPathNodes(event);
+    var i;
+    var node;
+    for (i = 0; i < nodes.length; i++) {
+      node = nodes[i];
+      if (!node || node.nodeType !== 1) {
+        continue;
+      }
+      if (isInsideApprovefyAuthTabs(node)) {
+        return null;
+      }
+      if (isHeaderAccountIconElement(node)) {
+        var accountA = node.closest && node.closest('a[href]');
+        return { kind: 'link', href: accountA ? accountA.getAttribute('href') || accountA.href : '' };
+      }
+    }
+    var t = event.target;
+    if (!t || !t.closest) {
+      return null;
+    }
+    if (isInsideApprovefyAuthTabs(t)) {
+      return null;
+    }
+    if (isHeaderAccountIconElement(t)) {
+      var accountLink = t.closest('a[href]');
+      return { kind: 'link', href: accountLink ? accountLink.getAttribute('href') || accountLink.href : '' };
+    }
+    return null;
+  }
+
+  function handleHeaderAccountIconClick(e) {
+    if (window.__approvefyBypassGuestCheckoutGuard) {
+      return;
+    }
+    var intent = findHeaderAccountIconClick(e);
+    if (!intent) {
+      return;
+    }
+    if (guardConfig !== null) {
+      if (!shouldRedirectSignInLinks()) {
+        return;
+      }
+      e.preventDefault();
+      if (typeof e.stopImmediatePropagation === 'function') {
+        e.stopImmediatePropagation();
+      }
+      e.stopPropagation();
+      goToSignInRedirect(signInRedirectDestination());
+      return;
+    }
+    e.preventDefault();
+    if (typeof e.stopImmediatePropagation === 'function') {
+      e.stopImmediatePropagation();
+    }
+    e.stopPropagation();
+    guardReady.then(function () {
+      if (shouldRedirectSignInLinks()) {
+        goToSignInRedirect(signInRedirectDestination());
+        return;
+      }
+      window.__approvefyBypassGuestCheckoutGuard = true;
+      if (intent.href) {
+        window.location.href = intent.href;
+      }
+    });
   }
 
   function shouldRedirectGuest() {
@@ -590,6 +932,7 @@
     });
   }
 
+  document.addEventListener('click', handleHeaderAccountIconClick, true);
   document.addEventListener('click', handleGuestCheckoutEvent, true);
 
   document.addEventListener(
@@ -731,5 +1074,24 @@
     });
   }
 
-  maybeRedirectUnapprovedFromAccount();
+  function runGuardIdle(fn) {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(fn);
+    } else {
+      fn();
+    }
+  }
+
+  function runInitialGuardTasks() {
+    runGuardIdle(function () {
+      maybeRedirectUnapprovedFromAccount();
+      maybeLeaveDisabledRegistrationPage();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runInitialGuardTasks, { once: true });
+  } else {
+    runInitialGuardTasks();
+  }
 })();

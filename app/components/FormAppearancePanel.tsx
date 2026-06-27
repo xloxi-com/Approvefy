@@ -1,4 +1,4 @@
-import { useMemo, useState, useId, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useState, useId, memo, type Dispatch, type SetStateAction } from "react";
 import {
     BlockStack,
     Box,
@@ -121,7 +121,7 @@ export type FormAppearancePanelProps = {
  * Storefront registration form appearance controls (templates, typography, colors, custom CSS).
  * Layout matches Settings → Appearance; omit the mini preview when the page already has a live preview.
  */
-export function FormAppearancePanel({
+export const FormAppearancePanel = memo(function FormAppearancePanel({
     themeSettings,
     setThemeSettings,
     customCss,
@@ -534,4 +534,4 @@ export function FormAppearancePanel({
             </BlockStack>
         </div>
     );
-}
+});

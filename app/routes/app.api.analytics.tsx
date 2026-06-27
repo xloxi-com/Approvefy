@@ -15,7 +15,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
     const analytics = await getAnalytics(shop);
     return new Response(JSON.stringify(analytics), {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, max-age=120",
+      },
     });
   } catch (error) {
     console.error("Error loading analytics", error);

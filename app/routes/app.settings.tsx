@@ -65,6 +65,9 @@ import { getAppearanceTemplateId } from "../lib/appearance-templates";
 import type { RichTextEditorProps } from "../components/RichTextEditor";
 import { getShopDisplayName, parseShopFromGraphqlResponse, replaceLiquidPlaceholders } from "../lib/liquid-placeholders";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
+import { invalidateCustomerApprovalModeCache } from "../models/approval.server";
+import { invalidateCache, shopKey } from "../lib/cache.server";
+import { ensureRegistrationStorefrontPage, syncRegistrationPageStorefrontVisibility } from "../lib/registration-page.server";
 import {
     BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
     getSettingsStoreUiStrings,
@@ -243,6 +246,8 @@ export type CustomerApprovalSettings = {
     loggedInCheckoutBlockedMessage: string;
     /** Show/hide the storefront auth switch (Log in / Sign up) above the registration form. */
     showAuthTabsOnRegistration: boolean;
+    /** When true with guest checkout redirect, storefront sign-in / register links go to `guestCheckoutRedirectUrl`. */
+    redirectSignInLinksToFormPage: boolean;
 };
 
 const DEFAULT_REJECT_SUBJECT = "Your account registration update";
@@ -314,6 +319,7 @@ const CUSTOMER_APPROVAL_DEFAULTS: CustomerApprovalSettings = {
     blockLoggedInWithoutApprovedTag: false,
     loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
     showAuthTabsOnRegistration: true,
+    redirectSignInLinksToFormPage: false,
 };
 
 type ShopMetaCacheEntry = {
@@ -437,6 +443,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 prisma.appSettings.findUnique({ where: { shop } }),
                 getSmtpSettings(shop),
                 getEmailTemplatesBySlugs(shop, ["rejection", "approval"]),
+                ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
+                    console.warn("[Settings] ensureRegistrationStorefrontPage failed:", err);
+                    return null;
+                }),
             ]);
             settings = settingsResult;
             smtp = smtpResult;
@@ -508,6 +518,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                             typeof o.showAuthTabsOnRegistration === "boolean"
                                 ? o.showAuthTabsOnRegistration
                                 : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
+                        redirectSignInLinksToFormPage: o.redirectSignInLinksToFormPage === true,
                         emailOnReject: o.emailOnReject === true,
                         rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                         // Prefer email_template table for subject/body so reload always shows last-saved template
@@ -691,7 +702,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-    const { session } = await authenticate.admin(request);
+    const { session, admin } = await authenticate.admin(request);
     const shop = session?.shop || "";
     if (!shop) {
         return { error: "No shop" };
@@ -847,6 +858,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                         typeof o.showAuthTabsOnRegistration === "boolean"
                             ? o.showAuthTabsOnRegistration
                             : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
+                    redirectSignInLinksToFormPage: o.redirectSignInLinksToFormPage === true,
                     emailOnReject: o.emailOnReject === true,
                     rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                     rejectEmailSubject: typeof o.rejectEmailSubject === "string" ? o.rejectEmailSubject : DEFAULT_REJECT_SUBJECT,
@@ -922,6 +934,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             };
         }
     }
+    if (settingsToPersist.redirectSignInLinksToFormPage) {
+        const u = (settingsToPersist.guestCheckoutRedirectUrl ?? "").trim();
+        if (!isValidGuestCheckoutRedirectUrl(u)) {
+            return {
+                error: "Enter a valid registration form page URL when redirecting customer account / sign-in links.",
+            };
+        }
+    }
 
     const logoUrl = (settingsToPersist.rejectEmailLogoUrl ?? "").trim();
     if (logoUrl && isSvgLogoUrl(logoUrl)) {
@@ -982,6 +1002,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 customerApprovalSettings: settingsToPersist as unknown as Prisma.InputJsonValue,
             } as AppSettingsUpsertCreate,
         });
+        invalidateCustomerApprovalModeCache(shop);
+        invalidateCache(shopKey(shop, "appSettings"));
+        invalidateCache(shopKey(shop, "registrationAfterSubmit"));
+        try {
+            await syncRegistrationPageStorefrontVisibility(
+                admin,
+                shop,
+                settingsToPersist.redirectSignInLinksToFormPage === true,
+            );
+        } catch (visibilityErr) {
+            console.warn("[Settings] syncRegistrationPageStorefrontVisibility failed:", visibilityErr);
+        }
         if (merchantPlan !== "basic") {
             if (smtpHost && smtpFromEmail) {
                 await upsertSmtpSettings(shop, {
@@ -3541,7 +3573,6 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                                     setCustomerApprovalSettings((prev) => ({
                                                         ...prev,
                                                         redirectGuestsFromCheckout: checked,
-                                                        // Logged-in blocking depends on the same redirect flow.
                                                         ...(checked ? {} : { blockLoggedInWithoutApprovedTag: false }),
                                                     }))
                                                 }
@@ -3559,23 +3590,41 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                                 }
                                                 helpText={storeUi.showAuthTabsHelp}
                                             />
-                                            {customerApprovalSettings.redirectGuestsFromCheckout && (
-                                                <>
-                                                    <Divider />
-                                                    <TextField
-                                                        label={storeUi.redirectUrlLabel}
-                                                        value={customerApprovalSettings.guestCheckoutRedirectUrl}
-                                                        onChange={(val) =>
-                                                            setCustomerApprovalSettings((prev) => ({
-                                                                ...prev,
-                                                                guestCheckoutRedirectUrl: val,
-                                                            }))
-                                                        }
-                                                        placeholder={storeUi.redirectUrlPlaceholder}
-                                                        autoComplete="off"
-                                                        helpText={storeUi.redirectUrlHelp}
-                                                    />
-                                                </>
+                                        </BlockStack>
+                                    </Card>
+
+                                    <Card>
+                                        <BlockStack gap="300">
+                                            <Text as="h3" variant="headingSm">
+                                                {storeUi.customerAccountHeading}
+                                            </Text>
+                                            <Checkbox
+                                                label={storeUi.redirectSignInLinksLabel}
+                                                checked={customerApprovalSettings.redirectSignInLinksToFormPage}
+                                                disabled={planBasic}
+                                                onChange={(checked) =>
+                                                    setCustomerApprovalSettings((prev) => ({
+                                                        ...prev,
+                                                        redirectSignInLinksToFormPage: checked,
+                                                    }))
+                                                }
+                                                helpText={storeUi.redirectSignInLinksHelp}
+                                            />
+                                            {(customerApprovalSettings.redirectSignInLinksToFormPage ||
+                                                customerApprovalSettings.redirectGuestsFromCheckout) && (
+                                                <TextField
+                                                    label={storeUi.redirectUrlLabel}
+                                                    value={customerApprovalSettings.guestCheckoutRedirectUrl}
+                                                    onChange={(val) =>
+                                                        setCustomerApprovalSettings((prev) => ({
+                                                            ...prev,
+                                                            guestCheckoutRedirectUrl: val,
+                                                        }))
+                                                    }
+                                                    placeholder={storeUi.redirectUrlPlaceholder}
+                                                    autoComplete="off"
+                                                    helpText={storeUi.redirectUrlHelp}
+                                                />
                                             )}
                                         </BlockStack>
                                     </Card>

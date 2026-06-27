@@ -7,8 +7,8 @@ import prisma from "../db.server";
 import { getEmailTemplateBySlug } from "../models/email-template.server";
 import { getSmtpRowForSend, sendMailViaSmtp } from "./smtp.server";
 import { replaceLiquidPlaceholders, type LiquidReplacementVars } from "./liquid-placeholders";
+import { withEmailSendTimeout } from "./email-timeout.server";
 import { APP_DISPLAY_NAME, APP_URL } from "./app-constants";
-// `sharp` is a heavy native module (~30 MB) — keep it out of the cold-start critical
 // path by importing lazily inside `resolveLogoUrlForEmail` only when an SVG logo
 // actually needs to be rasterised for email clients.
 
@@ -257,12 +257,14 @@ export async function sendApprovalEmail(
       appName: APP_DISPLAY_NAME,
     });
 
-    const result = await sendMailViaSmtp(shop, {
-      to: email,
-      subject,
-      html,
-      smtpRow,
-    });
+    const result = await withEmailSendTimeout(
+      sendMailViaSmtp(shop, {
+        to: email,
+        subject,
+        html,
+        smtpRow,
+      }),
+    );
 
     if (result.success) {
       console.log(`[Approval Email] Sent to ${email} via SMTP`);

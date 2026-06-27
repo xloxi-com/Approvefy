@@ -8,6 +8,7 @@
  */
 
 import { getShopDisplayName, parseShopFromGraphqlResponse } from "./liquid-placeholders";
+import { CACHE_TTL, getCache, setCache, shopKey, invalidateCache } from "./cache.server";
 
 export type ShopNameAndEmail = {
     shopName: string;
@@ -18,22 +19,7 @@ interface AdminGraphQL {
     graphql: (query: string) => Promise<Response>;
 }
 
-const SHOP_META_TTL_MS = 5 * 60_000;
-const SHOP_META_MAX = 200;
-
-type ShopMetaEntry = ShopNameAndEmail & { at: number };
-
-const cache = new Map<string, ShopMetaEntry>();
 const inflight = new Map<string, Promise<ShopNameAndEmail>>();
-
-function setEntry(key: string, value: ShopNameAndEmail): void {
-    cache.set(key, { ...value, at: Date.now() });
-    if (cache.size > SHOP_META_MAX) {
-        // Evict oldest insertion (Map iteration is insertion-ordered).
-        const oldestKey = cache.keys().next().value;
-        if (oldestKey != null) cache.delete(oldestKey);
-    }
-}
 
 /**
  * Resolve {storeName, contactEmail} for a shop. Caches per-shop; falls back to a derived
@@ -47,8 +33,9 @@ export async function getShopNameAndEmail(
     if (!key) {
         return { shopName: "Store", shopEmail: "" };
     }
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.at < SHOP_META_TTL_MS) {
+    const cacheKey = shopKey(key, "shopMeta");
+    const cached = getCache<ShopNameAndEmail>(cacheKey);
+    if (cached) {
         return { shopName: cached.shopName, shopEmail: cached.shopEmail };
     }
     const existing = inflight.get(key);
@@ -73,7 +60,7 @@ export async function getShopNameAndEmail(
                 shopName: getShopDisplayName(shop, parsed.shopName),
                 shopEmail: parsed.shopEmail,
             };
-            setEntry(key, result);
+            setCache(cacheKey, result, CACHE_TTL.shopMeta);
             return result;
         } catch (e) {
             console.warn(
@@ -93,5 +80,5 @@ export async function getShopNameAndEmail(
 export function invalidateShopMeta(shop: string): void {
     const key = (shop || "").trim().toLowerCase();
     if (!key) return;
-    cache.delete(key);
+    invalidateCache(shopKey(key, "shopMeta"));
 }

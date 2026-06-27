@@ -96,6 +96,7 @@
     openCalendar: 'open_calendar',
     chooseDate: 'choose_date',
     invalidDateFormat: 'invalid_date_format',
+    invalidTextFormat: 'invalid_text_format',
     checkboxMinRequired: 'checkbox_min_required',
     thisField: 'this_field',
     uploadHintMax: 'upload_hint_max',
@@ -170,6 +171,7 @@
       openCalendar: 'Choose date',
       chooseDate: 'Choose date',
       invalidDateFormat: 'Please enter the date in the correct format.',
+      invalidTextFormat: 'Please enter a value in the correct format.',
       checkboxMinRequired: 'Please select at least {min} option(s) for "{label}".',
       fileRequired: 'This file is required.',
       fileTypeError: 'Only JPG, PNG, and PDF files are allowed.',
@@ -241,6 +243,7 @@
       openCalendar: 'Choisir une date',
       chooseDate: 'Choisir une date',
       invalidDateFormat: 'Veuillez saisir la date au format correct.',
+      invalidTextFormat: 'Veuillez saisir une valeur au format correct.',
       checkboxMinRequired: 'Veuillez s\u00e9lectionner au moins {min} option(s) pour "{label}".',
       fileRequired: 'Ce fichier est obligatoire.',
       fileTypeError: 'Seuls les fichiers JPG, PNG et PDF sont accept\u00e9s.',
@@ -477,7 +480,7 @@
     cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
       ? String(cfg.shopifyLoggedInCustomerId).trim()
       : '0';
-  var CACHE_SCHEMA_VERSION = 'v2';
+  var CACHE_SCHEMA_VERSION = 'v9';
   var CONFIG_CACHE_KEY =
     'customer_approval_config_' + CACHE_SCHEMA_VERSION + '_' + shop + '_' + (embedFormId || '') + '_' + locale + '_' + loggedInCustIdForCache;
   var CONFIG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — fast repeat loads; tab-switch refresh only after long absence (below)
@@ -513,6 +516,9 @@
       var json = JSON.stringify(payload);
       if (window.sessionStorage) sessionStorage.setItem(CONFIG_CACHE_KEY, json);
       if (window.localStorage) localStorage.setItem(CONFIG_CACHE_KEY, json);
+      if (window.sessionStorage && embedFormId) {
+        sessionStorage.setItem('approvefy_config_' + embedFormId, json);
+      }
     } catch (e) {
       // ignore quota / privacy mode
     }
@@ -522,6 +528,15 @@
     try {
       if (window.sessionStorage) sessionStorage.removeItem(CONFIG_CACHE_KEY);
       if (window.localStorage) localStorage.removeItem(CONFIG_CACHE_KEY);
+    } catch (eClr) {
+      void eClr;
+    }
+  }
+
+  function clearStoredRenderedFormCache() {
+    try {
+      if (window.sessionStorage) sessionStorage.removeItem(FORM_HTML_CACHE_KEY);
+      if (window.localStorage) localStorage.removeItem(FORM_HTML_CACHE_KEY);
     } catch (eClr) {
       void eClr;
     }
@@ -587,8 +602,13 @@
       return cfg;
     });
   }
+  var seededConfig = readCachedConfig();
   if (window.__approvefyConfigPrefetchUrl === configUrl && window.__approvefyConfigPromise) {
     configPromise = wireConfigPromise(window.__approvefyConfigPromise);
+    window.__approvefyConfigPromise = configPromise;
+  } else if (seededConfig) {
+    configPromise = wireConfigPromise(Promise.resolve(seededConfig));
+    window.__approvefyConfigPrefetchUrl = configUrl;
     window.__approvefyConfigPromise = configPromise;
   } else {
     configPromise = wireConfigPromise(
@@ -857,7 +877,6 @@
     return backendMap[t] || ('custom_' + String(field.label || '').toLowerCase().replace(/\s+/g, '_') + '_' + index);
   }
 
-  // Date format placeholders (example text for each format)
   var DATE_FORMAT_PLACEHOLDERS = {
     dd_slash_mm_yyyy: '05/03/2026',
     mm_slash_dd_yyyy: '03/05/2026',
@@ -880,6 +899,180 @@
 
   var MONTH_NAMES_SHORT = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
   var MONTH_NAMES_FULL = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+
+  var TEXT_FORMAT_PATTERNS = {
+    numbers: /^[0-9]+$/,
+    alphanumeric_no_spaces: /^[a-zA-Z0-9]+$/,
+    alphanumeric_with_spaces: /^[a-zA-Z0-9 ]+$/,
+    alphanumeric_hyphen_underscore: /^[a-zA-Z0-9 _-]+$/,
+    alphabets_no_spaces: /^[a-zA-Z]+$/,
+    alphabets_with_spaces: /^[a-zA-Z ]+$/
+  };
+
+  var TEXT_FORMAT_SAMPLES = {
+    text: 'Hello!',
+    numbers: '12345',
+    alphanumeric_no_spaces: 'Abc123',
+    alphanumeric_with_spaces: 'Abc 123',
+    alphanumeric_hyphen_underscore: 'Abc-12_x',
+    alphabets_no_spaces: 'Hello',
+    alphabets_with_spaces: 'Hello World'
+  };
+
+  var TEXT_FORMAT_ERROR_MESSAGES = {
+    numbers: 'Please enter numbers only (0-9).',
+    alphanumeric_no_spaces: 'Please enter a valid value (e.g. Abc123).',
+    alphanumeric_with_spaces: 'Please enter a valid value (e.g. Abc 123).',
+    alphanumeric_hyphen_underscore: 'Please enter a valid value (e.g. Abc-12_x).',
+    alphabets_no_spaces: 'Please enter a valid value (e.g. Hello).',
+    alphabets_with_spaces: 'Please enter a valid value (e.g. Hello World).'
+  };
+
+  function getTextFormatSample(formatKey) {
+    var fmt = formatKey || 'text';
+    return TEXT_FORMAT_SAMPLES[fmt] || null;
+  }
+
+  function getTextFormatPlaceholder(formatKey) {
+    var sample = getTextFormatSample(formatKey);
+    if (!sample || !formatKey || formatKey === 'text') return null;
+    return 'e.g. ' + sample;
+  }
+
+  function resolveTextFieldPlaceholder(field, displayLabel) {
+    if (field.placeholder && String(field.placeholder).trim()) {
+      return String(field.placeholder).trim();
+    }
+    var formatPh = getTextFormatPlaceholder(field.textFormat);
+    if (formatPh) return formatPh;
+    return displayLabel;
+  }
+
+  function validateTextFormatValue(value, formatKey) {
+    var fmt = formatKey || 'text';
+    if (fmt === 'text' || !value) return true;
+    var pattern = TEXT_FORMAT_PATTERNS[fmt];
+    if (!pattern) return true;
+    return pattern.test(value);
+  }
+
+  function getTextFormatErrorMessage(formatKey) {
+    return TEXT_FORMAT_ERROR_MESSAGES[formatKey] || null;
+  }
+
+  function getEnabledFormFields(fields) {
+    if (!fields || !Array.isArray(fields)) return [];
+    return fields.filter(function(f) {
+      if (f && String(f.type || '').toLowerCase() === 'password') return true;
+      return f.enabled !== false;
+    });
+  }
+
+  function findFormInputByField(formEl, field, enabledIndex) {
+    if (!formEl || !field) return null;
+    var name = getFieldName(field, enabledIndex);
+    try {
+      if (typeof CSS !== 'undefined' && CSS.escape) {
+        return formEl.querySelector('[name="' + CSS.escape(name) + '"]');
+      }
+    } catch (cssErr) {
+      void cssErr;
+    }
+    return formEl.querySelector('[name="' + name.replace(/"/g, '\\"') + '"]');
+  }
+
+  function hideGlobalFormMessage() {
+    var el = document.getElementById('custom-message');
+    if (!el) return;
+    el.style.display = 'none';
+    el.textContent = '';
+    el.innerHTML = '';
+  }
+
+  function clearAllInlineFieldErrors(formEl) {
+    if (!formEl) return;
+    formEl.querySelectorAll('.custom-form-field.has-field-error').forEach(function(w) {
+      w.classList.remove('has-field-error');
+    });
+    formEl.querySelectorAll('.custom-field-error').forEach(function(el) {
+      el.style.display = 'none';
+      el.textContent = '';
+    });
+  }
+
+  function displayInlineFieldError(input, msg) {
+    if (!input || !msg) return false;
+    var wrap = input.closest('.custom-form-field');
+    if (!wrap) return false;
+    var errEl = wrap.querySelector('.custom-field-error');
+    if (!errEl) {
+      errEl = document.createElement('div');
+      errEl.className = 'custom-field-error';
+      errEl.setAttribute('role', 'alert');
+      wrap.appendChild(errEl);
+    }
+    wrap.classList.add('has-field-error');
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+    hideGlobalFormMessage();
+    try {
+      wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (scrollErr) {
+      try { wrap.scrollIntoView(); } catch (e2) { void e2; }
+    }
+    try {
+      input.focus({ preventScroll: true });
+    } catch (focusErr) {
+      input.focus();
+    }
+    return true;
+  }
+
+  function showTextFormatErrorNearField(formEl, fieldsConfig, messageOverride) {
+    if (!formEl) return false;
+    var enabledFields = fieldsConfig ? getEnabledFormFields(fieldsConfig) : [];
+    for (var i = 0; i < enabledFields.length; i++) {
+      var field = enabledFields[i];
+      var type = String(field.type || '').toLowerCase();
+      if (type !== 'text' && type !== 'textarea') continue;
+      var fmt = field.textFormat || 'text';
+      if (fmt === 'text') continue;
+      var input = findFormInputByField(formEl, field, i);
+      if (!input) continue;
+      var val = (input.value && input.value.trim()) || '';
+      if (!val) continue;
+      if (validateTextFormatValue(val, fmt)) continue;
+      var msg = messageOverride || getTextFormatErrorMessage(fmt);
+      if (!msg) msg = 'Please enter a value in the correct format.';
+      return displayInlineFieldError(input, msg);
+    }
+
+    var inputs = formEl.querySelectorAll('input[data-text-format], textarea[data-text-format]');
+    for (var j = 0; j < inputs.length; j++) {
+      var inp = inputs[j];
+      var attrFmt = inp.getAttribute('data-text-format') || 'text';
+      if (attrFmt === 'text') continue;
+      var attrVal = (inp.value && inp.value.trim()) || '';
+      if (!attrVal || validateTextFormatValue(attrVal, attrFmt)) continue;
+      var attrMsg = messageOverride || getTextFormatErrorMessage(attrFmt);
+      if (!attrMsg) attrMsg = 'Please enter a value in the correct format.';
+      return displayInlineFieldError(inp, attrMsg);
+    }
+
+    if (messageOverride) {
+      for (var fmtKey in TEXT_FORMAT_PATTERNS) {
+        if (getTextFormatErrorMessage(fmtKey) !== messageOverride) continue;
+        for (var k = 0; k < inputs.length; k++) {
+          var inp2 = inputs[k];
+          var val2 = (inp2.value && inp2.value.trim()) || '';
+          if (!val2 || validateTextFormatValue(val2, fmtKey)) continue;
+          return displayInlineFieldError(inp2, messageOverride);
+        }
+      }
+    }
+
+    return false;
+  }
 
   function parseDateByFormat(str, formatKey) {
     if (!str || typeof str !== 'string') return null;
@@ -1151,11 +1344,11 @@
     }
 
     if (field.type === 'textarea') {
-      var ph = (field.placeholder && String(field.placeholder).trim()) ? field.placeholder : displayLabel;
+      var ph = resolveTextFieldPlaceholder(field, displayLabel);
       return '<div class="custom-form-field ' + widthClass + '">' +
         '<label>' + escapeHtml(displayLabel) + requiredStar + '</label>' +
         helpHtml +
-        '<textarea name="' + name + '" rows="4" data-field-type="textarea" data-field-label="' + escapeHtml(field.label) + '" data-step="' + (field.step || 1) + '"' + requiredAttr + ' placeholder="' + escapeHtml(ph) + '"></textarea>' +
+        '<textarea name="' + name + '" rows="4" data-field-type="textarea" data-text-format="' + escapeHtml(field.textFormat || 'text') + '" data-field-label="' + escapeHtml(field.label) + '" data-step="' + (field.step || 1) + '"' + requiredAttr + ' placeholder="' + escapeHtml(ph) + '"></textarea>' +
         '<div class="custom-field-error" style="display:none;"></div>' +
       '</div>';
     }
@@ -1228,12 +1421,12 @@
       '</div>';
     }
 
-    var inputPlaceholder = (field.placeholder && String(field.placeholder).trim()) ? field.placeholder : displayLabel;
+    var inputPlaceholder = resolveTextFieldPlaceholder(field, displayLabel);
     const minLength = isPassword ? ' minlength="8"' : '';
     return '<div class="custom-form-field ' + widthClass + '">' +
       '<label>' + escapeHtml(displayLabel) + requiredStar + '</label>' +
       helpHtml +
-      '<input type="' + inputType + '" name="' + name + '" data-field-type="' + escapeHtml(field.type) + '" data-field-label="' + escapeHtml(field.label) + '" data-step="' + (field.step || 1) + '"' + requiredAttr + minLength + ' placeholder="' + escapeHtml(inputPlaceholder) + '">' +
+      '<input type="' + inputType + '" name="' + name + '" data-field-type="' + escapeHtml(field.type) + '" data-text-format="' + escapeHtml(field.textFormat || 'text') + '" data-field-label="' + escapeHtml(field.label) + '" data-step="' + (field.step || 1) + '"' + requiredAttr + minLength + ' placeholder="' + escapeHtml(inputPlaceholder) + '">' +
       '<div class="custom-field-error" style="display:none;"></div>' +
     '</div>';
   }
@@ -1469,6 +1662,65 @@
     return true;
   }
 
+  function pathWithoutLocaleForRegistration(pathname) {
+    var p = pathname || '/';
+    var m = p.toLowerCase().match(/^(\/[a-z]{2}(?:-[a-z]{2})?)(\/.*|$)/);
+    if (m && m[1] && m[1].length <= 6) {
+      return m[2] && m[2].length > 0 ? m[2] : '/';
+    }
+    return p;
+  }
+
+  function normalizeComparePathForRegistration(pathnameOrUrl) {
+    var raw = String(pathnameOrUrl || '').trim();
+    if (!raw) {
+      return '/';
+    }
+    try {
+      if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0 || raw.indexOf('//') === 0) {
+        var abs = new URL(raw.indexOf('//') === 0 ? 'https:' + raw : raw);
+        raw = abs.pathname || '/';
+      }
+    } catch (ePath) {
+      void ePath;
+    }
+    var pathOnly = raw.split('?')[0];
+    var stripped = pathWithoutLocaleForRegistration(pathOnly).replace(/\/+$/, '') || '/';
+    return stripped.toLowerCase();
+  }
+
+  function isDedicatedRegistrationPagePath(cas) {
+    var current = normalizeComparePathForRegistration(window.location.pathname);
+    if (/\/pages\/customer-registration\/?$/i.test(current)) {
+      return true;
+    }
+    var candidates = ['/pages/customer-registration'];
+    if (cfg && cfg.registrationPagePath) {
+      candidates.push(cfg.registrationPagePath);
+    }
+    if (cas && cas.registrationPagePath) {
+      candidates.push(cas.registrationPagePath);
+    }
+    var i;
+    for (i = 0; i < candidates.length; i++) {
+      if (normalizeComparePathForRegistration(candidates[i]) === current) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function storefrontHomeHref() {
+    try {
+      if (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) {
+        return window.Shopify.routes.root;
+      }
+    } catch (eHome) {
+      void eHome;
+    }
+    return '/';
+  }
+
   // For inline section blocks, start immediately when the mount exists; otherwise wait for DOM
   // so async-loaded scripts don't exit before `[data-approvefy-registration-block]` is parsed.
   var approvefyInlineMountEarly = document.querySelector('[data-approvefy-registration-block]');
@@ -1485,6 +1737,7 @@
     var inlineRoot = document.querySelector('[data-approvefy-registration-block]');
     var isRegisterPage = window.location.pathname.indexOf('/account/register') !== -1;
     var isInline = !!(inlineRoot && !isRegisterPage);
+    var onDedicatedRegistrationPage = isDedicatedRegistrationPagePath(null);
     var floatingLoaderId = 'approvefy-inline-floating-loader';
     var clearFloatingInlineLoader = function () {
       var floating = document.getElementById(floatingLoaderId);
@@ -1513,7 +1766,32 @@
     let formFieldsHTML = '';
     let hasConfig = false;
     var config = null;
-    if (!readCachedConfig() && isInline && inlineRoot) {
+
+    if (onDedicatedRegistrationPage) {
+      try {
+        var gateConfig = await configPromise;
+        if (gateConfig && typeof gateConfig === 'object') {
+          writeCachedConfig(gateConfig);
+          var gateCas = gateConfig.customerApprovalSettings;
+          if (!gateCas || gateCas.redirectSignInLinksToFormPage !== true) {
+            clearStoredApprovalConfigCache();
+            clearStoredRenderedFormCache();
+            var homeGate = storefrontHomeHref();
+            if (
+              normalizeComparePathForRegistration(window.location.pathname) !==
+              normalizeComparePathForRegistration(homeGate)
+            ) {
+              window.location.replace(homeGate);
+            }
+            return;
+          }
+        }
+      } catch (gateErr) {
+        void gateErr;
+      }
+    }
+
+    if (!readCachedConfig() && isInline && inlineRoot && !onDedicatedRegistrationPage) {
       var cachedFormHtml = readCachedRenderedFormHtml();
       if (cachedFormHtml) {
         var mountCached = inlineRoot.querySelector('.approvefy-registration-mount');
@@ -1537,6 +1815,7 @@
             var latestFingerprint = configStructureFingerprint(latestConfig);
             if (cachedFingerprint !== latestFingerprint) {
               if (isRegistrationFormDirty()) return;
+              clearStoredRenderedFormCache();
               refreshConfigAndForm();
             }
           } catch (bgErr) {
@@ -1591,7 +1870,8 @@
         guestCheckoutRedirectUrl: '',
         blockLoggedInWithoutApprovedTag: false,
         loggedInCheckoutBlockedMessage: '',
-        showAuthTabsOnRegistration: true
+        showAuthTabsOnRegistration: true,
+        redirectSignInLinksToFormPage: false
       };
       if (!cas0 || typeof cas0 !== 'object' || Array.isArray(cas0)) {
         config.customerApprovalSettings = casDefaults;
@@ -1601,6 +1881,19 @@
           config.customerApprovalSettings.approvedTag = casDefaults.approvedTag;
         }
       }
+    }
+
+    if (
+      config &&
+      config.customerApprovalSettings &&
+      isDedicatedRegistrationPagePath(config.customerApprovalSettings) &&
+      config.customerApprovalSettings.redirectSignInLinksToFormPage !== true
+    ) {
+      var homeHref = storefrontHomeHref();
+      if (normalizeComparePathForRegistration(window.location.pathname) !== normalizeComparePathForRegistration(homeHref)) {
+        window.location.replace(homeHref);
+      }
+      return;
     }
 
     // If there is no active configuration, leave the native Shopify form as-is (register page), or show a message in the section block.
@@ -1898,9 +2191,9 @@
       ? escapeHtml(t('myAccount') + ' / ' + t('signUpTab'))
       : escapeHtml(t('logInTab') + ' / ' + t('signUpTab'));
     var showAuthTabs =
-      !config ||
-      !config.customerApprovalSettings ||
-      config.customerApprovalSettings.showAuthTabsOnRegistration !== false;
+      config &&
+      config.customerApprovalSettings &&
+      config.customerApprovalSettings.showAuthTabsOnRegistration === true;
     var authTabsHtml = showAuthTabs
       ? '<div class="approvefy-auth-tabs" aria-label="' + authTabsAriaLabel + '">' +
           '<a class="approvefy-auth-tab approvefy-auth-tab--link" href="' + escapeHtml(authTabsNavHref) + '">' + escapeHtml(authTabsNavLabel) + '</a>' +
@@ -2045,6 +2338,7 @@
       var target = e.target;
       var wrap = target.closest('.custom-form-field');
       if (wrap) {
+        wrap.classList.remove('has-field-error');
         var err = wrap.querySelector('.custom-field-error');
         if (err) { err.style.display = 'none'; err.textContent = ''; }
       }
@@ -2053,6 +2347,7 @@
       var target = e.target;
       var wrap = target.closest('.custom-form-field');
       if (wrap) {
+        wrap.classList.remove('has-field-error');
         var err = wrap.querySelector('.custom-field-error');
         if (err) { err.style.display = 'none'; err.textContent = ''; }
       }
@@ -3043,9 +3338,11 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
+      hideGlobalFormMessage();
+      clearAllInlineFieldErrors(form);
+
       var requiredMsg = t('fieldRequired');
       if (!requiredMsg || requiredMsg === 'fieldRequired') requiredMsg = 'This field is required.';
-      form.querySelectorAll('.custom-field-error').forEach(function(el) { el.style.display = 'none'; el.textContent = ''; });
       form.querySelectorAll('.custom-phone-error').forEach(function(el) { el.style.display = 'none'; el.textContent = ''; });
 
       var requiredInputs = form.querySelectorAll('input[required]:not([type="hidden"]), textarea[required]');
@@ -3053,10 +3350,7 @@
         var inp = requiredInputs[ri];
         var val = (inp.value && inp.value.trim()) || '';
         if (!val) {
-          var wrap = inp.closest('.custom-form-field');
-          var errEl = wrap ? wrap.querySelector('.custom-field-error') : null;
-          if (errEl) { errEl.textContent = requiredMsg; errEl.style.display = 'block'; }
-          inp.focus();
+          displayInlineFieldError(inp, requiredMsg);
           return;
         }
       }
@@ -3065,11 +3359,13 @@
         var hid = requiredHidden[rh];
         var hVal = (hid.value && hid.value.trim()) || '';
         if (!hVal) {
-          var wrapH = hid.closest('.custom-form-field');
-          var errH = wrapH ? wrapH.querySelector('.custom-field-error') : null;
-          if (errH) { errH.textContent = requiredMsg; errH.style.display = 'block'; }
-          var trigger = wrapH ? wrapH.querySelector('[tabindex="0"]') : null;
-          if (trigger) trigger.focus();
+          var trigger = hid.closest('.custom-form-field');
+          var focusEl = trigger ? trigger.querySelector('[tabindex="0"]') : null;
+          if (focusEl) {
+            displayInlineFieldError(focusEl, requiredMsg);
+          } else {
+            displayInlineFieldError(hid, requiredMsg);
+          }
           return;
         }
       }
@@ -3079,10 +3375,7 @@
         var name = r.getAttribute('name');
         var checked = form.querySelector('input[type="radio"][name="' + name.replace(/"/g, '\\"') + '"]:checked');
         if (!checked) {
-          var wrapR = r.closest('.custom-form-field');
-          var errR = wrapR ? wrapR.querySelector('.custom-field-error') : null;
-          if (errR) { errR.textContent = requiredMsg; errR.style.display = 'block'; }
-          r.focus();
+          displayInlineFieldError(r, requiredMsg);
           return;
         }
       }
@@ -3133,11 +3426,16 @@
           if (!parseDateByFormat(rawVal, fmt)) {
             var dateErrMsg = t('invalidDateFormat');
             if (!dateErrMsg || dateErrMsg === 'invalidDateFormat') dateErrMsg = 'Please enter the date in the correct format.';
-            showMessage(dateErrMsg, 'error');
-            dateInp.focus();
+            if (!displayInlineFieldError(dateInp, dateErrMsg)) {
+              showMessage(dateErrMsg, 'error');
+            }
             return;
           }
         }
+      }
+
+      if (showTextFormatErrorNearField(form, config && config.fields, null)) {
+        return;
       }
 
       form.querySelectorAll('.custom-checkbox-error').forEach(function(el) { el.style.display = 'none'; el.textContent = ''; });
@@ -3180,16 +3478,10 @@
           if (countryCode === 'LK') {
             var zipDigits = rawZip.replace(/\D/g, '');
             if (zipDigits.length !== 5) {
-              var zipFieldWrap = zipInput.closest('.custom-form-field');
-              var zipErrEl = zipFieldWrap ? zipFieldWrap.querySelector('.custom-field-error') : null;
               var zipMsg = 'Postal code must be 5 digits.';
-              if (zipErrEl) {
-                zipErrEl.textContent = zipMsg;
-                zipErrEl.style.display = 'block';
-              } else {
+              if (!displayInlineFieldError(zipInput, zipMsg)) {
                 showMessage(zipMsg, 'error');
               }
-              zipInput.focus();
               return;
             }
           }
@@ -3375,6 +3667,8 @@
             mountLoggedInPendingHtml(buildLoggedInPendingSubmittedHtml());
           } else if (useHtmlMessage) {
             showMessageHtml(errMsg, 'error');
+          } else if (showTextFormatErrorNearField(form, config && config.fields, errMsg)) {
+            hideGlobalFormMessage();
           } else {
             showMessage(errMsg, isPendingDuplicate ? 'warning' : 'error');
           }

@@ -6,6 +6,7 @@ import { CORE_LANGUAGES, normalizeLangCode } from "../lib/languages";
 import { buildThemeCss, getGoogleFontName, normalizeThemeSettings } from "../lib/theme-settings";
 import { appendAppearanceTemplateCss, getAppearanceTemplateId } from "../lib/appearance-templates";
 import { BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE } from "../lib/settings-ui-i18n";
+import { REGISTRATION_PAGE_PATH } from "../lib/registration-page.server";
 import { shopHasActiveAppSubscription } from "../lib/app-subscription.server";
 import {
     filterStorefrontFieldsForPlan,
@@ -13,13 +14,33 @@ import {
     sanitizeFormTypeForPlan,
 } from "../lib/merchant-plan.server";
 
-/** App proxy / storefront must not cache JSON — appearance saves should show after reload or tab return. */
-const CONFIG_JSON_HEADERS: Record<string, string> = {
+/** App proxy JSON — no cache when response includes per-customer pending state. */
+const CONFIG_JSON_NO_CACHE: Record<string, string> = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Cache-Control": "private, no-cache, no-store, must-revalidate",
     Pragma: "no-cache",
 };
+
+/** Public config (no logged-in pending lookup) — CDN + browser cache with revalidation. */
+function configJsonCacheHeaders(etag: string): Record<string, string> {
+    return {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
+        ETag: etag,
+    };
+}
+
+function buildConfigEtag(
+    settingsUpdatedAt: string | null,
+    formUpdatedAt: string | null,
+    merchantPlan: string,
+): string {
+    const s = settingsUpdatedAt || "0";
+    const f = formUpdatedAt || "0";
+    return `"${s}-${f}-${merchantPlan}"`;
+}
 
 /**
  * Per-process cache for the shop billing-address country (rarely changes).
@@ -99,7 +120,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
              console.error("Config fetch failed: No shop provided");
              return new Response(JSON.stringify({ fields: [], error: "No shop provided" }), {
                 status: 400,
-                headers: CONFIG_JSON_HEADERS,
+                headers: CONFIG_JSON_NO_CACHE,
             });
         }
 
@@ -110,7 +131,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                     subscriptionRequired: true,
                     error: "Choose a subscription plan in Approvefy admin (Pricing) to activate the registration form.",
                 }),
-                { status: 403, headers: CONFIG_JSON_HEADERS },
+                { status: 403, headers: CONFIG_JSON_NO_CACHE },
             );
         }
 
@@ -168,24 +189,56 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const formId = url.searchParams.get("formId");
         const formType = url.searchParams.get("formType");
 
+        let formConfigUpdatedAt: string | null = null;
+
         const formConfigPromise = shop
             ? (async () => {
                 try {
                     let dbConfig = null;
                     if (formId) {
-                        dbConfig = await prisma.formConfig.findFirst({ where: { id: formId, shop } });
+                        dbConfig = await prisma.formConfig.findFirst({
+                            where: { id: formId, shop },
+                            select: {
+                                fields: true,
+                                name: true,
+                                formType: true,
+                                showProgressBar: true,
+                                storefrontHeading: true,
+                                storefrontDescription: true,
+                                updatedAt: true,
+                            },
+                        });
                     } else if (formType) {
-                        dbConfig = await prisma.formConfig.findFirst({ where: { shop, formType } } as never);
+                        dbConfig = await prisma.formConfig.findFirst({
+                            where: { shop, formType },
+                            select: {
+                                fields: true,
+                                name: true,
+                                formType: true,
+                                showProgressBar: true,
+                                storefrontHeading: true,
+                                storefrontDescription: true,
+                                updatedAt: true,
+                            },
+                        } as never);
                     }
                     if (!dbConfig) {
-                        // Single composite-ordered query covers "default form, else oldest"
-                        // — saves a round-trip on every storefront load (the hot path here).
                         dbConfig = await prisma.formConfig.findFirst({
                             where: { shop },
                             orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+                            select: {
+                                fields: true,
+                                name: true,
+                                formType: true,
+                                showProgressBar: true,
+                                storefrontHeading: true,
+                                storefrontDescription: true,
+                                updatedAt: true,
+                            },
                         } as never);
                     }
                     if (dbConfig) {
+                        formConfigUpdatedAt = dbConfig.updatedAt.toISOString();
                         const row = dbConfig as {
                             name?: string;
                             formType?: string;
@@ -225,7 +278,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                   showProgressBar: true,
               });
 
-        const settingsPromise = shop ? prisma.appSettings.findUnique({ where: { shop } }) : Promise.resolve(null);
+        const settingsPromise = shop
+            ? prisma.appSettings.findUnique({
+                  where: { shop },
+                  select: {
+                      updatedAt: true,
+                      shopCountryCode: true,
+                      formTranslations: true,
+                      languageOptions: true,
+                      customCss: true,
+                      themeSettings: true,
+                      customerApprovalSettings: true,
+                  },
+              })
+            : Promise.resolve(null);
 
         const [formConfigResult, settings, pendingForCustomerRow] = await Promise.all([
             formConfigPromise,
@@ -326,6 +392,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             blockLoggedInWithoutApprovedTag: boolean;
             loggedInCheckoutBlockedMessage: string;
             showAuthTabsOnRegistration: boolean;
+            redirectSignInLinksToFormPage: boolean;
+            registrationPagePath: string;
         } | null = null;
         if (shop && settings) {
             try {
@@ -398,6 +466,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                                 typeof o.showAuthTabsOnRegistration === "boolean"
                                     ? o.showAuthTabsOnRegistration
                                     : true,
+                            redirectSignInLinksToFormPage: o.redirectSignInLinksToFormPage === true,
+                            registrationPagePath:
+                                typeof o.registrationPagePath === "string" && o.registrationPagePath.trim()
+                                    ? o.registrationPagePath.trim()
+                                    : typeof o.guestCheckoutRedirectUrl === "string" &&
+                                        o.guestCheckoutRedirectUrl.trim()
+                                      ? o.guestCheckoutRedirectUrl.trim()
+                                      : REGISTRATION_PAGE_PATH,
                         };
                     }
 
@@ -432,6 +508,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 blockLoggedInWithoutApprovedTag: false,
                 loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
                 showAuthTabsOnRegistration: true,
+                redirectSignInLinksToFormPage: false,
+                registrationPagePath: REGISTRATION_PAGE_PATH,
             };
         }
 
@@ -446,6 +524,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 customerApprovalSettings,
                 translations
             );
+            if (
+                customerApprovalSettings.redirectSignInLinksToFormPage &&
+                !(customerApprovalSettings.guestCheckoutRedirectUrl || "").trim()
+            ) {
+                customerApprovalSettings = {
+                    ...customerApprovalSettings,
+                    guestCheckoutRedirectUrl:
+                        customerApprovalSettings.registrationPagePath || REGISTRATION_PAGE_PATH,
+                };
+            }
         }
 
         const rawFields = Array.isArray(config.fields) ? config.fields : [];
@@ -506,9 +594,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             ...(doPendingRegistrationLookup ? { loggedInCustomerHasPendingRegistration } : {}),
         };
 
+        const settingsUpdatedAt =
+            settings && "updatedAt" in settings && settings.updatedAt instanceof Date
+                ? settings.updatedAt.toISOString()
+                : null;
+        const responseHeaders = doPendingRegistrationLookup
+            ? CONFIG_JSON_NO_CACHE
+            : configJsonCacheHeaders(buildConfigEtag(settingsUpdatedAt, formConfigUpdatedAt, merchantPlan));
+
+        if (!doPendingRegistrationLookup) {
+            const ifNoneMatch = request.headers.get("If-None-Match");
+            const etag = buildConfigEtag(settingsUpdatedAt, formConfigUpdatedAt, merchantPlan);
+            if (ifNoneMatch && ifNoneMatch === etag) {
+                return new Response(null, { status: 304, headers: responseHeaders });
+            }
+        }
+
         return new Response(JSON.stringify(payload), {
             status: 200,
-            headers: CONFIG_JSON_HEADERS,
+            headers: responseHeaders,
         });
     } catch (error) {
         console.error("Config fetch error:", error);
@@ -519,7 +623,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             }),
             {
                 status: 200,
-                headers: CONFIG_JSON_HEADERS,
+                headers: CONFIG_JSON_NO_CACHE,
             }
         );
     }

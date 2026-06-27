@@ -12,7 +12,8 @@ window.__REGISTRATION_FORM_CONFIG__ = {
   customerFirstName: {% if customer %}{{ customer.first_name | default: '' | json }}{% else %}""{% endif %},
   customerLastName: {% if customer %}{{ customer.last_name | default: '' | json }}{% else %}""{% endif %},
   shopifyLoggedInCustomerId: {% if customer %}{{ customer.id | json }}{% else %}null{% endif %},
-  contactPageUrl: {% if pages.contact != blank and pages.contact.url != blank %}{{ pages.contact.url | json }}{% else %}{{ routes.root_url | append: 'pages/contact' | json }}{% endif %}
+  contactPageUrl: {% if pages.contact != blank and pages.contact.url != blank %}{{ pages.contact.url | json }}{% else %}{{ routes.root_url | append: 'pages/contact' | json }}{% endif %},
+  registrationPagePath: {% assign approvefy_reg_page = pages['customer-registration'] %}{% if approvefy_reg_page != blank and approvefy_reg_page.url != blank %}{{ approvefy_reg_page.url | json }}{% else %}{{ '/pages/customer-registration' | json }}{% endif %}
 };
 (function () {
   var cfg = window.__REGISTRATION_FORM_CONFIG__;
@@ -46,7 +47,7 @@ window.__REGISTRATION_FORM_CONFIG__ = {
     cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
       ? String(cfg.shopifyLoggedInCustomerId).trim()
       : '0';
-  var cacheSchemaVersion = 'v2';
+  var cacheSchemaVersion = 'v6';
   var configCacheKey = 'customer_approval_config_' + cacheSchemaVersion + '_' + shop + '_' + embedFormId + '_' + loc + '_' + loggedInCustIdForCache;
   function applyThemeCss(cssText) {
     if (typeof cssText !== 'string' || !cssText.trim()) return;
@@ -94,6 +95,74 @@ window.__REGISTRATION_FORM_CONFIG__ = {
     }
     return data;
   });
+})();
+</script>
+<script>
+(function () {
+  var cfg = window.__REGISTRATION_FORM_CONFIG__;
+  if (!cfg || !cfg.shop) return;
+
+  function pathWithoutLocale(pathname) {
+    var p = pathname || '/';
+    var m = p.toLowerCase().match(/^(\/[a-z]{2}(?:-[a-z]{2})?)(\/.*|$)/);
+    if (m && m[1] && m[1].length <= 6) {
+      return m[2] && m[2].length > 0 ? m[2] : '/';
+    }
+    return p;
+  }
+
+  function norm(path) {
+    var raw = String(path || '').trim();
+    if (!raw) return '/';
+    try {
+      if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0 || raw.indexOf('//') === 0) {
+        raw = new URL(raw.indexOf('//') === 0 ? 'https:' + raw : raw).pathname || '/';
+      }
+    } catch (eNorm) {
+      void eNorm;
+    }
+    return (pathWithoutLocale(raw.split('?')[0]).replace(/\/+$/, '') || '/').toLowerCase();
+  }
+
+  function isRegistrationPage() {
+    var current = norm(window.location.pathname);
+    if (/\/pages\/customer-registration\/?$/i.test(current)) return true;
+    var paths = ['/pages/customer-registration'];
+    if (cfg.registrationPagePath) paths.push(cfg.registrationPagePath);
+    var i;
+    for (i = 0; i < paths.length; i++) {
+      if (norm(paths[i]) === current) return true;
+    }
+    return false;
+  }
+
+  function homeHref() {
+    try {
+      if (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) {
+        return window.Shopify.routes.root;
+      }
+    } catch (eHome) {
+      void eHome;
+    }
+    return '/';
+  }
+
+  if (!isRegistrationPage()) return;
+
+  function leaveIfDisabled(cas) {
+    if (cas && cas.redirectSignInLinksToFormPage === true) return;
+    var home = homeHref();
+    if (norm(window.location.pathname) !== norm(home)) {
+      window.location.replace(home);
+    }
+  }
+
+  var promise = window.__approvefyConfigPromise;
+  if (promise && typeof promise.then === 'function') {
+    promise.then(function (data) {
+      leaveIfDisabled(data && data.customerApprovalSettings);
+    }).catch(function () {});
+  }
 })();
 </script>
 {{ 'registration-form.js' | asset_url | preload_tag: as: 'script' }}

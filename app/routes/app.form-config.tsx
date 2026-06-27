@@ -26,7 +26,10 @@ import { EditIcon, DeleteIcon, PlusIcon, ClipboardIcon, DuplicateIcon } from "@s
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getMerchantPlanForShop, type MerchantPlanId } from "../lib/merchant-plan.server";
+import { ensureRegistrationStorefrontPage } from "../lib/registration-page.server";
+import { ensureDefaultCustomerB2BForm } from "../lib/default-form-config.server";
 import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
+import { DEFAULT_CUSTOMER_B2B_FORM_NAME } from "../lib/default-form-config";
 
 export const FORM_TYPES = [
     { value: "wholesale", label: "Wholesale registration form", description: "Wholesale registration form helps streamline the registration process for companies that sell products to retailers or distributors.", displayCondition: "This form can show on all pages of the store-front." },
@@ -79,7 +82,7 @@ async function fetchFormsForShop(shop: string): Promise<FormConfigItem[]> {
         return rows.map((row) => ({
             id: row.id,
             shop: row.shop,
-            name: (row.name ?? "").trim() || "Registration Form",
+            name: (row.name ?? "").trim() || DEFAULT_CUSTOMER_B2B_FORM_NAME,
             formType: row.formType ?? "wholesale",
             status: row.enabled !== false ? "enabled" : "disabled",
             fieldsCount: Number(row.fieldsCount),
@@ -105,6 +108,8 @@ export const loader = async ({ request }: LoaderFunctionArgs): Promise<FormConfi
     const { session } = await authenticate.admin(request);
     const shop = session.shop;
 
+    await ensureDefaultCustomerB2BForm(shop);
+
     const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
     const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?template=customers/register&context=apps`;
     const [merchantPlan, formCount] = await Promise.all([
@@ -121,7 +126,7 @@ export const loader = async ({ request }: LoaderFunctionArgs): Promise<FormConfi
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-    const { session } = await authenticate.admin(request);
+    const { session, admin } = await authenticate.admin(request);
     const shop = session.shop;
     const formData = await request.formData();
     const intent = formData.get("intent");
@@ -170,6 +175,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     showProgressBar:
                         (row.formType ?? "wholesale") === "multi_step" ? row.showProgressBar !== false : false,
                 } as never,
+            });
+            void ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
+                console.warn("[FormConfig] ensureRegistrationStorefrontPage after clone failed:", err);
             });
             return { success: true, clonedFormId: newForm.id };
         } catch (e) {

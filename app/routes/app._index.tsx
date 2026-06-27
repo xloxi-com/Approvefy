@@ -12,22 +12,35 @@ import {
   Icon,
   ProgressBar,
   Banner,
-  Divider,
   Layout,
   Badge,
+  InlineGrid,
+  Divider,
 } from "@shopify/polaris";
-import { CheckCircleIcon, ViewIcon } from "@shopify/polaris-icons";
+import {
+  CheckCircleIcon,
+  ViewIcon,
+  ThemeEditIcon,
+  PageIcon,
+  FormsIcon,
+  SettingsIcon,
+} from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getAnalytics } from "../models/registration-analytics.server";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
+import {
+  ensureRegistrationStorefrontPage,
+  REGISTRATION_PAGE_PATH,
+} from "../lib/registration-page.server";
+import { ensureDefaultCustomerB2BForm } from "../lib/default-form-config.server";
 
 type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
 
 const SETUP_TUTORIAL_URL = `${APP_URL.replace(/\/?$/, "")}/`;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
   const url = new URL(request.url);
   const billingPending = url.searchParams.get("billing") === "callback";
@@ -35,15 +48,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let formsCount = 0;
   let hasSettings = false;
   let dbUnavailable = false;
+  let registrationPageThemeEditorUrl = "";
+  let registrationPageStorefrontUrl = "";
+  let registrationPageCreated = false;
 
   const t0 = performance.now();
   try {
-    [formsCount, hasSettings] = await Promise.all([
+    await ensureDefaultCustomerB2BForm(shop);
+
+    const [formCount, settingsExists, pageResult] = await Promise.all([
       prisma.formConfig.count({ where: { shop } }),
       prisma.appSettings
         .findUnique({ where: { shop }, select: { id: true } })
         .then((r: { id: string } | null) => !!r),
+      ensureRegistrationStorefrontPage(admin, shop),
     ]);
+    formsCount = formCount;
+    hasSettings = settingsExists;
+    registrationPageThemeEditorUrl = pageResult.themeEditorUrl;
+    registrationPageStorefrontUrl = pageResult.storefrontPageUrl;
+    registrationPageCreated = pageResult.created;
   } catch (error) {
     dbUnavailable = true;
     console.error("[Home] Failed to load setup data:", error);
@@ -54,7 +78,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?context=apps`;
   const storefrontUrl = `https://${storeHandle}.myshopify.com`;
 
-  const setupTasksTotal = 3;
+  const setupTasksTotal = 2;
   const setupTasksComplete = (formsCount > 0 ? 1 : 0) + (hasSettings ? 1 : 0);
 
   const analyticsPromise: Promise<Analytics | null> = getAnalytics(shop).catch(
@@ -75,6 +99,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       setupTasksTotal,
       analytics: analyticsPromise,
       billingPending,
+      registrationPagePath: REGISTRATION_PAGE_PATH,
+      registrationPageThemeEditorUrl,
+      registrationPageStorefrontUrl,
+      registrationPageCreated,
     },
     { headers: { "Server-Timing": `db;dur=${dbMs}` } },
   );
@@ -84,121 +112,139 @@ function countsFromAnalytics(analytics: Analytics | null): {
   pending: number;
   approved: number;
   rejected: number;
+  total: number;
 } {
   if (!analytics) {
-    return { pending: 0, approved: 0, rejected: 0 };
+    return { pending: 0, approved: 0, rejected: 0, total: 0 };
   }
   const total = analytics.total ?? 0;
   const pending = analytics.pending ?? 0;
   const denied = analytics.denied ?? 0;
   const approved = Math.max(0, total - pending - denied);
-  return { pending, approved, rejected: denied };
+  return { pending, approved, rejected: denied, total };
 }
 
-function LiveStatusPanel({ analytics }: { analytics: Analytics | null }) {
-  const { pending, approved, rejected } = countsFromAnalytics(analytics);
-
-  const row = (label: string, value: number) => (
-    <InlineStack align="space-between" blockAlign="center">
-      <Text as="span" variant="bodySm" tone="subdued">
-        {label}
-      </Text>
-      <Text as="span" variant="bodySm" fontWeight="semibold">
-        {analytics == null ? "—" : value}
-      </Text>
-    </InlineStack>
-  );
-
+function MetricCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  tone?: "caution" | "success" | "critical" | "subdued";
+}) {
   return (
-    <Card background="bg-surface-secondary" padding="500">
-      <BlockStack gap="400">
-        <Text as="p" variant="bodySm" fontWeight="bold" tone="subdued">
-          <span className="setup-guide-live-status-label">Live status</span>
+    <Card>
+      <BlockStack gap="200">
+        <Text as="p" variant="bodySm" tone="subdued">
+          {label}
         </Text>
-        <BlockStack gap="300">
-          {row("Pending", pending)}
-          {row("Approved", approved)}
-          {row("Rejected", rejected)}
-        </BlockStack>
+        <Text as="p" variant="headingLg" tone={tone}>
+          {value}
+        </Text>
       </BlockStack>
     </Card>
   );
 }
 
-function GuideAnnotatedBlock({
-  id,
-  stepLabel,
-  title,
-  description,
-  children,
+function MetricsRow({
+  analytics,
+  formsCount,
 }: {
-  id?: string;
-  stepLabel: string;
-  title: string;
-  description: string;
-  children: ReactNode;
+  analytics: Analytics | null;
+  formsCount: number;
 }) {
+  const { pending, approved, total } = countsFromAnalytics(analytics);
+  const loading = analytics == null;
+
   return (
-    <Layout.AnnotatedSection id={id} title={title} description={description}>
-      <Box paddingBlockStart={{ xs: "200", lg: "0" }}>
-        <BlockStack gap="300">
-          <Text as="p" variant="bodySm" tone="subdued">
-            {stepLabel}
-          </Text>
-          {children}
-        </BlockStack>
-      </Box>
-    </Layout.AnnotatedSection>
+    <InlineGrid columns={{ xs: 2, sm: 2, md: 4 }} gap="400">
+      <MetricCard label="Total registrations" value={loading ? "—" : total} />
+      <MetricCard label="Pending approval" value={loading ? "—" : pending} tone="caution" />
+      <MetricCard label="Approved" value={loading ? "—" : approved} tone="success" />
+      <MetricCard label="Registration forms" value={formsCount} />
+    </InlineGrid>
   );
 }
 
-function StepStatusRow({
+function SetupStep({
+  step,
+  icon,
+  title,
+  description,
   complete,
-  heading,
-  body,
-  action,
+  optional,
+  actions,
+  footer,
 }: {
-  complete: boolean;
-  heading: string;
-  body: string;
-  action: ReactNode;
+  step: number;
+  icon: typeof ThemeEditIcon;
+  title: string;
+  description: string;
+  complete?: boolean;
+  optional?: boolean;
+  actions: ReactNode;
+  footer?: ReactNode;
 }) {
   return (
-    <Card padding="500">
-      <BlockStack gap="400">
-        <InlineStack align="space-between" blockAlign="center" wrap gap="300">
-          <InlineStack gap="300" blockAlign="center" wrap={false}>
-            <Box flex="0 0 auto">
-              {complete ? (
-                <Icon source={CheckCircleIcon} tone="success" accessibilityLabel="Completed" />
-              ) : (
-                <Box
-                  width="22px"
-                  height="22px"
-                  borderRadius="full"
-                  borderWidth="025"
-                  borderColor="border"
-                  background="bg-surface"
-                />
-              )}
-            </Box>
-            <Text as="span" variant="headingSm" tone={complete ? "subdued" : undefined}>
-              <span
-                style={
-                  complete ? { textDecoration: "line-through", textDecorationColor: "var(--p-color-border)" } : undefined
-                }
+    <Card padding="0">
+      <Box padding="500">
+        <BlockStack gap="400">
+          <InlineStack align="space-between" blockAlign="start" wrap gap="300">
+            <InlineStack gap="400" blockAlign="start" wrap={false}>
+              <Box
+                minWidth="36px"
+                minHeight="36px"
+                borderRadius="full"
+                background={complete ? "bg-fill-success-secondary" : "bg-surface-secondary"}
+                padding="200"
               >
-                {heading}
-              </span>
-            </Text>
+                <InlineStack align="center" blockAlign="center">
+                  {complete ? (
+                    <Icon source={CheckCircleIcon} tone="success" accessibilityLabel="Completed" />
+                  ) : (
+                    <Icon source={icon} tone="subdued" accessibilityLabel="" />
+                  )}
+                </InlineStack>
+              </Box>
+              <BlockStack gap="100">
+                <InlineStack gap="200" blockAlign="center" wrap>
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    Step {step}
+                  </Text>
+                  {complete ? (
+                    <Badge tone="success">Done</Badge>
+                  ) : optional ? (
+                    <Badge tone="info">Required</Badge>
+                  ) : (
+                    <Badge tone="attention">To do</Badge>
+                  )}
+                </InlineStack>
+                <Text as="h3" variant="headingSm">
+                  {title}
+                </Text>
+              </BlockStack>
+            </InlineStack>
           </InlineStack>
-          <Badge tone={complete ? "success" : "attention"}>{complete ? "Done" : "To do"}</Badge>
-        </InlineStack>
-        <Text as="p" variant="bodyMd" tone="subdued">
-          {body}
-        </Text>
-        <Box>{action}</Box>
-      </BlockStack>
+          <Text as="p" variant="bodyMd" tone="subdued">
+            {description}
+          </Text>
+          <InlineStack gap="300" wrap blockAlign="center">
+            {actions}
+          </InlineStack>
+        </BlockStack>
+      </Box>
+      {footer ? (
+        <Box
+          background="bg-surface-secondary"
+          paddingInline="500"
+          paddingBlock="300"
+          borderBlockStartWidth="025"
+          borderColor="border"
+        >
+          {footer}
+        </Box>
+      ) : null}
     </Card>
   );
 }
@@ -214,6 +260,9 @@ export default function Index() {
     setupTasksTotal,
     analytics,
     billingPending,
+    registrationPagePath,
+    registrationPageThemeEditorUrl,
+    registrationPageStorefrontUrl,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const revalidator = useRevalidator();
@@ -221,13 +270,6 @@ export default function Index() {
   const progressPercent = setupTasksTotal
     ? Math.min(100, Math.round((100 * setupTasksComplete) / setupTasksTotal))
     : 0;
-  const year = new Date().getFullYear();
-
-  const tutorialLink = (
-    <Button variant="plain" icon={ViewIcon} url={SETUP_TUTORIAL_URL} external tone="neutral">
-      View Tutorial
-    </Button>
-  );
 
   const formDone = formsCount > 0;
   const settingsDone = hasSettings;
@@ -239,237 +281,219 @@ export default function Index() {
   }, [billingPending, revalidator]);
 
   return (
-    <div className="app-home-page">
-      <Page
-        title={APP_DISPLAY_NAME}
-        subtitle="Setup guide — full checklist"
-        fullWidth
-        secondaryActions={[
-          { content: "View customers", onAction: () => navigate("/app/customers") },
-          { content: "Form Builder", onAction: () => navigate("/app/form-config") },
-          { content: "Settings", onAction: () => navigate("/app/settings") },
-          { content: "Support", url: APP_URL, external: true },
-        ]}
-      >
-        <div className="app-home-main app-setup-guide app-setup-guide--annotated">
-          <BlockStack gap="600">
-            <div className="app-nav-tabs-mobile">
-              <Box paddingBlockEnd="200">
-                <BlockStack gap="200" inlineAlign="start">
-                  <InlineStack gap="100" wrap>
-                    <Button size="slim" variant="primary" onClick={() => navigate("/app")}>
-                      {APP_DISPLAY_NAME}
-                    </Button>
-                    <Link to="/app/customers" prefetch="render">
-                      <Button size="slim">Customers</Button>
-                    </Link>
-                    <Link to="/app/form-config" prefetch="render">
-                      <Button size="slim">Form Builder</Button>
-                    </Link>
-                    <Link to="/app/settings" prefetch="render">
-                      <Button size="slim">Settings</Button>
-                    </Link>
-                  </InlineStack>
-                </BlockStack>
-              </Box>
-            </div>
+    <Page
+      title={APP_DISPLAY_NAME}
+      subtitle="Customer registration and B2B approval workflow"
+      primaryAction={{
+        content: "View customers",
+        onAction: () => navigate("/app/customers"),
+      }}
+      secondaryActions={[
+        { content: "Form Builder", onAction: () => navigate("/app/form-config") },
+        { content: "Settings", onAction: () => navigate("/app/settings") },
+        { content: "Support", url: APP_URL, external: true },
+      ]}
+    >
+      <Layout>
+        {billingPending && (
+          <Layout.Section>
+            <Banner tone="info" title="Activating your plan">
+              Thanks for subscribing — your plan is being confirmed. This page will refresh automatically.
+            </Banner>
+          </Layout.Section>
+        )}
 
-            {billingPending && (
-              <Banner tone="info" title="Activating your plan">
-                Thanks for subscribing — your plan is being confirmed. This page will refresh automatically.
-              </Banner>
-            )}
-
-            {dbUnavailable && (
-              <Banner tone="critical" title="Database connection issue detected">
-                <p style={{ margin: 0 }}>
-                  We could not load setup data from the database. Please verify your production{" "}
-                  <Text as="span" variant="bodyMd" fontWeight="semibold">
-                    DATABASE_URL
-                  </Text>{" "}
-                  (Supabase pooler on port 6543 with{" "}
-                  <Text as="span" variant="bodyMd" fontWeight="semibold">
-                    ?pgbouncer=true
-                  </Text>
-                  ) and{" "}
-                  <Text as="span" variant="bodyMd" fontWeight="semibold">
-                    DIRECT_URL
-                  </Text>{" "}
-                  (direct port 5432), then redeploy.
-                </p>
-              </Banner>
-            )}
-
-            <Box className="app-backend-card setup-guide-overview-card">
-              <Card padding="500">
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">
-                    Overview
-                  </Text>
-                  <Text as="p" variant="bodyMd" tone="subdued">
-                    Follow all three steps so Approvefy can show your registration form on the storefront and route
-                    new sign-ups into the approval workflow.
-                  </Text>
-                  <Divider />
-                  <InlineStack align="space-between" blockAlign="center" wrap={false}>
-                    <Text id={progressLabelId} as="span" variant="headingSm">
-                      {setupTasksComplete} of {setupTasksTotal} tasks complete
-                    </Text>
-                    <Text as="span" variant="bodySm" fontWeight="medium" tone="subdued">
-                      {progressPercent}%
-                    </Text>
-                  </InlineStack>
-                  <ProgressBar
-                    progress={progressPercent}
-                    tone="success"
-                    size="medium"
-                    ariaLabelledBy={progressLabelId}
-                  />
-                </BlockStack>
-              </Card>
-            </Box>
-
-            <Layout>
-              <GuideAnnotatedBlock
-                id="setup-step-embed"
-                stepLabel="Step 1 · Storefront activation"
-                title="Enable app embed block"
-                description={
-                  "Required: the embed loads scripts and mounts the form in your theme (Theme settings → App embeds → Approvefy)."
-                }
-              >
-                <Card padding="0">
-                  <Box padding="500">
-                    <BlockStack gap="500">
-                      <Text as="p" variant="bodyMd" tone="subdued">
-                        Turn on the Approvefy app embed in your theme so the registration form appears on your storefront.
-                      </Text>
-                      <InlineStack gap="300" wrap blockAlign="center">
-                        <Button url={themeEditorUrl} variant="primary" external>
-                          Enable app embed
-                        </Button>
-                        <Button url={storefrontUrl} variant="secondary" external>
-                          Preview theme
-                        </Button>
-                      </InlineStack>
-                    </BlockStack>
-                  </Box>
-                  <Box
-                    background="bg-surface-secondary"
-                    paddingInline="500"
-                    paddingBlock="450"
-                    borderBlockStartWidth="025"
-                    borderColor="border"
-                  >
-                    <InlineStack align="space-between" blockAlign="center" gap="400" wrap>
-                      <Text as="span" variant="bodySm" tone="subdued">
-                        Required step for storefront activation
-                      </Text>
-                      <span className="setup-guide-tutorial-link">{tutorialLink}</span>
-                    </InlineStack>
-                  </Box>
-                </Card>
-              </GuideAnnotatedBlock>
-
-              <GuideAnnotatedBlock
-                stepLabel="Step 2 · Registration form"
-                title="Create a registration form"
-                description={
-                  "Build at least one form in Form Builder. Leave the theme embed \"Form ID\" blank to use your default form."
-                }
-              >
-                <StepStatusRow
-                  complete={formDone}
-                  heading="Create a registration form"
-                  body="Build your first form in Form Builder and choose which fields to collect."
-                  action={
-                    <Link to="/app/form-config" prefetch="render">
-                      <Button variant={formDone ? "secondary" : "primary"} size="slim">
-                        {formDone ? "Open Form Builder" : "Go to Form Builder"}
-                      </Button>
-                    </Link>
-                  }
-                />
-              </GuideAnnotatedBlock>
-
-              <GuideAnnotatedBlock
-                stepLabel="Step 3 · Behaviour & branding"
-                title="Configure settings"
-                description={
-                  "Set languages, form appearance, and approval workflow (SMTP, notifications, storefront messages)."
-                }
-              >
-                <StepStatusRow
-                  complete={settingsDone}
-                  heading="Configure settings"
-                  body="Set languages, appearance, and approval rules for new registrations."
-                  action={
-                    <Link to="/app/settings" prefetch="render">
-                      <Button variant={settingsDone ? "secondary" : "primary"} size="slim">
-                        {settingsDone ? "Open Settings" : "Go to Settings"}
-                      </Button>
-                    </Link>
-                  }
-                />
-              </GuideAnnotatedBlock>
-
-              <GuideAnnotatedBlock
-                stepLabel="Monitor"
-                title="Registration pipeline"
-                description="Counts update as customers submit applications and you approve or reject them."
-              >
-                <Suspense
-                  fallback={
-                    <Card padding="500">
-                      <Text as="p" variant="bodySm" tone="subdued">
-                        Loading live status…
-                      </Text>
-                    </Card>
-                  }
-                >
-                  <Await
-                    resolve={analytics}
-                    errorElement={
-                      <Card padding="500">
-                        <Text as="p" variant="bodySm" tone="subdued">
-                          Live status unavailable.
-                        </Text>
-                      </Card>
-                    }
-                  >
-                    {(resolved) => <LiveStatusPanel analytics={resolved} />}
-                  </Await>
-                </Suspense>
-              </GuideAnnotatedBlock>
-            </Layout>
-
-            <Divider />
-
-            <Box paddingBlock="400">
-              <div className="setup-guide-footer-row">
-                <Text as="p" variant="bodySm" tone="subdued">
-                  © {APP_DISPLAY_NAME} {year}
+        {dbUnavailable && (
+          <Layout.Section>
+            <Banner tone="critical" title="Database connection issue detected">
+              <p style={{ margin: 0 }}>
+                We could not load setup data from the database. Please verify your production{" "}
+                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                  DATABASE_URL
+                </Text>{" "}
+                (Supabase pooler on port 6543 with{" "}
+                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                  ?pgbouncer=true
                 </Text>
-                <div className="setup-guide-footer-links">
-                  <InlineStack gap="500" wrap>
-                    <Link to="/app/customers" prefetch="render" className="setup-guide-footer-link">
-                      <Button variant="plain" tone="primary">
-                        View Customers
-                      </Button>
-                    </Link>
-                    <Button variant="plain" tone="primary" url={APP_URL} external>
-                      Support
+                ) and{" "}
+                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                  DIRECT_URL
+                </Text>{" "}
+                (direct port 5432), then redeploy.
+              </p>
+            </Banner>
+          </Layout.Section>
+        )}
+
+        <Layout.Section>
+          <Suspense
+            fallback={
+              <InlineGrid columns={{ xs: 2, sm: 2, md: 4 }} gap="400">
+                {[1, 2, 3, 4].map((n) => (
+                  <Card key={n}>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Loading…
+                    </Text>
+                  </Card>
+                ))}
+              </InlineGrid>
+            }
+          >
+            <Await
+              resolve={analytics}
+              errorElement={
+                <MetricsRow analytics={null} formsCount={formsCount} />
+              }
+            >
+              {(resolved) => <MetricsRow analytics={resolved} formsCount={formsCount} />}
+            </Await>
+          </Suspense>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">
+                  Getting started
+                </Text>
+                <Text as="p" variant="bodyMd" tone="subdued">
+                  Complete these steps to show your registration form on the storefront and route new sign-ups
+                  into your approval workflow.
+                </Text>
+              </BlockStack>
+              <Divider />
+              <InlineStack align="space-between" blockAlign="center" wrap={false}>
+                <Text id={progressLabelId} as="span" variant="bodySm" fontWeight="medium">
+                  {setupTasksComplete} of {setupTasksTotal} configuration steps complete
+                </Text>
+                <Text as="span" variant="bodySm" tone="subdued">
+                  {progressPercent}%
+                </Text>
+              </InlineStack>
+              <ProgressBar
+                progress={progressPercent}
+                tone="primary"
+                size="small"
+                ariaLabelledBy={progressLabelId}
+              />
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+        <Layout.Section>
+          <BlockStack gap="400">
+            <SetupStep
+              step={1}
+              icon={ThemeEditIcon}
+              title="Enable app embed block"
+              description="Turn on the Approvefy app embed in your theme (Theme settings → App embeds → Approvefy) so registration scripts load on your storefront."
+              optional
+              actions={
+                <>
+                  <Button url={themeEditorUrl} variant="primary" external>
+                    Enable app embed
+                  </Button>
+                  <Button url={storefrontUrl} variant="secondary" external>
+                    Preview theme
+                  </Button>
+                </>
+              }
+              footer={
+                <InlineStack align="space-between" blockAlign="center" gap="400" wrap>
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    Required for storefront activation
+                  </Text>
+                  <Button variant="plain" icon={ViewIcon} url={SETUP_TUTORIAL_URL} external>
+                    View tutorial
+                  </Button>
+                </InlineStack>
+              }
+            />
+
+            <SetupStep
+              step={2}
+              icon={PageIcon}
+              title="Add form to registration page"
+              description={`Your registration page is at ${registrationPagePath}. Open the theme editor and add the Registration Form block to that page. The store redirect URL is set automatically when empty.`}
+              optional
+              actions={
+                <>
+                  <Button
+                    url={registrationPageThemeEditorUrl || themeEditorUrl}
+                    variant="primary"
+                    external
+                  >
+                    Add form to page
+                  </Button>
+                  {registrationPageStorefrontUrl ? (
+                    <Button url={registrationPageStorefrontUrl} variant="secondary" external>
+                      Preview page
                     </Button>
-                    <Button variant="plain" tone="primary" url={SETUP_TUTORIAL_URL} external>
-                      Documentation
-                    </Button>
-                  </InlineStack>
-                </div>
-              </div>
-            </Box>
+                  ) : null}
+                </>
+              }
+            />
+
+            <SetupStep
+              step={3}
+              icon={FormsIcon}
+              title="Create a registration form"
+              description="Build at least one form in Form Builder. Leave the theme embed Form ID blank to use your default form."
+              complete={formDone}
+              actions={
+                <Link to="/app/form-config" prefetch="render">
+                  <Button variant={formDone ? "secondary" : "primary"}>
+                    {formDone ? "Open Form Builder" : "Go to Form Builder"}
+                  </Button>
+                </Link>
+              }
+            />
+
+            <SetupStep
+              step={4}
+              icon={SettingsIcon}
+              title="Configure settings"
+              description="Set languages, form appearance, and approval workflow — including SMTP, notifications, and storefront messages."
+              complete={settingsDone}
+              actions={
+                <Link to="/app/settings" prefetch="render">
+                  <Button variant={settingsDone ? "secondary" : "primary"}>
+                    {settingsDone ? "Open Settings" : "Go to Settings"}
+                  </Button>
+                </Link>
+              }
+            />
           </BlockStack>
-        </div>
-      </Page>
-    </div>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingSm">
+                Quick links
+              </Text>
+              <InlineStack gap="400" wrap>
+                <Button variant="plain" onClick={() => navigate("/app/customers")}>
+                  Review customers
+                </Button>
+                <Button variant="plain" onClick={() => navigate("/app/form-config")}>
+                  Form Builder
+                </Button>
+                <Button variant="plain" onClick={() => navigate("/app/settings")}>
+                  Settings
+                </Button>
+                <Button variant="plain" url={APP_URL} external>
+                  Help & support
+                </Button>
+                <Button variant="plain" url={SETUP_TUTORIAL_URL} external>
+                  Documentation
+                </Button>
+              </InlineStack>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+      </Layout>
+    </Page>
   );
 }

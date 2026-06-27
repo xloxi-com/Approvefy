@@ -6,12 +6,16 @@
 import { createDecipheriv, scryptSync } from "node:crypto";
 import { ApiVersion } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
-import { normalizeMerchantPlan } from "../lib/merchant-plan.server";
 import { invalidateAnalyticsCache } from "./registration-analytics.server";
 import { deleteSupabaseFilesFromCustomData } from "../lib/supabase.server";
 import { formatNoteForShopify, isFileUploadValue } from "../lib/format-note";
 import { buildCustomDataLabels, type FormFieldForLabels } from "../lib/form-config-labels.server";
 import { normalizeRegistrationPhone } from "../lib/registration-phone";
+import {
+  parseCustomerApprovalSettings,
+  readApprovalModeFromParsedSettings,
+} from "../lib/customer-approval-settings.server";
+import { CACHE_TTL, getCache, setCache, shopKey, invalidateCache } from "../lib/cache.server";
 
 /** Must match Admin REST path version; keep aligned with `shopify.server` ApiVersion. */
 const ADMIN_REST_API_VERSION = ApiVersion.October25;
@@ -584,9 +588,13 @@ interface CustomersResponse {
   totalCount: number;
 }
 
-/** Approval-mode rarely changes; this loader is on every customers-list paint. */
-const APPROVAL_MODE_CACHE_TTL_MS = 30_000;
-const approvalModeCache = new Map<string, { value: "auto" | "manual"; at: number }>();
+/** Approval-mode rarely changes; cached per shop via LRU (5 min TTL). */
+export function invalidateCustomerApprovalModeCache(shop?: string): void {
+  if (!shop) {
+    return;
+  }
+  invalidateCache(shopKey(shop, "approvalMode"));
+}
 
 // ─── Get Customers ───
 
@@ -840,7 +848,22 @@ export async function reconcileRegistrationApprovalFromShopify(
   const em = (email || "").trim();
   if (!em || !registrationId) return false;
   try {
-    const reg = await prisma.registration.findUnique({ where: { id: registrationId } });
+    const reg = await prisma.registration.findUnique({
+      where: { id: registrationId },
+      select: {
+        shop: true,
+        status: true,
+        customerId: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        note: true,
+        company: true,
+        customData: true,
+        passwordHash: true,
+      },
+    });
     if (!reg || reg.shop.trim().toLowerCase() !== shop.trim().toLowerCase()) return false;
     if (reg.status === "approved") return true;
     if (reg.status !== "pending") return false;
@@ -869,7 +892,20 @@ export async function reconcileLinkedPendingRegistrationFromShopifyTags(
   registrationId: string
 ): Promise<boolean> {
   try {
-    const reg = await prisma.registration.findUnique({ where: { id: registrationId } });
+    const reg = await prisma.registration.findUnique({
+      where: { id: registrationId },
+      select: {
+        shop: true,
+        status: true,
+        customerId: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        note: true,
+        company: true,
+        customData: true,
+      },
+    });
     if (!reg || reg.shop.trim().toLowerCase() !== shop.trim().toLowerCase()) return false;
     if (reg.status === "approved") return true;
     if (reg.status !== "pending") return false;
@@ -937,7 +973,7 @@ export async function reconcilePendingRegistrationsForAutoApprovalShop(
   accessToken: string,
   limit = 40
 ): Promise<boolean> {
-  if (!(accessToken || "").trim()) return false;
+  const token = (accessToken || "").trim();
   const take = Math.min(Math.max(1, limit), 100);
   const pendingRegs = await prisma.registration.findMany({
     where: { shop, status: "pending" },
@@ -946,31 +982,24 @@ export async function reconcilePendingRegistrationsForAutoApprovalShop(
     orderBy: { createdAt: "desc" },
   });
   if (pendingRegs.length === 0) return false;
-  /**
-   * Rows are independent — fan all of them out at once (capped by `take`, default 8 from caller).
-   * Running them in chunks of 4 doubled the wall-clock for the customers-list reconcile and was
-   * the dominant blocker on first paint.
-   */
   const results = await Promise.all(
     pendingRegs.map((row) =>
-      reconcilePendingRegistrationRow(admin, shop, row.id, row.email, accessToken)
+      token
+        ? reconcilePendingRegistrationRow(admin, shop, row.id, row.email, token)
+        : reconcileLinkedPendingRegistrationFromShopifyTags(admin, shop, row.id),
     )
   );
   const repaired = results.some(Boolean);
-  // When DB rows changed status, the analytics counters returned to the caller right after
-  // would otherwise be served from the 15s cache (stale "pending" count).
   if (repaired) invalidateAnalyticsCache(shop);
   return repaired;
 }
 
 /** How customer approval is configured for the shop (used by admin list + storefront config). */
 export async function getCustomerApprovalModeForShop(shop: string): Promise<"auto" | "manual"> {
-  const cacheKey = (shop || "").trim().toLowerCase();
-  if (cacheKey) {
-    const cached = approvalModeCache.get(cacheKey);
-    if (cached && Date.now() - cached.at < APPROVAL_MODE_CACHE_TTL_MS) {
-      return cached.value;
-    }
+  const cacheKey = shopKey(shop, "approvalMode");
+  if (shop) {
+    const cached = getCache<"auto" | "manual">(cacheKey);
+    if (cached) return cached;
   }
   let mode: "auto" | "manual" = "manual";
   try {
@@ -978,22 +1007,12 @@ export async function getCustomerApprovalModeForShop(shop: string): Promise<"aut
       where: { shop },
       select: { customerApprovalSettings: true, merchantPlan: true },
     });
-    const plan = normalizeMerchantPlan(settings?.merchantPlan ?? undefined);
-    if (plan === "basic") {
-      if (cacheKey) setBoundedCacheEntry(approvalModeCache, cacheKey, { value: "auto", at: Date.now() }, 200);
-      return "auto";
-    }
-    const cas = (settings as { customerApprovalSettings?: unknown } | null)?.customerApprovalSettings;
-    if (cas && typeof cas === "object" && !Array.isArray(cas)) {
-      const raw = String((cas as Record<string, unknown>).approvalMode ?? "")
-        .trim()
-        .toLowerCase();
-      if (raw === "auto") mode = "auto";
-    }
+    const parsed = parseCustomerApprovalSettings(settings?.customerApprovalSettings);
+    mode = readApprovalModeFromParsedSettings(parsed, settings?.merchantPlan);
   } catch {
     /* ignore */
   }
-  if (cacheKey) setBoundedCacheEntry(approvalModeCache, cacheKey, { value: mode, at: Date.now() }, 200);
+  if (shop) setCache(cacheKey, mode, CACHE_TTL.approvalMode);
   return mode;
 }
 
@@ -1023,6 +1042,19 @@ export async function approveCustomer(
     const registrationId = id.slice(3);
     const reg = await prisma.registration.findUnique({
       where: { id: registrationId },
+      select: {
+        status: true,
+        customerId: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        note: true,
+        company: true,
+        customData: true,
+        shop: true,
+        passwordHash: true,
+      },
     });
     if (!reg) {
       throw new Error("Registration not found. This customer may have been removed.");
@@ -1069,7 +1101,7 @@ export async function approveCustomer(
     }
 
     // Decrypt the stored password so we can set it on the Shopify customer
-    const storedPwd = (reg as Record<string, unknown>).passwordHash as string | null;
+    const storedPwd = reg.passwordHash;
     const plainPassword = storedPwd ? decryptPassword(storedPwd) : null;
 
     let activationUrl: string | null = null;
@@ -1318,13 +1350,15 @@ export async function approveCustomer(
   );
 
   try {
-    await prisma.registration.updateMany({
-      where: { customerId: shopifyCustomerId },
-      data: {
-        status: "approved",
-        reviewedAt: new Date(),
-      },
-    });
+    await prisma.$transaction([
+      prisma.registration.updateMany({
+        where: { customerId: shopifyCustomerId },
+        data: {
+          status: "approved",
+          reviewedAt: new Date(),
+        },
+      }),
+    ]);
   } catch (dbError) {
     console.warn("Could not update registration record in DB:", dbError);
   }
@@ -1388,13 +1422,15 @@ export async function denyCustomer(
   );
 
   try {
-    await prisma.registration.updateMany({
-      where: { customerId },
-      data: {
-        status: "denied",
-        reviewedAt: new Date(),
-      },
-    });
+    await prisma.$transaction([
+      prisma.registration.updateMany({
+        where: { customerId },
+        data: {
+          status: "denied",
+          reviewedAt: new Date(),
+        },
+      }),
+    ]);
   } catch (dbError) {
     console.warn("Could not update registration record in DB:", dbError);
   }

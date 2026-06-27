@@ -39,6 +39,8 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { invalidateFormFieldsCache } from "../lib/form-config-labels.server";
+import { invalidateCache, shopKey } from "../lib/cache.server";
+import { TEXT_FORMAT_OPTIONS, normalizeTextFormat, getTextFormatPlaceholder, getTextFormatHelp } from "../lib/text-format";
 import "../styles/form-builder.css";
 import "../styles/settings.css";
 import { FormAppearancePanel } from "../components/FormAppearancePanel";
@@ -57,6 +59,11 @@ import {
     type ThemeSettings,
 } from "../lib/theme-settings";
 import { STOREFRONT_FORM_DEFAULTS_EN } from "../lib/storefront-form-defaults";
+import { ensureRegistrationStorefrontPage } from "../lib/registration-page.server";
+import {
+    DEFAULT_CUSTOMER_B2B_FORM_FIELDS,
+    DEFAULT_CUSTOMER_B2B_FORM_NAME,
+} from "../lib/default-form-config";
 
 import {
     DndContext,
@@ -303,6 +310,9 @@ function createFieldFromType(type: string, step = 1): FormField {
     if (normalizedType === "date") {
         field.dateFormat = "dd_slash_mm_yyyy";
     }
+    if (normalizedType === "text" || normalizedType === "textarea") {
+        field.textFormat = "text";
+    }
     return field;
 }
 function getSelectableCustomTypeOptions(
@@ -385,6 +395,8 @@ interface FormField {
     headingLevel?: "h2" | "h3" | "h4";
     /** Date display/input format for type "date" (e.g. dd_slash_mm_yyyy). */
     dateFormat?: string;
+    /** Input format validation for type "text" or "textarea". */
+    textFormat?: string;
     /** Max number of files allowed for file_upload (1–20, default 1). */
     maxFileCount?: number;
     /** Max file size in MB for file_upload (2, 5, 10, 15, 20, 25; default 5). */
@@ -431,12 +443,7 @@ function parseOptionsFromText(text: string): string[] {
     return out;
 }
 
-const DEFAULT_FIELDS: FormField[] = [
-    { label: "First Name", type: "first_name", required: true, enabled: true, step: 1, isDefault: true },
-    { label: "Last Name", type: "last_name", required: true, enabled: true, step: 1, isDefault: true },
-    { label: "Email", type: "email", required: true, enabled: true, step: 1, isDefault: true },
-    { label: "Password", type: "password", required: false, enabled: true, step: 1, isDefault: false },
-];
+const DEFAULT_FIELDS: FormField[] = DEFAULT_CUSTOMER_B2B_FORM_FIELDS.map((f) => ({ ...f }));
 
 function IconText() {
     return (
@@ -933,6 +940,17 @@ const SortableFieldRow = memo(function SortableFieldRow({
                             onChange={(val) => onUpdate(index, "dateFormat", val)}
                         />
                     )}
+                    {(["text", "textarea"] as const).includes(
+                        normalizedFieldType as "text" | "textarea",
+                    ) && (
+                        <Select
+                            label="Format"
+                            options={TEXT_FORMAT_OPTIONS}
+                            value={field.textFormat ?? "text"}
+                            onChange={(val) => onUpdate(index, "textFormat", val)}
+                            helpText={getTextFormatHelp(field.textFormat ?? "text")}
+                        />
+                    )}
                     {(field.type || "").toLowerCase() === "file_upload" && (
                         <>
                             <TextField
@@ -1146,6 +1164,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         showProgressBar = formType === "multi_step";
         isDefault = !existingForm;
         enabled = true;
+        name = DEFAULT_CUSTOMER_B2B_FORM_NAME;
         const a = shopAppearanceFromRow(appRow);
         themeSettings = a.themeSettings;
         customCss = a.customCss;
@@ -1222,6 +1241,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             config = { fields: [...DEFAULT_FIELDS] };
             isDefault = true;
             enabled = true;
+            name = DEFAULT_CUSTOMER_B2B_FORM_NAME;
         }
         const a = shopAppearanceFromRow(appRow);
         themeSettings = a.themeSettings;
@@ -1257,21 +1277,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 }
                 : f
         );
-        if (!config.fields.some((f) => String(f.type).toLowerCase() === "password")) {
+        if (!config.fields.some((f) => String(f.type).toLowerCase() === "phone")) {
             const emailIdx = config.fields.findIndex((f) => String(f.type).toLowerCase() === "email");
-            const pwdField: FormField = {
-                label: "Password",
-                type: "password",
-                required: false,
+            const phoneField: FormField = {
+                label: "Phone",
+                type: "phone",
+                required: true,
                 enabled: true,
                 step: 1,
                 isDefault: false,
                 sortKey: newFieldSortKey(),
             };
             if (emailIdx >= 0) {
-                config.fields = [...config.fields.slice(0, emailIdx + 1), pwdField, ...config.fields.slice(emailIdx + 1)];
+                config.fields = [...config.fields.slice(0, emailIdx + 1), phoneField, ...config.fields.slice(emailIdx + 1)];
             } else {
-                config.fields = [...config.fields, pwdField];
+                config.fields = [...config.fields, phoneField];
             }
         }
     }
@@ -1357,6 +1377,10 @@ function validateField(raw: unknown): FormField | null {
                 ? o.dateFormat.trim()
                 : "dd_slash_mm_yyyy"
             : undefined;
+    const textFormat =
+        normalizedType === "text" || normalizedType === "textarea"
+            ? normalizeTextFormat(o.textFormat)
+            : undefined;
     let minRequired: number | undefined;
     if (type === "checkbox") {
         const raw = o.minRequired;
@@ -1380,6 +1404,7 @@ function validateField(raw: unknown): FormField | null {
         options: options?.length ? options : undefined,
         phoneCountryCode: phoneCountryCode || undefined,
         dateFormat: dateFormat ?? undefined,
+        textFormat: textFormat ?? undefined,
         maxFileCount: maxFileCount ?? undefined,
         maxFileSizeMb: maxFileSizeMb ?? undefined,
         minRequired: minRequired ?? undefined,
@@ -1440,7 +1465,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const formData = await request.formData();
     const configStr = formData.get("config") as string | null;
     const formIdParam = (formData.get("formId") as string)?.trim() || null;
-    const name = (formData.get("name") as string)?.trim() ?? "";
+    const name = ((formData.get("name") as string)?.trim() || DEFAULT_CUSTOMER_B2B_FORM_NAME);
     const formType = (formData.get("formType") as string)?.trim() || "wholesale";
     const isDefault = formData.get("isDefault") === "true" || formData.get("isDefault") === "1";
     const enabled = formData.get("enabled") !== "false" && formData.get("enabled") !== "0";
@@ -1505,6 +1530,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         // Form fields just changed — drop the per-shop label/layout cache so admin pages
         // (customer detail, customers list, CSV export) see the new schema immediately.
         invalidateFormFieldsCache(shop);
+        invalidateCache(shopKey(shop, "formConfig"));
 
         if (formIdParam) {
             const existing = await prisma.formConfig.findFirst({ where: { id: formIdParam, shop } });
@@ -1614,6 +1640,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     console.warn("Shop appearance save failed:", e);
                 }
             }
+            void ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
+                console.warn("[FormBuilder] ensureRegistrationStorefrontPage after create failed:", err);
+            });
             return { success: true, formId: created.id, formUpdatedAt: created.updatedAt.toISOString() };
         }
     } catch (dbError) {
@@ -1689,9 +1718,14 @@ export default function FormBuilder() {
     const [storefrontHeading, setStorefrontHeading] = useState(loaderStorefrontHeading ?? "");
     const [storefrontDescription, setStorefrontDescription] = useState(loaderStorefrontDescription ?? "");
     const [themeSettings, setThemeSettings] = useState<ThemeSettings>(loaderThemeSettings);
+    const [debouncedThemeSettings, setDebouncedThemeSettings] = useState<ThemeSettings>(loaderThemeSettings);
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedThemeSettings(themeSettings), 200);
+        return () => clearTimeout(timer);
+    }, [themeSettings]);
     const [customCss, setCustomCss] = useState(() => (typeof loaderCustomCss === "string" ? loaderCustomCss : ""));
     const [appearanceTemplateId, setAppearanceTemplateId] = useState(loaderAppearanceTemplateId);
-    const previewTheme = useMemo(() => normalizeThemeSettings(themeSettings), [themeSettings]);
+    const previewTheme = useMemo(() => normalizeThemeSettings(debouncedThemeSettings), [debouncedThemeSettings]);
     const previewContainerStyle = useMemo(
         (): CSSProperties => ({
             fontFamily: previewTheme.fontFamily,
@@ -2221,6 +2255,15 @@ export default function FormBuilder() {
             address: "text", zip_code: "text", city: "text", state: "text", country: "text",
         };
         return map[fieldType] || "text";
+    };
+
+    const getPreviewTextPlaceholder = (field: FormField) => {
+        if (field.placeholder?.trim()) return field.placeholder.trim();
+        const formatPh = getTextFormatPlaceholder(field.textFormat ?? "text");
+        const type = (field.type || "").toLowerCase();
+        if (formatPh && (type === "text" || type === "textarea")) return formatPh;
+        if (type === "address") return "Enter Address";
+        return `Enter ${field.label}`;
     };
 
     const toastMarkup = showToast ? (
@@ -2815,7 +2858,7 @@ export default function FormBuilder() {
                                                                     <textarea
                                                                         disabled
                                                                         rows={4}
-                                                                        placeholder={field.placeholder || `Enter ${field.label}`}
+                                                                        placeholder={getPreviewTextPlaceholder(field)}
                                                                         style={previewFieldInputStyle}
                                                                     />
                                                                 ) : type === "password" ? (
@@ -2840,12 +2883,7 @@ export default function FormBuilder() {
                                                                 ) : (
                                                                     <input
                                                                         type={getInputType(field.type)}
-                                                                        placeholder={
-                                                                            field.placeholder ||
-                                                                            (type === "address"
-                                                                                ? "Enter Address"
-                                                                                : `Enter ${field.label}`)
-                                                                        }
+                                                                        placeholder={getPreviewTextPlaceholder(field)}
                                                                         disabled
                                                                         style={previewFieldInputStyle}
                                                                     />

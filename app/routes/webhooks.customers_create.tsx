@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
+import { getCustomerApprovalModeForShop } from "../models/approval.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
     const { admin, payload, topic, shop } = await authenticate.webhook(request);
@@ -10,16 +11,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     console.log(`Received ${topic} webhook for ${shop}`);
 
-    // Customer ID is in payload.id
     const customerId = `gid://shopify/Customer/${payload.id}`;
 
-    // Check if customer already has status:pending, status:approved, or status:denied
     const tags = (payload.tags || "") as string;
     const tagList = tags.split(",").map(t => t.trim());
 
     const hasStatusTag = tagList.some(tag => tag.startsWith("status:"));
 
     if (!hasStatusTag) {
+        const approvalMode = shop ? await getCustomerApprovalModeForShop(shop) : "manual";
+        if (approvalMode === "auto") {
+            console.log(
+                `Skipping status:pending tag for ${customerId} — shop uses auto approval.`,
+            );
+            return new Response();
+        }
+
         console.log(`Tagging customer ${customerId} as status:pending`);
 
         await admin.graphql(

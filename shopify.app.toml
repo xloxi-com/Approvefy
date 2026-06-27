@@ -21,7 +21,7 @@ uri = "https://approvefy.vercel.app/api/webhooks"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,read_locales,write_app_proxy,write_customers,write_products"
+scopes = "read_customers,read_locales,read_online_store_pages,write_app_proxy,write_customers,write_online_store_pages,write_products"
 
 [auth]
 redirect_urls = [

@@ -14,8 +14,10 @@ import {
     addPendingStatusTagToShopifyCustomer,
     getOfflineAccessTokenForShop,
     reconcilePendingRegistrationRow,
+    reconcileLinkedPendingRegistrationFromShopifyTags,
     shopifyCustomerHasAnyConfiguredApprovalTag,
-} from "../models/approval.server"; 
+} from "../models/approval.server";
+import { getRegistrationAfterSubmitSettings } from "../lib/customer-approval-settings.server"; 
 import { uploadFileToSupabase } from "../lib/supabase.server";
 import { sendApprovalEmail } from "../lib/approval-email.server";
 import { getShopNameAndEmail } from "../lib/shop-meta.server";
@@ -23,6 +25,11 @@ import { sanitizeRegistrationRedirectForResponse } from "../lib/safe-registratio
 import { normalizeRegistrationPhone, validateStoredRegistrationPhone } from "../lib/registration-phone";
 import { shopHasActiveAppSubscription } from "../lib/app-subscription.server";
 import { getMerchantPlanForShop } from "../lib/merchant-plan.server";
+import {
+    buildTextFormatByFieldKey,
+    getTextFormatErrorMessage,
+    validateTextFormatValue,
+} from "../lib/text-format";
 
 type CoreFieldRequirements = {
     firstName: boolean;
@@ -259,9 +266,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
 
         if (fileFieldsToUpload.length > 0) {
-            // Upload every file from every field in parallel — Supabase storage requests are
-            // independent, and waiting for them sequentially was the dominant cost on submits
-            // with multiple file fields (each upload was ~200–800 ms).
             const flat = fileFieldsToUpload.flatMap((field) =>
                 field.files.map((file) => ({ field, file }))
             );
@@ -275,6 +279,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 })
             );
 
+            const uploadErrors: Record<string, string> = {};
             let cursor = 0;
             for (const field of fileFieldsToUpload) {
                 const processed: Array<{ name?: string; type?: string; size?: number; url: string }> = [];
@@ -284,12 +289,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     cursor += 1;
                     if (result.error || !result.url) {
                         console.error("File upload failed:", result.error);
-                        return new Response(JSON.stringify({
-                            error: `Failed to upload file "${file.name || field.key}". Please try again.`
-                        }), {
-                            status: 400,
-                            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-                        });
+                        uploadErrors[field.key] =
+                            result.error || `Failed to upload file "${file.name || field.key}"`;
+                        continue;
                     }
                     processed.push({
                         name: file.name,
@@ -298,7 +300,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                         url: result.url,
                     });
                 }
-                customFields[field.key] = JSON.stringify(field.isArray ? processed : processed[0]);
+                if (processed.length > 0) {
+                    customFields[field.key] = JSON.stringify(field.isArray ? processed : processed[0]);
+                }
+            }
+            if (Object.keys(uploadErrors).length > 0) {
+                customFields._uploadErrors = JSON.stringify(uploadErrors);
             }
         }
 
@@ -355,6 +362,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             });
         }
 
+        const textFormatByKey = buildTextFormatByFieldKey(formConfig?.fields);
+        for (const [fieldKey, formatKey] of textFormatByKey) {
+            const rawValue = customFields[fieldKey];
+            if (typeof rawValue !== "string") continue;
+            const trimmed = rawValue.trim();
+            if (!trimmed) continue;
+            if (!validateTextFormatValue(trimmed, formatKey)) {
+                return new Response(
+                    JSON.stringify({ error: getTextFormatErrorMessage(formatKey) }),
+                    {
+                        status: 400,
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Access-Control-Allow-Origin": "*",
+                        },
+                    },
+                );
+            }
+        }
+
         // When any address field is filled, country is required
         const hasAnyAddressField = [address, city, state, zipCode].some((v) => typeof v === "string" && v.trim() !== "");
         const countryTrimmed = typeof country === "string" ? country.trim() : "";
@@ -400,11 +427,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             !linkedCustomerGid && existingOwners.length === 1 ? existingOwners[0] : null;
         const ownerForWrite = linkedCustomerGid || inferredOwnerGid;
 
+        const registrationSettingsPromise = shop
+            ? getRegistrationAfterSubmitSettings(shop)
+            : Promise.resolve({
+                  approvalMode: "manual" as const,
+                  afterSubmit: "message" as const,
+                  redirectUrl: "",
+                  successMessage:
+                      "Registration successful! Your account is pending approval. You will receive an email once approved.",
+              });
+
+        // Email + phone duplicate checks are independent — run in parallel when both apply.
+        const [emailExists, phoneExists, registrationSettings] = await Promise.all([
+            hasUserEmail
+                ? checkEmailExists(shop, email, admin, {
+                      owningCustomerGid: verifiedShopifyOwnerGid,
+                  })
+                : Promise.resolve(false),
+            phone
+                ? checkPhoneExists(shop, phone, admin, {
+                      owningCustomerGid: verifiedShopifyOwnerGid,
+                  })
+                : Promise.resolve(false),
+            registrationSettingsPromise,
+        ]);
+
         // True conflict: another account’s registrations or multiple Shopify customers for this email
         if (hasUserEmail) {
-            const emailExists = await checkEmailExists(shop, email, admin, {
-                owningCustomerGid: verifiedShopifyOwnerGid,
-            });
             if (emailExists) {
                 // Guest (no verified Shopify owner on this submit): pending-only duplicate → friendly copy, not "email taken"
                 if (!verifiedShopifyOwnerGid) {
@@ -501,9 +550,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             });
         }
         if (phone) {
-            const phoneExists = await checkPhoneExists(shop, phone, admin, {
-                owningCustomerGid: verifiedShopifyOwnerGid,
-            });
             if (phoneExists) {
                 return new Response(
                     JSON.stringify({
@@ -529,6 +575,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         if (language) mergedCustomData.language = language;
 
         const companyTrimmed = typeof company === "string" ? company.trim() : "";
+
+        let approvalMode = registrationSettings.approvalMode;
+        let afterSubmit = registrationSettings.afterSubmit;
+        let redirectUrl = registrationSettings.redirectUrl;
+        let successMessage = registrationSettings.successMessage;
+
+        if (approvalMode === "auto" && !hasUserEmail) {
+            approvalMode = "manual";
+        }
 
         // Save or update registration (logged-in Shopify customer re-applying: update pending row + link customerId for tag-only approval)
         let registration: Awaited<ReturnType<typeof saveRegistration>> = null;
@@ -678,40 +733,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             });
         }
 
-        if (ownerForWrite) {
-            // Fire-and-forget: tagging the customer "status:pending" is non-essential for the
-            // submit response (DB row already saved). Awaiting it added an Admin-API roundtrip
-            // (~200–600 ms) on every submit. Errors are still logged inside the helper.
+        if (ownerForWrite && approvalMode !== "auto") {
+            // Fire-and-forget: only tag pending for manual approval shops.
             void addPendingStatusTagToShopifyCustomer(admin, ownerForWrite).catch((e) => {
                 console.warn("[api.register] background tagsAdd status:pending failed:", e);
             });
-        }
-
-        let approvalMode: "manual" | "auto" = "manual";
-        let afterSubmit: "redirect" | "message" = "message";
-        let redirectUrl = "";
-        let successMessage = "Registration successful! Your account is pending approval. You will receive an email once approved.";
-        try {
-            const settings = await prisma.appSettings.findUnique({ where: { shop } });
-            const cas = (settings as { customerApprovalSettings?: unknown })?.customerApprovalSettings;
-            if (cas && typeof cas === "object" && !Array.isArray(cas)) {
-                const o = cas as Record<string, unknown>;
-                const modeRaw = String(o.approvalMode ?? "")
-                    .trim()
-                    .toLowerCase();
-                approvalMode = modeRaw === "auto" ? "auto" : "manual";
-                afterSubmit = o.afterSubmit === "redirect" ? "redirect" : "message";
-                redirectUrl = typeof o.redirectUrl === "string" ? o.redirectUrl : "";
-                if (typeof o.successMessage === "string" && o.successMessage.trim()) {
-                    successMessage = o.successMessage.trim();
-                }
-            }
-        } catch {
-            // keep defaults
-        }
-
-        if (approvalMode === "auto" && !hasUserEmail) {
-            approvalMode = "manual";
         }
 
         if (approvalMode === "auto") {
@@ -742,6 +768,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     persistedEmail,
                     shopAccessToken,
                 );
+                if (!repaired) {
+                    repaired = await reconcileLinkedPendingRegistrationFromShopifyTags(
+                        admin!,
+                        shop,
+                        registration.id,
+                    );
+                }
                 if (!repaired) {
                     const row = await prisma.registration.findUnique({
                         where: { id: registration.id },
@@ -798,6 +831,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                         persistedEmail,
                         shopAccessToken,
                     );
+                    if (!repairedAfter) {
+                        await reconcileLinkedPendingRegistrationFromShopifyTags(
+                            admin!,
+                            shop,
+                            registration.id,
+                        );
+                    }
                     if (repairedAfter) {
                         console.warn(
                             "[api.register] Auto-approval: DB was still pending after approveCustomer; reconciled from Shopify.",
@@ -805,19 +845,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     }
                 }
             }
-            // Approval email is best-effort — SMTP/template errors must not undo a successful Shopify approval.
+            // Approval email is best-effort — fire after response path; never block the HTTP reply.
             if (hasUserEmail && email?.trim()) {
-                try {
-                    const { shopName, shopEmail } = await getShopNameAndEmail(admin, shop);
-                    await sendApprovalEmail(shop, email.trim(), {
-                        shopName,
-                        shopEmail,
-                        customerFirstName: firstName?.trim() || "Customer",
-                        activationUrl: activationUrl ?? undefined,
-                    });
-                } catch (emailErr) {
-                    console.error("Auto-approval: customer approved but approval email failed (non-fatal):", emailErr);
-                }
+                void (async () => {
+                    try {
+                        const { shopName, shopEmail } = await getShopNameAndEmail(admin, shop);
+                        await sendApprovalEmail(shop, email.trim(), {
+                            shopName,
+                            shopEmail,
+                            customerFirstName: firstName?.trim() || "Customer",
+                            activationUrl: activationUrl ?? undefined,
+                        });
+                    } catch (emailErr) {
+                        console.error(
+                            "Auto-approval: customer approved but approval email failed (non-fatal):",
+                            emailErr,
+                        );
+                    }
+                })();
             }
             successMessage =
                 "Thank you for registering! Your account is ready. You can log in and start browsing and ordering products.";

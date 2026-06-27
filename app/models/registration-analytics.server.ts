@@ -2,6 +2,7 @@
  * Registration counts for admin dashboard — isolated so routes like `/app` do not import the full approval model.
  */
 import prisma from "../db.server";
+import { CACHE_TTL, getCache, setCache, shopKey, invalidateCache } from "../lib/cache.server";
 
 export interface AnalyticsResponse {
     total: number;
@@ -9,30 +10,16 @@ export interface AnalyticsResponse {
     denied: number;
 }
 
-const ANALYTICS_CACHE_TTL_MS = 30_000;
-const analyticsCache = new Map<string, { value: AnalyticsResponse; at: number }>();
-
-function setBoundedCacheEntry<V>(map: Map<string, V>, key: string, value: V, max: number): void {
-    map.set(key, value);
-    if (map.size > max) {
-        const oldest = map.keys().next().value;
-        if (oldest != null) map.delete(oldest);
-    }
-}
-
 export function invalidateAnalyticsCache(shop: string): void {
-    const key = (shop || "").trim().toLowerCase();
-    if (key) analyticsCache.delete(key);
+    invalidateCache(shopKey(shop, "analytics"));
 }
 
 export async function getAnalytics(shop: string): Promise<AnalyticsResponse> {
     try {
-        const key = (shop || "").trim().toLowerCase();
-        if (key) {
-            const cached = analyticsCache.get(key);
-            if (cached && Date.now() - cached.at < ANALYTICS_CACHE_TTL_MS) {
-                return cached.value;
-            }
+        const key = shopKey(shop, "analytics");
+        if (shop) {
+            const cached = getCache<AnalyticsResponse>(key);
+            if (cached) return cached;
         }
 
         const groups = await prisma.registration.groupBy({
@@ -53,8 +40,8 @@ export async function getAnalytics(shop: string): Promise<AnalyticsResponse> {
         }
 
         const result = { total, pending, denied };
-        if (key) {
-            setBoundedCacheEntry(analyticsCache, key, { value: result, at: Date.now() }, 200);
+        if (shop) {
+            setCache(key, result, CACHE_TTL.analytics);
         }
         return result;
     } catch (error) {

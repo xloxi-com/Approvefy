@@ -180,9 +180,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const id = decodeURIComponent(rawId);
 
   try {
-    const [details, formFields] = await Promise.all([
+    const [details, formFields, merchantPlan] = await Promise.all([
       getRegistrationDetails(id, shop),
       getRegistrationFormFieldsForShopWithAdmin(shop, admin),
+      getMerchantPlanForShop(shop),
     ]);
     if (!details) {
       return { error: "Customer not found" };
@@ -190,7 +191,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
     const customDataLabels = buildCustomDataLabels(formFields);
     const registrationLayout = buildRegistrationAdminLayout(formFields);
-    const merchantPlan = await getMerchantPlanForShop(shop);
 
     return {
       id: params.id ?? "",
