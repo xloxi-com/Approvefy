@@ -319,7 +319,7 @@ const CUSTOMER_APPROVAL_DEFAULTS: CustomerApprovalSettings = {
     blockLoggedInWithoutApprovedTag: false,
     loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
     showAuthTabsOnRegistration: true,
-    redirectSignInLinksToFormPage: false,
+    redirectSignInLinksToFormPage: true,
 };
 
 type ShopMetaCacheEntry = {
@@ -518,7 +518,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                             typeof o.showAuthTabsOnRegistration === "boolean"
                                 ? o.showAuthTabsOnRegistration
                                 : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
-                        redirectSignInLinksToFormPage: o.redirectSignInLinksToFormPage === true,
+                        redirectSignInLinksToFormPage:
+                            typeof o.redirectSignInLinksToFormPage === "boolean"
+                                ? o.redirectSignInLinksToFormPage
+                                : CUSTOMER_APPROVAL_DEFAULTS.redirectSignInLinksToFormPage,
                         emailOnReject: o.emailOnReject === true,
                         rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                         // Prefer email_template table for subject/body so reload always shows last-saved template
@@ -858,7 +861,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                         typeof o.showAuthTabsOnRegistration === "boolean"
                             ? o.showAuthTabsOnRegistration
                             : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
-                    redirectSignInLinksToFormPage: o.redirectSignInLinksToFormPage === true,
+                    redirectSignInLinksToFormPage:
+                        typeof o.redirectSignInLinksToFormPage === "boolean"
+                            ? o.redirectSignInLinksToFormPage
+                            : CUSTOMER_APPROVAL_DEFAULTS.redirectSignInLinksToFormPage,
                     emailOnReject: o.emailOnReject === true,
                     rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                     rejectEmailSubject: typeof o.rejectEmailSubject === "string" ? o.rejectEmailSubject : DEFAULT_REJECT_SUBJECT,

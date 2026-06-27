@@ -45,6 +45,7 @@ import {
 } from "../lib/shopify-embed-navigation";
 
 import { authenticate } from "../shopify.server";
+import { runAppInstallSetup } from "../lib/app-install.server";
 
 import { AppErrorPage } from "../components/AppErrorPage";
 import { CrispChatWidget } from "../components/CrispChatWidget";
@@ -95,6 +96,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       throw redirect(pricingPath);
     }
   }
+
+  void runAppInstallSetup(admin, session.shop);
 
 
 

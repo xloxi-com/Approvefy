@@ -6,6 +6,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
+import { runAppInstallSetup } from "./lib/app-install.server";
 
 /** Canonical app URL; must match Partners `application_url` / redirect URLs for OAuth. */
 function resolveAppUrl(): string {
@@ -40,6 +41,11 @@ const shopify = shopifyApp({
   distribution: AppDistribution.AppStore,
   future: {
     expiringOfflineAccessTokens: true,
+  },
+  hooks: {
+    afterAuth: async ({ session, admin }) => {
+      await runAppInstallSetup(admin, session.shop);
+    },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }

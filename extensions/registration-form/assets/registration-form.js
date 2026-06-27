@@ -1871,7 +1871,7 @@
         blockLoggedInWithoutApprovedTag: false,
         loggedInCheckoutBlockedMessage: '',
         showAuthTabsOnRegistration: true,
-        redirectSignInLinksToFormPage: false
+        redirectSignInLinksToFormPage: true
       };
       if (!cas0 || typeof cas0 !== 'object' || Array.isArray(cas0)) {
         config.customerApprovalSettings = casDefaults;

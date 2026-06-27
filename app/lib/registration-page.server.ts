@@ -125,7 +125,7 @@ export async function isRegistrationPageRedirectEnabled(shop: string): Promise<b
     select: { customerApprovalSettings: true },
   });
   const parsed = parseCustomerApprovalSettings(row?.customerApprovalSettings);
-  return parsed.redirectSignInLinksToFormPage === true;
+  return parsed.redirectSignInLinksToFormPage !== false;
 }
 
 /** Publish or unpublish the auto-created registration page (unpublished = 404 on storefront). */
@@ -190,11 +190,12 @@ export async function syncRegistrationPageRedirectSettings(shop: string): Promis
 
   const signInRedirectExplicitlyDisabled = parsed.redirectSignInLinksToFormPage === false;
 
+  if (!signInRedirectExplicitlyDisabled) {
+    next.redirectSignInLinksToFormPage = true;
+  }
+
   if (!existingRedirect) {
     next.guestCheckoutRedirectUrl = REGISTRATION_PAGE_PATH;
-    if (!signInRedirectExplicitlyDisabled) {
-      next.redirectSignInLinksToFormPage = true;
-    }
   }
 
   await prisma.appSettings.upsert({
@@ -229,10 +230,12 @@ export async function ensureRegistrationStorefrontPage(
 ): Promise<EnsureRegistrationPageResult> {
   const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop);
   const storefrontPageUrl = registrationStorefrontUrl(shop);
-  const redirectEnabled = await isRegistrationPageRedirectEnabled(shop);
 
   let created = false;
   try {
+    await syncRegistrationPageRedirectSettings(shop);
+    const redirectEnabled = await isRegistrationPageRedirectEnabled(shop);
+
     const existing = await findRegistrationPage(admin);
     if (!existing) {
       created = await createRegistrationPage(admin, redirectEnabled);
@@ -242,7 +245,6 @@ export async function ensureRegistrationStorefrontPage(
       }
     }
     await syncRegistrationPageStorefrontVisibility(admin, shop, redirectEnabled);
-    await syncRegistrationPageRedirectSettings(shop);
   } catch (error) {
     console.warn("[RegistrationPage] ensureRegistrationStorefrontPage failed:", error);
   }

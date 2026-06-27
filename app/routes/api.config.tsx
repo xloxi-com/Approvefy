@@ -466,7 +466,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                                 typeof o.showAuthTabsOnRegistration === "boolean"
                                     ? o.showAuthTabsOnRegistration
                                     : true,
-                            redirectSignInLinksToFormPage: o.redirectSignInLinksToFormPage === true,
+                            redirectSignInLinksToFormPage:
+                                typeof o.redirectSignInLinksToFormPage === "boolean"
+                                    ? o.redirectSignInLinksToFormPage
+                                    : true,
                             registrationPagePath:
                                 typeof o.registrationPagePath === "string" && o.registrationPagePath.trim()
                                     ? o.registrationPagePath.trim()
@@ -508,7 +511,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 blockLoggedInWithoutApprovedTag: false,
                 loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
                 showAuthTabsOnRegistration: true,
-                redirectSignInLinksToFormPage: false,
+                redirectSignInLinksToFormPage: true,
                 registrationPagePath: REGISTRATION_PAGE_PATH,
             };
         }
