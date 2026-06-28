@@ -1,6 +1,6 @@
-import { Suspense, useCallback, useEffect, useId, useState, type ReactNode } from "react";
-import type { LoaderFunctionArgs } from "react-router";
-import { Await, data, useLoaderData, useNavigate, Link, useRevalidator } from "react-router";
+import { Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { Await, data, useFetcher, useLoaderData, useNavigate, Link, useRevalidator } from "react-router";
 import {
   Page,
   Text,
@@ -30,10 +30,15 @@ import prisma from "../db.server";
 import { getAnalytics } from "../models/registration-analytics.server";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
 import {
-  ensureRegistrationStorefrontPage,
+  buildRegistrationPageThemeEditorUrl,
+  findRegistrationPage,
+  registrationStorefrontUrl,
+  runAddRegistrationFormSetup,
   REGISTRATION_PAGE_PATH,
 } from "../lib/registration-page.server";
+import { ensureRegistrationPageThemeTemplate, cleanRegistrationFormOffDefaultPageTemplate } from "../lib/theme-registration-template.server";
 import { getThemeSetupStatus } from "../lib/theme-setup-status.server";
+import { buildAppEmbedThemeEditorUrl, ensureAppEmbedEnabled } from "../lib/theme-app-embed.server";
 import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
 import {
   ensureOnboardingFormReviewedWhenFormsExist,
@@ -41,6 +46,7 @@ import {
   isOnboardingSettingsSaved,
 } from "../lib/onboarding-status.server";
 import { parseCustomerApprovalSettings } from "../lib/customer-approval-settings.server";
+import { openThemeEditorUrl } from "../lib/open-theme-editor.client";
 
 type ShopifyAppHome = {
   app?: {
@@ -67,20 +73,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let registrationPageCreated = false;
   let registrationPageExists = false;
   let registrationPagePublished = false;
+  let registrationPageTemplateExists = false;
+  let registrationFormOnDefaultPage = false;
   let appEmbedEnabled = false;
   let registrationFormBlockOnPage = false;
   let themeSetupCheckAvailable = false;
 
   const t0 = performance.now();
   try {
-    const [formCount, appSettingsRow, pageResult, themeSetup] = await Promise.all([
+    const [formCount, appSettingsRow, themeSetup, existingPage] = await Promise.all([
       prisma.formConfig.count({ where: { shop } }),
       prisma.appSettings.findUnique({
         where: { shop },
         select: { customerApprovalSettings: true },
       }),
-      ensureRegistrationStorefrontPage(admin, shop),
       getThemeSetupStatus(admin),
+      findRegistrationPage(admin),
     ]);
     formsCount = formCount;
     if (formCount > 0) {
@@ -91,14 +99,42 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const approvalSettings = parseCustomerApprovalSettings(appSettingsRow?.customerApprovalSettings);
     formReviewed = isOnboardingFormReviewed(approvalSettings) || formCount > 0;
     settingsSaved = isOnboardingSettingsSaved(approvalSettings);
-    registrationPageThemeEditorUrl = pageResult.themeEditorUrl;
-    registrationPageStorefrontUrl = pageResult.storefrontPageUrl;
-    registrationPageCreated = pageResult.created;
-    registrationPageExists = pageResult.pageExists;
-    registrationPagePublished = pageResult.pagePublished;
+    const pageExists = !!existingPage;
+    const pagePublished = existingPage?.isPublished === true;
+    const templateExists = themeSetup.registrationPageTemplateExists;
+    const blockOnTemplate = themeSetup.registrationFormBlockOnPage;
+
+    registrationPageThemeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
+      pageExists,
+      templateExists,
+      blockOnTemplate,
+      themeGid: themeSetup.mainThemeId,
+    });
+    registrationPageStorefrontUrl = registrationStorefrontUrl(shop);
+    registrationPageCreated = false;
+    registrationPageExists = pageExists;
+    registrationPagePublished = pagePublished;
+    registrationPageTemplateExists = templateExists;
+    registrationFormOnDefaultPage = themeSetup.registrationFormOnDefaultPage;
     appEmbedEnabled = themeSetup.appEmbedEnabled;
     registrationFormBlockOnPage = themeSetup.registrationFormBlockOnPage;
     themeSetupCheckAvailable = themeSetup.themeCheckAvailable;
+
+    if (!themeSetup.appEmbedEnabled && themeSetup.themeCheckAvailable) {
+      void ensureAppEmbedEnabled(admin).catch((err) => {
+        console.warn("[Home] ensureAppEmbedEnabled background failed:", err);
+      });
+    }
+    if (!themeSetup.registrationPageTemplateExists && themeSetup.themeCheckAvailable) {
+      void ensureRegistrationPageThemeTemplate(admin).catch((err) => {
+        console.warn("[Home] ensureRegistrationPageThemeTemplate background failed:", err);
+      });
+    }
+    if (themeSetup.themeCheckAvailable) {
+      void cleanRegistrationFormOffDefaultPageTemplate(admin).catch((err) => {
+        console.warn("[Home] cleanRegistrationFormOffDefaultPageTemplate failed:", err);
+      });
+    }
   } catch (error) {
     dbUnavailable = true;
     console.error("[Home] Failed to load setup data:", error);
@@ -106,12 +142,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const dbMs = Math.round(performance.now() - t0);
 
   const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
-  const apiKey = (process.env.SHOPIFY_API_KEY || "").trim();
-  const appEmbedActivate =
-    apiKey.length > 0
-      ? `&activateAppId=${encodeURIComponent(`${apiKey}/app-embed`)}`
-      : "";
-  const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?context=apps${appEmbedActivate}`;
+  const themeEditorUrl = buildAppEmbedThemeEditorUrl(shop);
   const storefrontUrl = `https://${storeHandle}.myshopify.com`;
 
   const setupTasksTotal = 4;
@@ -140,12 +171,74 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       registrationPageCreated,
       registrationPageExists,
       registrationPagePublished,
+      registrationPageTemplateExists,
+      registrationFormOnDefaultPage,
       appEmbedEnabled,
       registrationFormBlockOnPage,
       themeSetupCheckAvailable,
     },
     { headers: { "Server-Timing": `db;dur=${dbMs}` } },
   );
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session, admin } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+  const shop = session.shop;
+
+  if (intent === "enable-app-embed") {
+    const embed = await ensureAppEmbedEnabled(admin);
+    return data({
+      ok: true as const,
+      intent: "enable-app-embed" as const,
+      savedViaApi: embed.enabled && !embed.writeFailed,
+      writeFailed: embed.writeFailed,
+      openUrl: buildAppEmbedThemeEditorUrl(shop),
+    });
+  }
+
+  if (intent !== "add-registration-form") {
+    return data({ ok: false as const });
+  }
+
+  try {
+    const setup = await runAddRegistrationFormSetup(admin, shop);
+
+    return data({
+      ok: true as const,
+      intent: "add-registration-form" as const,
+      openUrl:
+        setup.themeEditorUrl ||
+        buildRegistrationPageThemeEditorUrl(shop, {
+          pageExists: setup.pageExists,
+          templateExists: setup.templateExists,
+          blockOnTemplate: setup.blockOnTemplate,
+        }),
+      blockOnTemplate: setup.blockOnTemplate,
+      templateExists: setup.templateExists,
+      templateWriteFailed: setup.templateWriteFailed,
+      pageExists: setup.pageExists,
+      savedViaApi: setup.savedViaApi,
+      needsEditorSave: setup.needsEditorSave,
+    });
+  } catch (error) {
+    console.error("[Home] add-registration-form action failed:", error);
+    return data({
+      ok: true as const,
+      intent: "add-registration-form" as const,
+      openUrl: buildRegistrationPageThemeEditorUrl(shop, {
+        pageExists: true,
+        templateExists: false,
+      }),
+      blockOnTemplate: false,
+      templateExists: false,
+      templateWriteFailed: true,
+      pageExists: true,
+      savedViaApi: false,
+      needsEditorSave: false,
+    });
+  }
 };
 
 function countsFromAnalytics(analytics: Analytics | null): {
@@ -305,12 +398,20 @@ export default function Index() {
     registrationPageStorefrontUrl,
     registrationPageExists,
     registrationPagePublished,
+    registrationPageTemplateExists,
+    registrationFormOnDefaultPage,
     appEmbedEnabled,
     registrationFormBlockOnPage,
     themeSetupCheckAvailable,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const revalidator = useRevalidator();
+  const registrationFormFetcher = useFetcher<typeof action>();
+  const appEmbedFetcher = useFetcher<typeof action>();
+  const pendingThemeEditorOpenRef = useRef(false);
+  const pendingAppEmbedOpenRef = useRef(false);
+  const [registrationFormNotice, setRegistrationFormNotice] = useState<string | null>(null);
+  const [appEmbedNotice, setAppEmbedNotice] = useState<string | null>(null);
   const progressLabelId = useId();
 
   const [extensionSetup, setExtensionSetup] = useState({
@@ -382,6 +483,110 @@ export default function Index() {
       document.removeEventListener("visibilitychange", refreshSetup);
     };
   }, [revalidator, refreshExtensionSetup]);
+
+  const enableAppEmbed = useCallback(() => {
+    setAppEmbedNotice(null);
+    pendingAppEmbedOpenRef.current = true;
+    appEmbedFetcher.submit({ intent: "enable-app-embed" }, { method: "post" });
+  }, [appEmbedFetcher]);
+
+  useEffect(() => {
+    if (!pendingAppEmbedOpenRef.current) return;
+    if (appEmbedFetcher.state !== "idle") return;
+
+    pendingAppEmbedOpenRef.current = false;
+
+    if (!appEmbedFetcher.data?.ok || appEmbedFetcher.data.intent !== "enable-app-embed") {
+      setAppEmbedNotice("Could not enable the app embed. Refresh the app and try again.");
+      return;
+    }
+
+    revalidator.revalidate();
+
+    const openUrl = appEmbedFetcher.data.openUrl;
+    if (openUrl) {
+      openThemeEditorUrl(openUrl);
+    }
+
+    if (appEmbedFetcher.data.savedViaApi) {
+      setAppEmbedNotice(
+        "Approvefy app embed enabled on your theme. Theme editor opened — click Save if prompted.",
+      );
+      return;
+    }
+
+    setAppEmbedNotice(
+      "Theme editor opened — toggle Approvefy under App embeds and click Save. Approve write_themes for Approvefy to auto-enable next time.",
+    );
+  }, [appEmbedFetcher.state, appEmbedFetcher.data, revalidator]);
+
+  const addRegistrationFormToPage = useCallback(() => {
+    setRegistrationFormNotice(null);
+    pendingThemeEditorOpenRef.current = true;
+
+    registrationFormFetcher.submit(
+      { intent: "add-registration-form" },
+      { method: "post" },
+    );
+  }, [registrationFormFetcher]);
+
+  useEffect(() => {
+    if (!pendingThemeEditorOpenRef.current) return;
+    if (registrationFormFetcher.state !== "idle") return;
+
+    pendingThemeEditorOpenRef.current = false;
+
+    const formResult = registrationFormFetcher.data;
+    if (!formResult || formResult.ok !== true || formResult.intent !== "add-registration-form") {
+      setRegistrationFormNotice(
+        "Could not set up the registration page. Refresh the app and try again.",
+      );
+      return;
+    }
+
+    revalidator.revalidate();
+
+    const openUrl = formResult.openUrl;
+    if (openUrl) {
+      openThemeEditorUrl(openUrl);
+    }
+
+    if (formResult.templateWriteFailed) {
+      setRegistrationFormNotice(
+        "Theme editor opened on Customer Registration. Approvefy could not write the template automatically — approve write_themes if prompted, refresh, and click Add form to page again.",
+      );
+      return;
+    }
+
+    if (formResult.savedViaApi) {
+      setRegistrationFormNotice(
+        "Registration Form added automatically under Template → Apps on Customer Registration. Theme editor opened for review — click Save if Shopify prompts you, then preview the page.",
+      );
+      return;
+    }
+
+    if (formResult.needsEditorSave) {
+      setRegistrationFormNotice(
+        "Theme editor opened on Customer Registration. Shopify will add Template → Apps → Registration Form automatically — click Save to publish.",
+      );
+      return;
+    }
+
+    if (formResult.blockOnTemplate) {
+      setRegistrationFormNotice(
+        "Registration Form is already on Customer Registration. Theme editor opened for review.",
+      );
+      return;
+    }
+
+    setRegistrationFormNotice(
+      "Theme editor opened on Customer Registration. Approve write_themes for Approvefy and try again for fully automatic setup.",
+    );
+  }, [
+    registrationFormFetcher.state,
+    registrationFormFetcher.data,
+    revalidator,
+  ]);
 
   return (
     <Page
@@ -499,6 +704,48 @@ export default function Index() {
                 publish the page automatically.
               </Banner>
             )}
+            {registrationFormOnDefaultPage && (
+              <Banner tone="warning" title="Registration Form is on the wrong page template">
+                The Registration Form block is on the <Text as="span" variant="bodyMd" fontWeight="semibold">Default page</Text>{" "}
+                template (e.g. Your Privacy Choices). Remove it there in the theme editor (Template → Apps → Registration Form → Remove), click Save,
+                then use &quot;Add form to page&quot; — Approvefy adds it only to{" "}
+                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                  Customer Registration
+                </Text>{" "}
+                ({registrationPagePath}).
+              </Banner>
+            )}
+            {registrationPageExists && !registrationPageTemplateExists && (
+              <Banner tone="warning" title="Customer Registration template required">
+                The Registration Form is added only to{" "}
+                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                  page.customer-registration
+                </Text>
+                , not the default page template. Click &quot;Add form to page&quot; after approving{" "}
+                <Text as="span" variant="bodyMd" fontWeight="semibold">
+                  write_themes
+                </Text>{" "}
+                for Approvefy.
+              </Banner>
+            )}
+            {appEmbedNotice ? (
+              <Banner
+                tone={appEmbedNotice.includes("Could not") ? "warning" : "success"}
+                title="App embed setup"
+                onDismiss={() => setAppEmbedNotice(null)}
+              >
+                <p style={{ margin: 0 }}>{appEmbedNotice}</p>
+              </Banner>
+            ) : null}
+            {registrationFormNotice ? (
+              <Banner
+                tone={registrationFormNotice.includes("could not create") ? "warning" : "success"}
+                title="Registration page setup"
+                onDismiss={() => setRegistrationFormNotice(null)}
+              >
+                <p style={{ margin: 0 }}>{registrationFormNotice}</p>
+              </Banner>
+            ) : null}
             {!themeSetupCheckAvailable && !extensionSetup.loaded && (
               <Banner tone="info" title="Theme setup status unavailable">
                 Approvefy could not read your live theme files. Re-open the app and approve the updated
@@ -514,9 +761,19 @@ export default function Index() {
               optional={!appEmbedDone}
               actions={
                 <>
-                  <Button url={themeEditorUrl} variant={appEmbedDone ? "secondary" : "primary"} external>
-                    {appEmbedDone ? "Open theme editor" : "Enable app embed"}
-                  </Button>
+                  {appEmbedDone ? (
+                    <Button url={themeEditorUrl} variant="secondary" external>
+                      Open theme editor
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={enableAppEmbed}
+                      loading={appEmbedFetcher.state !== "idle"}
+                      variant="primary"
+                    >
+                      Enable app embed
+                    </Button>
+                  )}
                   <Button
                     url={registrationPageStorefrontUrl || `${storefrontUrl}${registrationPagePath}`}
                     variant="secondary"
@@ -542,18 +799,28 @@ export default function Index() {
               step={2}
               icon={PageIcon}
               title="Add form to registration page"
-              description={`Opens the Customer Registration page template (${registrationPagePath}) — not the default page template. The Registration Form block is added only to this page.`}
+              description={`Opens only the Customer Registration template (${registrationPagePath}) — never Default page. The Registration Form block is added exclusively to this page.`}
               complete={registrationPageFormDone}
               optional={!registrationPageFormDone}
               actions={
                 <>
-                  <Button
-                    url={registrationPageThemeEditorUrl || themeEditorUrl}
-                    variant={registrationPageFormDone ? "secondary" : "primary"}
-                    external
-                  >
-                    {registrationPageFormDone ? "Open page in theme editor" : "Add form to page"}
-                  </Button>
+                  {registrationPageFormDone ? (
+                    <Button
+                      url={registrationPageThemeEditorUrl || themeEditorUrl}
+                      variant="secondary"
+                      external
+                    >
+                      Open page in theme editor
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={addRegistrationFormToPage}
+                      loading={registrationFormFetcher.state !== "idle"}
+                      variant="primary"
+                    >
+                      Add form to page
+                    </Button>
+                  )}
                   {registrationPageStorefrontUrl && registrationPagePublished ? (
                     <Button url={registrationPageStorefrontUrl} variant="secondary" external>
                       Preview page

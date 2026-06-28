@@ -2,8 +2,12 @@ import prisma from "../db.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
 import {
   ensureRegistrationPageThemeTemplate,
+  installRegistrationFormOnCustomerRegistrationTemplate,
+  REGISTRATION_APPS_SECTION_ID,
   REGISTRATION_PAGE_TEMPLATE,
 } from "./theme-registration-template.server";
+import { ensureAppEmbedEnabled } from "./theme-app-embed.server";
+import { REGISTRATION_FORM_BLOCK_HANDLE } from "./theme-extension-setup-status";
 
 export const REGISTRATION_PAGE_HANDLE = "customer-registration";
 export const REGISTRATION_PAGE_TITLE = "Customer Registration";
@@ -20,26 +24,56 @@ function storeHandleFromShop(shop: string): string {
   return shop.replace(/\.myshopify\.com$/i, "");
 }
 
-/** Theme editor deep link: open the dedicated registration page template (not the default page template). */
+function themeNumericIdFromGid(themeGid: string | null | undefined): string | null {
+  if (!themeGid) return null;
+  const match = themeGid.match(/OnlineStoreTheme\/(\d+)/i);
+  return match?.[1] ?? null;
+}
+
+function buildThemeEditorBaseUrl(shop: string, themeGid?: string | null): string {
+  const storeHandle = storeHandleFromShop(shop);
+  const themeSegment = themeNumericIdFromGid(themeGid) ?? "current";
+  return `https://admin.shopify.com/store/${storeHandle}/themes/${themeSegment}/editor`;
+}
+
+/** Theme editor deep link: Customer Registration page only — never Default page (Privacy Choices, etc.). */
 export function buildRegistrationPageThemeEditorUrl(
   shop: string,
-  opts?: { pageExists?: boolean; templateReady?: boolean },
+  opts?: {
+    pageExists?: boolean;
+    /** templates/page.customer-registration.json exists on the live theme */
+    templateExists?: boolean;
+    /** Registration Form block is already in that template file */
+    blockOnTemplate?: boolean;
+    /** MAIN theme GID — deep link targets the same theme Approvefy writes to */
+    themeGid?: string | null;
+  },
 ): string {
-  const storeHandle = storeHandleFromShop(shop);
+  const base = buildThemeEditorBaseUrl(shop, opts?.themeGid);
   const apiKey = (process.env.SHOPIFY_API_KEY || "").trim();
-  const template = opts?.templateReady === false ? "page" : REGISTRATION_PAGE_TEMPLATE;
-  const addBlock =
-    apiKey && template === REGISTRATION_PAGE_TEMPLATE
-      ? `&addAppBlockId=${encodeURIComponent(`${apiKey}/registration-form`)}&target=mainSection`
-      : "";
-  const preview =
-    opts?.pageExists === true
-      ? `&previewPath=${encodeURIComponent(REGISTRATION_PAGE_PATH)}`
-      : "";
-  return (
-    `https://admin.shopify.com/store/${storeHandle}/themes/current/editor` +
-    `?template=${encodeURIComponent(template)}${preview}${addBlock}`
-  );
+  const params: string[] = [];
+
+  if (opts?.pageExists !== false) {
+    params.push(`previewPath=${encodeURIComponent(REGISTRATION_PAGE_PATH)}`);
+  }
+
+  // Only edit page.customer-registration — never templates/page.json (Default page).
+  if (opts?.templateExists !== true) {
+    return params.length ? `${base}?${params.join("&")}` : base;
+  }
+
+  params.push(`template=${encodeURIComponent(REGISTRATION_PAGE_TEMPLATE)}`);
+
+  if (apiKey && opts?.blockOnTemplate !== true) {
+    params.push(
+      `addAppBlockId=${encodeURIComponent(`${apiKey}/${REGISTRATION_FORM_BLOCK_HANDLE}`)}`,
+      "target=newAppsSection",
+    );
+  } else if (opts?.blockOnTemplate === true) {
+    params.push(`target=sectionId:${REGISTRATION_APPS_SECTION_ID}`);
+  }
+
+  return `${base}?${params.join("&")}`;
 }
 
 export function registrationStorefrontUrl(shop: string): string {
@@ -47,56 +81,49 @@ export function registrationStorefrontUrl(shop: string): string {
   return `https://${handle}.myshopify.com${REGISTRATION_PAGE_PATH}`;
 }
 
-async function findRegistrationPage(
+export async function findRegistrationPage(
   admin: AdminGraphqlClient,
 ): Promise<{ id: string; handle: string; isPublished: boolean } | null> {
-  const queries = [
-    `handle:${REGISTRATION_PAGE_HANDLE}`,
-    `handle:'${REGISTRATION_PAGE_HANDLE}'`,
-    `title:'${REGISTRATION_PAGE_TITLE}'`,
-  ];
-
-  for (const query of queries) {
-    const res = await admin.graphql(
-      `#graphql
-      query RegistrationPageByHandle($query: String!) {
-        pages(first: 5, query: $query) {
-          nodes {
-            id
-            handle
-            isPublished
-          }
+  const res = await admin.graphql(
+    `#graphql
+    query RegistrationPageByHandle($query: String!) {
+      pages(first: 5, query: $query) {
+        nodes {
+          id
+          handle
+          isPublished
         }
-      }`,
-      { variables: { query } },
-    );
-    const json = (await res.json()) as {
-      data?: { pages?: { nodes?: Array<{ id: string; handle: string; isPublished?: boolean }> } };
-      errors?: unknown;
-    };
-    if (json.errors) {
-      console.warn("[RegistrationPage] pages query failed:", query, json.errors);
-      continue;
-    }
-    const nodes = json.data?.pages?.nodes ?? [];
-    const exact =
-      nodes.find((n) => n.handle?.toLowerCase() === REGISTRATION_PAGE_HANDLE) ?? nodes[0];
-    if (exact?.handle) {
-      return { id: exact.id, handle: exact.handle, isPublished: exact.isPublished === true };
-    }
+      }
+    }`,
+    { variables: { query: `handle:${REGISTRATION_PAGE_HANDLE}` } },
+  );
+  const json = (await res.json()) as {
+    data?: { pages?: { nodes?: Array<{ id: string; handle: string; isPublished?: boolean }> } };
+    errors?: unknown;
+  };
+  if (json.errors) {
+    console.warn("[RegistrationPage] pages query failed:", json.errors);
+    return null;
+  }
+  const nodes = json.data?.pages?.nodes ?? [];
+  const exact =
+    nodes.find((n) => n.handle?.toLowerCase() === REGISTRATION_PAGE_HANDLE) ?? nodes[0];
+  if (exact?.handle) {
+    return { id: exact.id, handle: exact.handle, isPublished: exact.isPublished === true };
   }
   return null;
 }
 
-function pagePublishInput(isPublished: boolean): { isPublished: boolean; publishDate?: string } {
-  if (!isPublished) return { isPublished: false };
-  return { isPublished: true, publishDate: new Date().toISOString() };
+function pagePublishInput(isPublished: boolean): { isPublished: boolean } {
+  return { isPublished };
 }
 
 async function createRegistrationPage(
   admin: AdminGraphqlClient,
   isPublished: boolean,
+  opts?: { useDedicatedTemplate?: boolean },
 ): Promise<boolean> {
+  const useDedicatedTemplate = opts?.useDedicatedTemplate === true;
   const res = await admin.graphql(
     `#graphql
     mutation CreateRegistrationPage($page: PageCreateInput!) {
@@ -119,7 +146,7 @@ async function createRegistrationPage(
           title: REGISTRATION_PAGE_TITLE,
           handle: REGISTRATION_PAGE_HANDLE,
           ...pagePublishInput(isPublished),
-          templateSuffix: REGISTRATION_PAGE_HANDLE,
+          ...(useDedicatedTemplate ? { templateSuffix: REGISTRATION_PAGE_HANDLE } : {}),
           body: "<p>Please complete the registration form below to apply for a customer account.</p>",
         },
       },
@@ -293,9 +320,11 @@ export type EnsureRegistrationPageResult = {
   created: boolean;
   pageExists: boolean;
   pagePublished: boolean;
-  templateReady: boolean;
+  templateExists: boolean;
+  blockOnTemplate: boolean;
   themeEditorUrl: string;
   storefrontPageUrl: string;
+  templateWriteFailed: boolean;
 };
 
 /**
@@ -311,18 +340,26 @@ export async function ensureRegistrationStorefrontPage(
   let created = false;
   let pageExists = false;
   let pagePublished = false;
-  let templateReady = false;
+  let templateExists = false;
+  let blockOnTemplate = false;
+  let templateWriteFailed = false;
   try {
     await syncRegistrationPageRedirectSettings(shop);
+    await ensureAppEmbedEnabled(admin);
     const redirectEnabled = await isRegistrationPageRedirectEnabled(shop);
     const shouldPublish = redirectEnabled;
 
+    // 1) Create dedicated theme template (with Registration Form block) before linking the page.
     const templateResult = await ensureRegistrationPageThemeTemplate(admin);
-    templateReady = templateResult.templateReady;
+    templateExists = templateResult.templateExists;
+    blockOnTemplate = templateResult.blockOnTemplate;
+    templateWriteFailed = !templateExists;
 
     let existing = await findRegistrationPage(admin);
     if (!existing) {
-      created = await createRegistrationPage(admin, shouldPublish);
+      created = await createRegistrationPage(admin, shouldPublish, {
+        useDedicatedTemplate: templateExists,
+      });
       existing = await findRegistrationPage(admin);
       if (existing) created = true;
     }
@@ -340,13 +377,14 @@ export async function ensureRegistrationStorefrontPage(
       pagePublished = existing?.isPublished === true;
     }
 
-    if (pageExists) {
+    // 2) Assign template suffix only after page.customer-registration.json exists on the theme.
+    if (pageExists && templateExists) {
       await syncRegistrationPageTemplateSuffix(admin);
     }
 
     if (shouldPublish && (!pageExists || !pagePublished)) {
       if (!pageExists) {
-        await createRegistrationPage(admin, true);
+        await createRegistrationPage(admin, true, { useDedicatedTemplate: templateExists });
       } else if (existing?.id) {
         await syncRegistrationPageStorefrontVisibility(admin, shop, true);
       }
@@ -354,13 +392,25 @@ export async function ensureRegistrationStorefrontPage(
       pageExists = !!existing;
       pagePublished = existing?.isPublished === true;
     }
+
+    // Retry template once when the first pass could not write theme files.
+    if (!templateExists) {
+      const retry = await ensureRegistrationPageThemeTemplate(admin, { quick: true });
+      templateExists = retry.templateExists;
+      blockOnTemplate = retry.blockOnTemplate;
+      templateWriteFailed = !templateExists;
+      if (pageExists && templateExists) {
+        await syncRegistrationPageTemplateSuffix(admin);
+      }
+    }
   } catch (error) {
     console.warn("[RegistrationPage] ensureRegistrationStorefrontPage failed:", error);
   }
 
   const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
-    pageExists: pageExists && pagePublished,
-    templateReady,
+    pageExists,
+    templateExists,
+    blockOnTemplate,
   });
 
   return {
@@ -368,8 +418,78 @@ export async function ensureRegistrationStorefrontPage(
     created,
     pageExists,
     pagePublished,
-    templateReady,
+    templateExists,
+    blockOnTemplate,
     themeEditorUrl,
     storefrontPageUrl,
+    templateWriteFailed,
   };
+}
+
+/** Setup for the "Add form to page" button — auto-installs Apps + Registration Form, then opens theme editor. */
+export async function runAddRegistrationFormSetup(
+  admin: AdminGraphqlClient,
+  shop: string,
+): Promise<{
+  pageExists: boolean;
+  templateExists: boolean;
+  blockOnTemplate: boolean;
+  themeEditorUrl: string;
+  templateWriteFailed: boolean;
+  savedViaApi: boolean;
+  needsEditorSave: boolean;
+}> {
+  const fallbackUrl = buildRegistrationPageThemeEditorUrl(shop, {
+    pageExists: true,
+    templateExists: false,
+  });
+
+  try {
+    let page = await findRegistrationPage(admin);
+    if (!page) {
+      const shouldPublish = await isRegistrationPageRedirectEnabled(shop);
+      await createRegistrationPage(admin, shouldPublish, { useDedicatedTemplate: true });
+      page = await findRegistrationPage(admin);
+    }
+
+    const install = await installRegistrationFormOnCustomerRegistrationTemplate(admin);
+
+    if (page && install.templateExists) {
+      await syncRegistrationPageTemplateSuffix(admin);
+    }
+
+    const pageExists = !!page;
+    const templateExists = install.templateExists;
+    const blockOnTemplate = install.blockOnTemplate;
+    const savedViaApi = install.savedViaApi;
+    const needsEditorSave = templateExists && !blockOnTemplate;
+
+    const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
+      pageExists: true,
+      templateExists,
+      blockOnTemplate,
+      themeGid: install.themeId,
+    });
+
+    return {
+      pageExists,
+      templateExists,
+      blockOnTemplate,
+      themeEditorUrl,
+      templateWriteFailed: !templateExists,
+      savedViaApi,
+      needsEditorSave,
+    };
+  } catch (error) {
+    console.warn("[RegistrationPage] runAddRegistrationFormSetup failed:", error);
+    return {
+      pageExists: false,
+      templateExists: false,
+      blockOnTemplate: false,
+      themeEditorUrl: fallbackUrl,
+      templateWriteFailed: true,
+      savedViaApi: false,
+      needsEditorSave: false,
+    };
+  }
 }

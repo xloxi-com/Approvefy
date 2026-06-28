@@ -15,6 +15,12 @@ type AdminGraphqlClient = {
 export type ThemeSetupStatus = {
   appEmbedEnabled: boolean;
   registrationFormBlockOnPage: boolean;
+  /** Registration Form block is on templates/page.json (Default page) — wrong placement */
+  registrationFormOnDefaultPage: boolean;
+  /** templates/page.customer-registration.json exists on the published theme */
+  registrationPageTemplateExists: boolean;
+  /** Published (MAIN) theme GID — use for theme editor deep links */
+  mainThemeId: string | null;
   themeCheckAvailable: boolean;
 };
 
@@ -161,6 +167,9 @@ export async function getThemeSetupStatus(admin: AdminGraphqlClient): Promise<Th
   const fallback: ThemeSetupStatus = {
     appEmbedEnabled: false,
     registrationFormBlockOnPage: false,
+    registrationFormOnDefaultPage: false,
+    registrationPageTemplateExists: false,
+    mainThemeId: null,
     themeCheckAvailable: false,
   };
 
@@ -170,6 +179,7 @@ export async function getThemeSetupStatus(admin: AdminGraphqlClient): Promise<Th
       data?: {
         themes?: {
           nodes?: Array<{
+            id?: string;
             role?: string;
             files?: { nodes?: ThemeFileNode[] };
           }>;
@@ -195,20 +205,44 @@ export async function getThemeSetupStatus(admin: AdminGraphqlClient): Promise<Th
 
     let appEmbedEnabled = false;
     let registrationFormBlockOnPage = false;
+    let registrationFormOnDefaultPage = false;
+    let registrationPageTemplateExists = false;
+    let mainThemeId: string | null = themeNodes[0]?.id ?? null;
 
     for (const theme of themeNodes) {
+      if (theme.id && !mainThemeId) {
+        mainThemeId = theme.id;
+      }
       const parsed = readThemeFiles(theme.files?.nodes ?? []);
       if (hasActiveAppEmbed(parsed.settingsData)) {
         appEmbedEnabled = true;
       }
-      if (hasActiveBlockInJson(parsed.dedicatedPageTemplate, REGISTRATION_FORM_BLOCK_HANDLE)) {
-        registrationFormBlockOnPage = true;
+      if (parsed.dedicatedPageTemplate) {
+        registrationPageTemplateExists = true;
+        const dedicatedSections = parsed.dedicatedPageTemplate.sections as
+          | Record<string, { type?: string; blocks?: Record<string, unknown> }>
+          | undefined;
+        if (dedicatedSections) {
+          const appsSections = Object.fromEntries(
+            Object.entries(dedicatedSections).filter(([, section]) => section?.type === "apps"),
+          );
+          registrationFormBlockOnPage = hasActiveBlockInJson(
+            { sections: appsSections },
+            REGISTRATION_FORM_BLOCK_HANDLE,
+          );
+        }
+      }
+      if (hasActiveBlockInJson(parsed.defaultPageTemplate, REGISTRATION_FORM_BLOCK_HANDLE)) {
+        registrationFormOnDefaultPage = true;
       }
     }
 
     return {
       appEmbedEnabled,
       registrationFormBlockOnPage,
+      registrationFormOnDefaultPage,
+      registrationPageTemplateExists,
+      mainThemeId,
       themeCheckAvailable: true,
     };
   } catch (error) {
