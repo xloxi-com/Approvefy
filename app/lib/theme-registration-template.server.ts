@@ -167,6 +167,65 @@ function mergeRegistrationFormBlockIntoTemplate(pageJsonRaw: string): string | n
   }
 }
 
+function buildMainOnlyRegistrationTemplateShell(existingRaw?: string | null): string {
+  if (existingRaw?.trim()) {
+    try {
+      const parsed = JSON.parse(stripJsonComments(existingRaw)) as {
+        sections?: Record<
+          string,
+          {
+            type?: string;
+            blocks?: Record<string, { type?: string }>;
+            block_order?: string[];
+            settings?: Record<string, unknown>;
+          }
+        >;
+        order?: string[];
+      };
+      const sections = parsed.sections ?? {};
+      const order = Array.isArray(parsed.order) ? [...parsed.order] : Object.keys(sections);
+      const nextSections: typeof sections = {};
+      const nextOrder: string[] = [];
+
+      for (const key of order) {
+        const section = sections[key];
+        if (!section || section.type === "apps") continue;
+
+        const blocks = section.blocks ? { ...section.blocks } : undefined;
+        if (blocks) {
+          for (const [blockId, block] of Object.entries(blocks)) {
+            if (
+              blockId === REGISTRATION_FORM_BLOCK_ID ||
+              (typeof block?.type === "string" &&
+                block.type.includes(REGISTRATION_FORM_BLOCK_HANDLE))
+            ) {
+              delete blocks[blockId];
+            }
+          }
+        }
+
+        const blockOrder = Array.isArray(section.block_order)
+          ? section.block_order.filter((id) => !blocks || id in blocks)
+          : undefined;
+
+        nextSections[key] = {
+          ...section,
+          ...(blocks ? { blocks } : {}),
+          ...(blockOrder ? { block_order: blockOrder } : {}),
+        };
+        nextOrder.push(key);
+      }
+
+      if (nextOrder.length > 0) {
+        return JSON.stringify({ sections: nextSections, order: nextOrder }, null, 2);
+      }
+    } catch {
+      // fall through to default shell
+    }
+  }
+  return buildRegistrationPageTemplateShellJson();
+}
+
 function buildRegistrationPageTemplateShellJson(): string {
   return JSON.stringify(
     {
@@ -638,51 +697,65 @@ export type EnsureRegistrationPageThemeTemplateOptions = {
 };
 
 /**
- * Creates templates/page.customer-registration.json (Page section only, no Apps block).
- * Used when only the template shell is needed before a theme-editor deep link.
+ * Ensures page.customer-registration exists with Page section only (no Apps block),
+ * so the theme editor deep link auto-adds Apps → Registration Form.
  */
-export async function ensureRegistrationPageThemeTemplateShell(
+export async function prepareCustomerRegistrationPageForAppsDeepLink(
   admin: AdminGraphqlClient,
-): Promise<{ templateExists: boolean }> {
+): Promise<{ templateExists: boolean; themeId: string | null; blockOnTemplate: boolean }> {
+  const empty = { templateExists: false, themeId: null, blockOnTemplate: false };
   try {
     const themeId = await getMainThemeId(admin);
-    if (!themeId) return { templateExists: false };
+    if (!themeId) return empty;
+
+    await removeRegistrationFormFromDefaultPageTemplate(admin, themeId);
 
     const existing = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
-    if (existing?.trim()) return { templateExists: true };
-
-    const copied = await copyThemeFile(
-      admin,
-      themeId,
-      "templates/page.json",
-      REGISTRATION_PAGE_TEMPLATE_FILE,
-    );
-    if (copied) {
-      const copiedContent = await pollForThemeFile(
-        admin,
-        themeId,
-        REGISTRATION_PAGE_TEMPLATE_FILE,
-        6,
-        700,
-      );
-      if (copiedContent?.trim()) return { templateExists: true };
+    if (existing?.trim() && registrationFormBlockPlacement(existing) === "apps") {
+      return { templateExists: true, themeId, blockOnTemplate: true };
     }
 
-    const shellBody = await buildRegistrationPageTemplateShellBody(admin, themeId);
+    const shellBody = buildMainOnlyRegistrationTemplateShell(existing);
     const upsert = await upsertThemeFileByFilename(
       admin,
       themeId,
       REGISTRATION_PAGE_TEMPLATE_FILE,
       shellBody,
     );
-    if (!upsert.ok) return { templateExists: false };
 
-    const written = await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
-    return { templateExists: !!written?.trim() };
+    if (!upsert.ok) {
+      const stillThere = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+      return {
+        templateExists: !!stillThere?.trim(),
+        themeId,
+        blockOnTemplate:
+          !!stillThere?.trim() && registrationFormBlockPlacement(stillThere) === "apps",
+      };
+    }
+
+    const written =
+      (await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? existing;
+    const templateExists = !!written?.trim();
+    return {
+      templateExists,
+      themeId,
+      blockOnTemplate: templateExists && registrationFormBlockPlacement(written!) === "apps",
+    };
   } catch (error) {
-    console.warn("[ThemeRegistrationTemplate] ensureRegistrationPageThemeTemplateShell failed:", error);
-    return { templateExists: false };
+    console.warn(
+      "[ThemeRegistrationTemplate] prepareCustomerRegistrationPageForAppsDeepLink failed:",
+      error,
+    );
+    return empty;
   }
+}
+
+/** @deprecated Use prepareCustomerRegistrationPageForAppsDeepLink */
+export async function ensureRegistrationPageThemeTemplateShell(
+  admin: AdminGraphqlClient,
+): Promise<{ templateExists: boolean }> {
+  const result = await prepareCustomerRegistrationPageForAppsDeepLink(admin);
+  return { templateExists: result.templateExists };
 }
 
 export type InstallRegistrationFormOnPageResult = {
@@ -709,6 +782,8 @@ export async function installRegistrationFormOnCustomerRegistrationTemplate(
 
   try {
     await cleanRegistrationFormOffDefaultPageTemplate(admin);
+
+    await prepareCustomerRegistrationPageForAppsDeepLink(admin);
 
     let result = await ensureRegistrationPageThemeTemplate(admin);
     if (result.templateExists && !result.blockOnTemplate) {

@@ -1,8 +1,9 @@
 import prisma from "../db.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
 import {
+  cleanRegistrationFormOffDefaultPageTemplate,
   ensureRegistrationPageThemeTemplate,
-  installRegistrationFormOnCustomerRegistrationTemplate,
+  prepareCustomerRegistrationPageForAppsDeepLink,
   REGISTRATION_APPS_SECTION_ID,
   REGISTRATION_PAGE_TEMPLATE,
 } from "./theme-registration-template.server";
@@ -45,6 +46,8 @@ export function buildRegistrationPageThemeEditorUrl(
     templateExists?: boolean;
     /** Registration Form block is already in that template file */
     blockOnTemplate?: boolean;
+    /** Force addAppBlockId + newAppsSection (theme editor auto-adds Apps section) */
+    forceAddAppsBlock?: boolean;
     /** MAIN theme GID — deep link targets the same theme Approvefy writes to */
     themeGid?: string | null;
   },
@@ -57,14 +60,17 @@ export function buildRegistrationPageThemeEditorUrl(
     params.push(`previewPath=${encodeURIComponent(REGISTRATION_PAGE_PATH)}`);
   }
 
-  // Only edit page.customer-registration — never templates/page.json (Default page).
   if (opts?.templateExists !== true) {
     return params.length ? `${base}?${params.join("&")}` : base;
   }
 
   params.push(`template=${encodeURIComponent(REGISTRATION_PAGE_TEMPLATE)}`);
 
-  if (apiKey && opts?.blockOnTemplate !== true) {
+  const shouldAutoAddAppsBlock =
+    opts?.forceAddAppsBlock === true ||
+    (apiKey.length > 0 && opts?.blockOnTemplate !== true);
+
+  if (shouldAutoAddAppsBlock && apiKey) {
     params.push(
       `addAppBlockId=${encodeURIComponent(`${apiKey}/${REGISTRATION_FORM_BLOCK_HANDLE}`)}`,
       "target=newAppsSection",
@@ -426,7 +432,7 @@ export async function ensureRegistrationStorefrontPage(
   };
 }
 
-/** Setup for the "Add form to page" button — auto-installs Apps + Registration Form, then opens theme editor. */
+/** Setup for "Add form to page" — prepares template, then theme editor deep link adds Apps → Registration Form. */
 export async function runAddRegistrationFormSetup(
   admin: AdminGraphqlClient,
   shop: string,
@@ -445,6 +451,8 @@ export async function runAddRegistrationFormSetup(
   });
 
   try {
+    await cleanRegistrationFormOffDefaultPageTemplate(admin);
+
     let page = await findRegistrationPage(admin);
     if (!page) {
       const shouldPublish = await isRegistrationPageRedirectEnabled(shop);
@@ -452,24 +460,26 @@ export async function runAddRegistrationFormSetup(
       page = await findRegistrationPage(admin);
     }
 
-    const install = await installRegistrationFormOnCustomerRegistrationTemplate(admin);
+    const prep = await prepareCustomerRegistrationPageForAppsDeepLink(admin);
 
-    if (page && install.templateExists) {
+    if (page && prep.templateExists) {
       await syncRegistrationPageTemplateSuffix(admin);
     }
 
     const pageExists = !!page;
-    const templateExists = install.templateExists;
-    const blockOnTemplate = install.blockOnTemplate;
-    const savedViaApi = install.savedViaApi;
+    const templateExists = prep.templateExists;
+    const blockOnTemplate = prep.blockOnTemplate;
     const needsEditorSave = templateExists && !blockOnTemplate;
 
     const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
       pageExists: true,
       templateExists,
       blockOnTemplate,
-      themeGid: install.themeId,
+      forceAddAppsBlock: needsEditorSave,
+      themeGid: prep.themeId,
     });
+
+    console.info("[RegistrationPage] add-form-to-page theme editor URL:", themeEditorUrl);
 
     return {
       pageExists,
@@ -477,7 +487,7 @@ export async function runAddRegistrationFormSetup(
       blockOnTemplate,
       themeEditorUrl,
       templateWriteFailed: !templateExists,
-      savedViaApi,
+      savedViaApi: false,
       needsEditorSave,
     };
   } catch (error) {

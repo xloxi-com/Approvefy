@@ -558,16 +558,9 @@ export default function Index() {
       return;
     }
 
-    if (formResult.savedViaApi) {
-      setRegistrationFormNotice(
-        "Registration Form added automatically under Template → Apps on Customer Registration. Theme editor opened for review — click Save if Shopify prompts you, then preview the page.",
-      );
-      return;
-    }
-
     if (formResult.needsEditorSave) {
       setRegistrationFormNotice(
-        "Theme editor opened on Customer Registration. Shopify will add Template → Apps → Registration Form automatically — click Save to publish.",
+        "Theme editor opened on Customer Registration. Apps → Registration Form will be added automatically — click Save to publish.",
       );
       return;
     }
