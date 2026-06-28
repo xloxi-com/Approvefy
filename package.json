@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "prisma generate && react-router build",
-    "vercel-build": "prisma generate && prisma migrate deploy && react-router build",
+    "vercel-build": "prisma generate && react-router build",
     "postinstall": "node scripts/prisma-generate-safe.cjs",
     "dev": "node scripts/dev-localhost.cjs",
     "dev:localhost": "node scripts/dev-localhost.cjs",
