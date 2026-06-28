@@ -41,6 +41,8 @@
 }
 {% endschema %}
 
-{% if block.settings.enable_custom_registration %}
-  {% render 'registration-form-embed', block: block %}
-{% endif %}
+{% comment %}
+  Storefront guard (header account icon redirect, checkout blocking) must load whenever
+  the app embed is enabled — not only when the custom registration form is on.
+{% endcomment %}
+{% render 'registration-form-embed', block: block, load_registration_form: block.settings.enable_custom_registration %}

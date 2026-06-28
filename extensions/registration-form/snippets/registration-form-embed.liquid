@@ -1,5 +1,13 @@
 {% # theme-check-disable OrphanedSnippet, UndefinedObject, MissingAsset, ParserBlockingScript %}
-{{ 'registration-form.css' | asset_url | stylesheet_tag }}
+{% liquid
+  assign approvefy_load_form = load_registration_form
+  if approvefy_load_form == nil
+    assign approvefy_load_form = true
+  endif
+%}
+{% if approvefy_load_form %}
+  {{ 'registration-form.css' | asset_url | stylesheet_tag }}
+{% endif %}
 <script>
 window.__REGISTRATION_FORM_CONFIG__ = {
   embedFormId: {{ block.settings.form_id | default: '' | json }},
@@ -165,7 +173,9 @@ window.__REGISTRATION_FORM_CONFIG__ = {
   }
 })();
 </script>
-{{ 'registration-form.js' | asset_url | preload_tag: as: 'script' }}
 {{ 'guest-checkout-guard.js' | asset_url | preload_tag: as: 'script' }}
-<script src="{{ 'registration-form.js' | asset_url }}" async></script>
-<script src="{{ 'guest-checkout-guard.js' | asset_url }}" async></script>
+{% if approvefy_load_form %}
+  {{ 'registration-form.js' | asset_url | preload_tag: as: 'script' }}
+  <script src="{{ 'registration-form.js' | asset_url }}" defer></script>
+{% endif %}
+<script src="{{ 'guest-checkout-guard.js' | asset_url }}" defer></script>

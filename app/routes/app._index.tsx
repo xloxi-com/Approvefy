@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useId, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { Await, data, useLoaderData, useNavigate, Link, useRevalidator } from "react-router";
 import {
@@ -34,6 +34,14 @@ import {
   REGISTRATION_PAGE_PATH,
 } from "../lib/registration-page.server";
 import { ensureDefaultCustomerB2BForm } from "../lib/default-form-config.server";
+import { getThemeSetupStatus } from "../lib/theme-setup-status.server";
+import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
+
+type ShopifyAppHome = {
+  app?: {
+    extensions?: () => Promise<unknown[]>;
+  };
+};
 
 type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
 
@@ -51,23 +59,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let registrationPageThemeEditorUrl = "";
   let registrationPageStorefrontUrl = "";
   let registrationPageCreated = false;
+  let appEmbedEnabled = false;
+  let registrationFormBlockOnPage = false;
+  let themeSetupCheckAvailable = false;
 
   const t0 = performance.now();
   try {
     await ensureDefaultCustomerB2BForm(shop);
 
-    const [formCount, settingsExists, pageResult] = await Promise.all([
+    const [formCount, settingsExists, pageResult, themeSetup] = await Promise.all([
       prisma.formConfig.count({ where: { shop } }),
       prisma.appSettings
         .findUnique({ where: { shop }, select: { id: true } })
         .then((r: { id: string } | null) => !!r),
       ensureRegistrationStorefrontPage(admin, shop),
+      getThemeSetupStatus(admin),
     ]);
     formsCount = formCount;
     hasSettings = settingsExists;
     registrationPageThemeEditorUrl = pageResult.themeEditorUrl;
     registrationPageStorefrontUrl = pageResult.storefrontPageUrl;
     registrationPageCreated = pageResult.created;
+    appEmbedEnabled = themeSetup.appEmbedEnabled;
+    registrationFormBlockOnPage = themeSetup.registrationFormBlockOnPage;
+    themeSetupCheckAvailable = themeSetup.themeCheckAvailable;
   } catch (error) {
     dbUnavailable = true;
     console.error("[Home] Failed to load setup data:", error);
@@ -78,8 +93,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?context=apps`;
   const storefrontUrl = `https://${storeHandle}.myshopify.com`;
 
-  const setupTasksTotal = 2;
-  const setupTasksComplete = (formsCount > 0 ? 1 : 0) + (hasSettings ? 1 : 0);
+  const setupTasksTotal = 4;
 
   const analyticsPromise: Promise<Analytics | null> = getAnalytics(shop).catch(
     (err: unknown) => {
@@ -95,7 +109,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       formsCount,
       hasSettings,
       dbUnavailable,
-      setupTasksComplete,
       setupTasksTotal,
       analytics: analyticsPromise,
       billingPending,
@@ -103,6 +116,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       registrationPageThemeEditorUrl,
       registrationPageStorefrontUrl,
       registrationPageCreated,
+      appEmbedEnabled,
+      registrationFormBlockOnPage,
+      themeSetupCheckAvailable,
     },
     { headers: { "Server-Timing": `db;dur=${dbMs}` } },
   );
@@ -256,29 +272,82 @@ export default function Index() {
     formsCount,
     hasSettings,
     dbUnavailable,
-    setupTasksComplete,
     setupTasksTotal,
     analytics,
     billingPending,
     registrationPagePath,
     registrationPageThemeEditorUrl,
     registrationPageStorefrontUrl,
+    appEmbedEnabled,
+    registrationFormBlockOnPage,
+    themeSetupCheckAvailable,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const progressLabelId = useId();
+
+  const [extensionSetup, setExtensionSetup] = useState({
+    appEmbedEnabled: false,
+    registrationFormBlockOnPage: false,
+    loaded: false,
+  });
+
+  const refreshExtensionSetup = useCallback(async () => {
+    try {
+      const shopifyGlobal = (globalThis as { shopify?: ShopifyAppHome }).shopify;
+      if (!shopifyGlobal?.app?.extensions) return;
+      const extensions = await shopifyGlobal.app.extensions();
+      const parsed = parseThemeExtensionSetupStatus(Array.isArray(extensions) ? extensions : []);
+      setExtensionSetup({
+        appEmbedEnabled: parsed.appEmbedEnabled,
+        registrationFormBlockOnPage: parsed.registrationFormBlockOnPage,
+        loaded: true,
+      });
+    } catch (err) {
+      console.warn("[Home] shopify.app.extensions() failed:", err);
+    }
+  }, []);
+
+  const appEmbedDone = appEmbedEnabled || extensionSetup.appEmbedEnabled;
+  const registrationPageFormDone =
+    registrationFormBlockOnPage || extensionSetup.registrationFormBlockOnPage;
+  const formDone = formsCount > 0;
+  const settingsDone = hasSettings;
+
+  const setupTasksComplete =
+    (appEmbedDone ? 1 : 0) +
+    (registrationPageFormDone ? 1 : 0) +
+    (formDone ? 1 : 0) +
+    (settingsDone ? 1 : 0);
+
   const progressPercent = setupTasksTotal
     ? Math.min(100, Math.round((100 * setupTasksComplete) / setupTasksTotal))
     : 0;
 
-  const formDone = formsCount > 0;
-  const settingsDone = hasSettings;
+  useEffect(() => {
+    void refreshExtensionSetup();
+  }, [refreshExtensionSetup]);
 
   useEffect(() => {
     if (!billingPending) return;
     const timer = window.setInterval(() => revalidator.revalidate(), 2000);
     return () => window.clearInterval(timer);
   }, [billingPending, revalidator]);
+
+  useEffect(() => {
+    const refreshSetup = () => {
+      if (document.visibilityState === "visible") {
+        revalidator.revalidate();
+        void refreshExtensionSetup();
+      }
+    };
+    window.addEventListener("focus", refreshSetup);
+    document.addEventListener("visibilitychange", refreshSetup);
+    return () => {
+      window.removeEventListener("focus", refreshSetup);
+      document.removeEventListener("visibilitychange", refreshSetup);
+    };
+  }, [revalidator, refreshExtensionSetup]);
 
   return (
     <Page
@@ -383,18 +452,29 @@ export default function Index() {
 
         <Layout.Section>
           <BlockStack gap="400">
+            {!themeSetupCheckAvailable && !extensionSetup.loaded && (
+              <Banner tone="info" title="Theme setup status unavailable">
+                Approvefy could not read your live theme files. Re-open the app and approve the updated
+                permissions if prompted, then refresh this page.
+              </Banner>
+            )}
             <SetupStep
               step={1}
               icon={ThemeEditIcon}
               title="Enable app embed block"
               description="Turn on the Approvefy app embed in your theme (Theme settings → App embeds → Approvefy) so registration scripts load on your storefront."
-              optional
+              complete={appEmbedDone}
+              optional={!appEmbedDone}
               actions={
                 <>
-                  <Button url={themeEditorUrl} variant="primary" external>
-                    Enable app embed
+                  <Button url={themeEditorUrl} variant={appEmbedDone ? "secondary" : "primary"} external>
+                    {appEmbedDone ? "Open theme editor" : "Enable app embed"}
                   </Button>
-                  <Button url={storefrontUrl} variant="secondary" external>
+                  <Button
+                    url={registrationPageStorefrontUrl || `${storefrontUrl}${registrationPagePath}`}
+                    variant="secondary"
+                    external
+                  >
                     Preview theme
                   </Button>
                 </>
@@ -416,15 +496,16 @@ export default function Index() {
               icon={PageIcon}
               title="Add form to registration page"
               description={`Your registration page is at ${registrationPagePath}. Open the theme editor and add the Registration Form block to that page. The store redirect URL is set automatically when empty.`}
-              optional
+              complete={registrationPageFormDone}
+              optional={!registrationPageFormDone}
               actions={
                 <>
                   <Button
                     url={registrationPageThemeEditorUrl || themeEditorUrl}
-                    variant="primary"
+                    variant={registrationPageFormDone ? "secondary" : "primary"}
                     external
                   >
-                    Add form to page
+                    {registrationPageFormDone ? "Open page in theme editor" : "Add form to page"}
                   </Button>
                   {registrationPageStorefrontUrl ? (
                     <Button url={registrationPageStorefrontUrl} variant="secondary" external>

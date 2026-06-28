@@ -326,29 +326,50 @@
 
   function isInsideSiteHeader(el) {
     return !!el.closest(
-      'header, .header, .shopify-section-header, .section-header, .header-wrapper, shop-header'
+      [
+        'header',
+        '.header',
+        '.shopify-section-header',
+        '.section-header',
+        '.header-wrapper',
+        'shop-header',
+        '#shopify-section-header',
+        '.site-header',
+        '#header',
+        '[class*="header__icons"]',
+      ].join(', ')
     );
   }
 
-  function isHeaderAccountIconElement(el) {
-    if (!el || !el.closest || el.nodeType !== 1) {
+  function isShopifyAccountComponent(el) {
+    return !!(el && el.closest && el.closest('shopify-account'));
+  }
+
+  function headerAccountIconSelectors() {
+    return [
+      'shopify-account',
+      '.header__icon--account',
+      'a.header__icon--account',
+      '.header__icons .header__icon--account',
+      '.header__icons a[href*="account"]',
+      '.header__icons a[href*="customer_authentication"]',
+      'a.header__icon[href*="account"]',
+      'a.header__icon[href*="customer_authentication"]',
+      'a.customer-account-link',
+      '#HeaderMenu-account',
+      'a[href*="/account"][class*="header"]',
+      'a[href*="/customer_authentication"][class*="header"]',
+    ].join(', ');
+  }
+
+  function accountControlLooksLikeHeaderIcon(el) {
+    if (!el || el.nodeType !== 1) {
       return false;
     }
-    if (isInsideApprovefyAuthTabs(el)) {
-      return false;
+    if (isShopifyAccountComponent(el)) {
+      return true;
     }
-    if (!isInsideSiteHeader(el)) {
-      return false;
-    }
-    var accountEl = el.closest(
-      [
-        '.header__icon--account',
-        'a.header__icon--account',
-        '.header__icons .header__icon--account',
-        'a.header__icon[href*="account"]',
-        'a.header__icon[href*="customer_authentication"]',
-      ].join(', ')
-    );
+    var accountEl = el.closest(headerAccountIconSelectors());
     if (!accountEl) {
       return false;
     }
@@ -368,6 +389,19 @@
       return true;
     }
     return hrefLooksLikeSignInOrRegister(ph);
+  }
+
+  function isHeaderAccountIconElement(el) {
+    if (!el || !el.closest || el.nodeType !== 1) {
+      return false;
+    }
+    if (isInsideApprovefyAuthTabs(el)) {
+      return false;
+    }
+    if (!isInsideSiteHeader(el)) {
+      return false;
+    }
+    return accountControlLooksLikeHeaderIcon(el);
   }
 
   function isInsideApprovefyAuthTabs(node) {
@@ -394,6 +428,9 @@
         return null;
       }
       if (isHeaderAccountIconElement(node)) {
+        if (isShopifyAccountComponent(node)) {
+          return { kind: 'account-icon', href: '' };
+        }
         var accountA = node.closest && node.closest('a[href]');
         return { kind: 'link', href: accountA ? accountA.getAttribute('href') || accountA.href : '' };
       }
@@ -406,6 +443,9 @@
       return null;
     }
     if (isHeaderAccountIconElement(t)) {
+      if (isShopifyAccountComponent(t)) {
+        return { kind: 'account-icon', href: '' };
+      }
       var accountLink = t.closest('a[href]');
       return { kind: 'link', href: accountLink ? accountLink.getAttribute('href') || accountLink.href : '' };
     }
@@ -447,6 +487,20 @@
         window.location.href = intent.href;
       }
     });
+  }
+
+  function handleHeaderAccountIconPointerDown(e) {
+    if (window.__approvefyBypassGuestCheckoutGuard) {
+      return;
+    }
+    if (e && typeof e.button === 'number' && e.button !== 0) {
+      return;
+    }
+    var intent = findHeaderAccountIconClick(e);
+    if (!intent || intent.kind !== 'account-icon') {
+      return;
+    }
+    handleHeaderAccountIconClick(e);
   }
 
   function shouldRedirectGuest() {
@@ -933,6 +987,7 @@
   }
 
   document.addEventListener('click', handleHeaderAccountIconClick, true);
+  document.addEventListener('pointerdown', handleHeaderAccountIconPointerDown, true);
   document.addEventListener('click', handleGuestCheckoutEvent, true);
 
   document.addEventListener(
