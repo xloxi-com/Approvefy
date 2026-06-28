@@ -3,14 +3,15 @@ import prisma from "../db.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
 import {
   cleanRegistrationFormOffDefaultPageTemplate,
+  createCustomerRegistrationPageTemplate,
   ensureRegistrationPageThemeTemplate,
   prepareCustomerRegistrationPageForAppsDeepLink,
   readRegistrationPageTemplateOnMainTheme,
   REGISTRATION_APPS_SECTION_ID,
   REGISTRATION_PAGE_TEMPLATE,
-  writeRegistrationPageTemplateShell,
 } from "./theme-registration-template.server";
 import { ensureAppEmbedEnabled } from "./theme-app-embed.server";
+import { canUseThemeCliPush } from "./theme-cli-push.server";
 import { REGISTRATION_FORM_BLOCK_HANDLE } from "./theme-extension-setup-status";
 
 export const REGISTRATION_PAGE_HANDLE = "customer-registration";
@@ -389,8 +390,9 @@ export async function ensureRegistrationStorefrontPage(
     const templateResult = await ensureRegistrationPageThemeTemplate(admin);
     templateExists = templateResult.templateExists;
     blockOnTemplate = templateResult.blockOnTemplate;
-    needsManualTemplate = !templateExists && templateResult.themeFileWriteAccessDenied;
-    templateWriteFailed = !templateExists && !needsManualTemplate;
+    needsManualTemplate =
+      !templateExists && templateResult.themeFileWriteAccessDenied && !canUseThemeCliPush();
+    templateWriteFailed = false;
 
     let existing = await findRegistrationPage(admin);
     if (!existing) {
@@ -435,13 +437,16 @@ export async function ensureRegistrationStorefrontPage(
       pagePublished = existing?.isPublished === true;
     }
 
-    // Retry template once when the first pass could not write theme files (not when access denied).
-    if (!templateExists && !needsManualTemplate) {
-      const retry = await ensureRegistrationPageThemeTemplate(admin, { quick: true });
+    // Retry via CLI in local dev when GraphQL theme file APIs require Shopify exemption.
+    if (!templateExists) {
+      const retry = await createCustomerRegistrationPageTemplate(admin, shop);
       templateExists = retry.templateExists;
-      blockOnTemplate = retry.blockOnTemplate;
-      needsManualTemplate = !templateExists && retry.themeFileWriteAccessDenied;
-      templateWriteFailed = !templateExists && !needsManualTemplate;
+      if (retry.templateExists) {
+        const verifiedRetry = await readRegistrationPageTemplateOnMainTheme(admin);
+        blockOnTemplate = verifiedRetry.blockOnTemplate;
+      }
+      needsManualTemplate = !templateExists && !canUseThemeCliPush();
+      templateWriteFailed = !templateExists && canUseThemeCliPush();
       if (pageExists && templateExists) {
         const pageAfterRetry = await findRegistrationPage(admin);
         if (pageAfterRetry?.templateSuffix?.toLowerCase() !== REGISTRATION_PAGE_HANDLE) {
@@ -477,6 +482,7 @@ export async function ensureRegistrationStorefrontPage(
 export async function runCreateRegistrationTemplateSetup(
   admin: AdminGraphqlClient,
   shop: string,
+  accessToken?: string,
 ): Promise<{
   pageExists: boolean;
   templateExists: boolean;
@@ -507,7 +513,9 @@ export async function runCreateRegistrationTemplateSetup(
     }
 
     if (!templateExists) {
-      const write = await writeRegistrationPageTemplateShell(admin, shop);
+      const write = await createCustomerRegistrationPageTemplate(admin, shop, {
+        accessToken,
+      });
       templateExists = write.templateExists;
       if (write.templateExists && page) {
         await syncRegistrationPageTemplateSuffix(admin);
@@ -605,7 +613,7 @@ export async function runAddRegistrationFormSetup(
       page = await findRegistrationPage(admin);
     }
 
-    const prep = await prepareCustomerRegistrationPageForAppsDeepLink(admin);
+    const prep = await prepareCustomerRegistrationPageForAppsDeepLink(admin, { quick: true });
 
     if (page && prep.templateExists) {
       const suffixMismatch = page.templateSuffix?.toLowerCase() !== REGISTRATION_PAGE_HANDLE;

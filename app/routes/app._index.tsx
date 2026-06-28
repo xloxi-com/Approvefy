@@ -174,9 +174,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     appEmbedEnabled = themeSetup.appEmbedEnabled;
     registrationFormBlockOnPage = blockOnTemplate;
     themeSetupCheckAvailable = themeSetup.themeCheckAvailable;
-    if (!registrationNeedsManualTemplate && !templateExists) {
-      registrationNeedsManualTemplate = true;
-    }
 
     if (!themeSetup.appEmbedEnabled && themeSetup.themeCheckAvailable) {
       void ensureAppEmbedEnabled(admin).catch((err) => {
@@ -250,7 +247,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent === "create-registration-template") {
     try {
-      const setup = await runCreateRegistrationTemplateSetup(admin, shop);
+      const setup = await runCreateRegistrationTemplateSetup(
+        admin,
+        shop,
+        session.accessToken,
+      );
       return data({
         ok: true as const,
         intent: "create-registration-template" as const,
@@ -492,6 +493,7 @@ export default function Index() {
   const pendingAppEmbedOpenRef = useRef(false);
   const [registrationFormNotice, setRegistrationFormNotice] = useState<string | null>(null);
   const [appEmbedNotice, setAppEmbedNotice] = useState<string | null>(null);
+  const [registrationFormBusy, setRegistrationFormBusy] = useState(false);
   const progressLabelId = useId();
 
   const [extensionSetup, setExtensionSetup] = useState({
@@ -602,6 +604,7 @@ export default function Index() {
 
   const addRegistrationFormToPage = useCallback(() => {
     setRegistrationFormNotice(null);
+    setRegistrationFormBusy(true);
     pendingThemeEditorOpenRef.current = true;
 
     registrationFormFetcher.submit(
@@ -615,10 +618,33 @@ export default function Index() {
   }, [registrationFormFetcher, registrationPageTemplateExists]);
 
   useEffect(() => {
+    if (!registrationFormBusy) return;
+    const timer = window.setTimeout(() => {
+      if (registrationFormFetcher.state === "idle") return;
+      pendingThemeEditorOpenRef.current = false;
+      setRegistrationFormBusy(false);
+      const fallbackUrl = registrationPageThemeEditorUrl || themeEditorUrl;
+      if (fallbackUrl) {
+        openThemeEditorUrl(fallbackUrl);
+      }
+      setRegistrationFormNotice(
+        "Setup took too long — theme editor opened on Customer Registration. Finish the template there, then return and click Add form to page.",
+      );
+    }, 50_000);
+    return () => window.clearTimeout(timer);
+  }, [
+    registrationFormBusy,
+    registrationFormFetcher.state,
+    registrationPageThemeEditorUrl,
+    themeEditorUrl,
+  ]);
+
+  useEffect(() => {
     if (!pendingThemeEditorOpenRef.current) return;
     if (registrationFormFetcher.state !== "idle") return;
 
     pendingThemeEditorOpenRef.current = false;
+    setRegistrationFormBusy(false);
 
     const formResult = registrationFormFetcher.data;
     if (
@@ -643,14 +669,14 @@ export default function Index() {
     if (formResult.intent === "create-registration-template") {
       if (formResult.savedViaApi && formResult.templateExists) {
         setRegistrationFormNotice(
-          "Customer Registration page template created in Pages templates. Theme editor opened — click Save after Registration Form is added.",
+          "Customer Registration template created on your theme. Theme editor opened on that template — click Save to publish the Registration Form block.",
         );
         return;
       }
 
       if (formResult.templateExists) {
         setRegistrationFormNotice(
-          "Customer Registration template is ready. Theme editor opened — click Save after reviewing.",
+          "Customer Registration template is ready in Pages templates. Theme editor opened — click Save after reviewing.",
         );
         return;
       }
@@ -939,10 +965,10 @@ export default function Index() {
                   ) : (
                     <Button
                       onClick={addRegistrationFormToPage}
-                      loading={registrationFormFetcher.state !== "idle"}
+                      loading={registrationFormBusy || registrationFormFetcher.state !== "idle"}
                       variant="primary"
                     >
-                      {registrationNeedsManualTemplate && !registrationPageTemplateExists
+                      {!registrationPageTemplateExists
                         ? "Create registration template"
                         : "Add form to page"}
                     </Button>

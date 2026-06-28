@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 
 const REGISTRATION_TEMPLATE_ONLY = "templates/page.customer-registration.json";
@@ -19,9 +20,40 @@ export function canUseThemeCliPush(): boolean {
   );
 }
 
+const CLI_PUSH_TIMEOUT_MS = 45_000;
+
+/** Resolve @shopify/cli/bin/run.js — spawn via Node (Windows-safe; raw `shopify` / npm often hang). */
+export function resolveShopifyCliBin(): string | null {
+  const fromEnv = process.env.APPROVEFY_SHOPIFY_CLI_BIN?.trim();
+  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+
+  const candidates: string[] = [
+    path.join(process.cwd(), "node_modules", "@shopify", "cli", "bin", "run.js"),
+  ];
+
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA?.trim();
+    if (appData) {
+      candidates.push(path.join(appData, "npm", "node_modules", "@shopify", "cli", "bin", "run.js"));
+    }
+  } else {
+    candidates.push("/usr/local/lib/node_modules/@shopify/cli/bin/run.js");
+    const home = process.env.HOME?.trim();
+    if (home) {
+      candidates.push(path.join(home, ".npm-global", "lib", "node_modules", "@shopify", "cli", "bin", "run.js"));
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 export async function pushRegistrationTemplateViaCli(
   shop: string,
   themeNumericId: string,
+  opts?: { timeoutMs?: number },
 ): Promise<{ ok: boolean; error?: string }> {
   if (!canUseThemeCliPush()) {
     return { ok: false, error: "Theme CLI push is disabled in production" };
@@ -30,11 +62,31 @@ export async function pushRegistrationTemplateViaCli(
     return { ok: false, error: "Missing theme id" };
   }
 
+  const cliBin = resolveShopifyCliBin();
+  if (!cliBin) {
+    return {
+      ok: false,
+      error: "Shopify CLI not found — install @shopify/cli globally or set APPROVEFY_SHOPIFY_CLI_BIN",
+    };
+  }
+
   const store = shop.replace(/\.myshopify\.com$/i, "");
   const storeHost = `${store}.myshopify.com`;
+  const timeoutMs = opts?.timeoutMs ?? CLI_PUSH_TIMEOUT_MS;
 
   return new Promise((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (result: { ok: boolean; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+
     const args = [
+      cliBin,
       "theme",
       "push",
       "--store",
@@ -49,10 +101,15 @@ export async function pushRegistrationTemplateViaCli(
       "--force",
     ];
 
-    const child = spawn("shopify", args, {
-      shell: true,
+    const child = spawn(process.execPath, args, {
+      cwd: process.cwd(),
       windowsHide: true,
-      env: process.env,
+      env: {
+        ...process.env,
+        CI: "1",
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+      },
     });
 
     let output = "";
@@ -63,16 +120,28 @@ export async function pushRegistrationTemplateViaCli(
       output += String(chunk);
     });
 
+    timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // ignore
+      }
+      finish({
+        ok: false,
+        error: `shopify theme push timed out after ${Math.round(timeoutMs / 1000)}s`,
+      });
+    }, timeoutMs);
+
     child.on("error", (err) => {
-      resolve({ ok: false, error: err.message });
+      finish({ ok: false, error: err.message });
     });
 
     child.on("close", (code) => {
-      if (code === 0 && /success|upload complete|was pushed successfully/i.test(output)) {
-        resolve({ ok: true });
+      if (code === 0) {
+        finish({ ok: true });
         return;
       }
-      resolve({
+      finish({
         ok: false,
         error: output.trim() || `shopify theme push exited with code ${code ?? "unknown"}`,
       });
