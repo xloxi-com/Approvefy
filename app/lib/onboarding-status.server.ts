@@ -8,6 +8,24 @@ export function isOnboardingFormReviewed(settings: Record<string, unknown> | nul
   return settings?.[ONBOARDING_FORM_REVIEWED_KEY] === true;
 }
 
+/** True when the shop has at least one form (default form is seeded on install). */
+export async function shopHasRegistrationForm(shop: string): Promise<boolean> {
+  if (!shop) return false;
+  try {
+    const count = await prisma.formConfig.count({ where: { shop } });
+    return count > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Persist onboardingFormReviewed when forms already exist (e.g. after install). */
+export async function ensureOnboardingFormReviewedWhenFormsExist(shop: string): Promise<void> {
+  if (!shop) return;
+  if (!(await shopHasRegistrationForm(shop))) return;
+  await markOnboardingFormReviewed(shop);
+}
+
 export function isOnboardingSettingsSaved(settings: Record<string, unknown> | null | undefined): boolean {
   return settings?.[ONBOARDING_SETTINGS_SAVED_KEY] === true;
 }
@@ -17,7 +35,7 @@ export function withOnboardingSettingsSaved<T extends Record<string, unknown>>(s
   return { ...settings, [ONBOARDING_SETTINGS_SAVED_KEY]: true };
 }
 
-/** Mark form builder step complete after merchant saves a form. */
+/** Mark form builder step complete after merchant saves a form, or when a default form exists on install. */
 export async function markOnboardingFormReviewed(shop: string): Promise<void> {
   if (!shop) return;
 

@@ -1,5 +1,6 @@
 import { ensureDefaultCustomerB2BForm } from "./default-form-config.server";
 import { ensureRegistrationStorefrontPage } from "./registration-page.server";
+import { ensureOnboardingFormReviewedWhenFormsExist } from "./onboarding-status.server";
 
 type AdminGraphqlClient = {
   graphql: (
@@ -17,10 +18,13 @@ export async function runAppInstallSetup(
 
   try {
     await ensureDefaultCustomerB2BForm(shop);
+    await ensureOnboardingFormReviewedWhenFormsExist(shop);
     const page = await ensureRegistrationStorefrontPage(admin, shop);
     console.info("[AppInstall] Storefront setup complete", {
       shop,
       registrationPageCreated: page.created,
+      registrationPageExists: page.pageExists,
+      registrationPagePublished: page.pagePublished,
       pagePath: page.pagePath,
     });
   } catch (error) {

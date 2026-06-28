@@ -36,6 +36,7 @@ import {
 import { getThemeSetupStatus } from "../lib/theme-setup-status.server";
 import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
 import {
+  ensureOnboardingFormReviewedWhenFormsExist,
   isOnboardingFormReviewed,
   isOnboardingSettingsSaved,
 } from "../lib/onboarding-status.server";
@@ -82,8 +83,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       getThemeSetupStatus(admin),
     ]);
     formsCount = formCount;
+    if (formCount > 0) {
+      void ensureOnboardingFormReviewedWhenFormsExist(shop).catch((err) => {
+        console.warn("[Home] ensureOnboardingFormReviewedWhenFormsExist failed:", err);
+      });
+    }
     const approvalSettings = parseCustomerApprovalSettings(appSettingsRow?.customerApprovalSettings);
-    formReviewed = isOnboardingFormReviewed(approvalSettings);
+    formReviewed = isOnboardingFormReviewed(approvalSettings) || formCount > 0;
     settingsSaved = isOnboardingSettingsSaved(approvalSettings);
     registrationPageThemeEditorUrl = pageResult.themeEditorUrl;
     registrationPageStorefrontUrl = pageResult.storefrontPageUrl;
@@ -486,6 +492,13 @@ export default function Index() {
                 persists, re-open the app and approve the updated permissions when prompted.
               </Banner>
             )}
+            {registrationPageExists && !registrationPagePublished && (
+              <Banner tone="warning" title="Registration page is not published">
+                {registrationPagePath} is hidden on your storefront. Open Settings → Store, confirm
+                &quot;Redirect header customer account icon&quot; is enabled, click Save — Approvefy will
+                publish the page automatically.
+              </Banner>
+            )}
             {!themeSetupCheckAvailable && !extensionSetup.loaded && (
               <Banner tone="info" title="Theme setup status unavailable">
                 Approvefy could not read your live theme files. Re-open the app and approve the updated
@@ -554,7 +567,7 @@ export default function Index() {
               step={3}
               icon={FormsIcon}
               title="Review your registration form"
-              description="A default form is created on install. Open Form Builder, review the fields, and save once — that marks this step complete."
+              description="A default Customer B2B form is created when you install Approvefy. Open Form Builder anytime to customize fields or add more forms."
               complete={formDone}
               actions={
                 <Link to="/app/form-config" prefetch="render">

@@ -1017,13 +1017,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         invalidateCache(shopKey(shop, "appSettings"));
         invalidateCache(shopKey(shop, "registrationAfterSubmit"));
         try {
-            await syncRegistrationPageStorefrontVisibility(
-                admin,
-                shop,
-                settingsToPersist.redirectSignInLinksToFormPage === true,
-            );
+            if (settingsToPersist.redirectSignInLinksToFormPage === true) {
+                await ensureRegistrationStorefrontPage(admin, shop);
+            } else {
+                await syncRegistrationPageStorefrontVisibility(admin, shop, false);
+            }
         } catch (visibilityErr) {
-            console.warn("[Settings] syncRegistrationPageStorefrontVisibility failed:", visibilityErr);
+            console.warn("[Settings] registration page visibility sync failed:", visibilityErr);
         }
         if (merchantPlan !== "basic") {
             if (smtpHost && smtpFromEmail) {

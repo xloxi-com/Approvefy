@@ -45,30 +45,47 @@ export function registrationStorefrontUrl(shop: string): string {
 async function findRegistrationPage(
   admin: AdminGraphqlClient,
 ): Promise<{ id: string; handle: string; isPublished: boolean } | null> {
-  const res = await admin.graphql(
-    `#graphql
-    query RegistrationPageByHandle($query: String!) {
-      pages(first: 1, query: $query) {
-        nodes {
-          id
-          handle
-          isPublished
+  const queries = [
+    `handle:${REGISTRATION_PAGE_HANDLE}`,
+    `handle:'${REGISTRATION_PAGE_HANDLE}'`,
+    `title:'${REGISTRATION_PAGE_TITLE}'`,
+  ];
+
+  for (const query of queries) {
+    const res = await admin.graphql(
+      `#graphql
+      query RegistrationPageByHandle($query: String!) {
+        pages(first: 5, query: $query) {
+          nodes {
+            id
+            handle
+            isPublished
+          }
         }
-      }
-    }`,
-    { variables: { query: `handle:${REGISTRATION_PAGE_HANDLE}` } },
-  );
-  const json = (await res.json()) as {
-    data?: { pages?: { nodes?: Array<{ id: string; handle: string; isPublished?: boolean }> } };
-    errors?: unknown;
-  };
-  if (json.errors) {
-    console.warn("[RegistrationPage] pages query failed:", json.errors);
-    return null;
+      }`,
+      { variables: { query } },
+    );
+    const json = (await res.json()) as {
+      data?: { pages?: { nodes?: Array<{ id: string; handle: string; isPublished?: boolean }> } };
+      errors?: unknown;
+    };
+    if (json.errors) {
+      console.warn("[RegistrationPage] pages query failed:", query, json.errors);
+      continue;
+    }
+    const nodes = json.data?.pages?.nodes ?? [];
+    const exact =
+      nodes.find((n) => n.handle?.toLowerCase() === REGISTRATION_PAGE_HANDLE) ?? nodes[0];
+    if (exact?.handle) {
+      return { id: exact.id, handle: exact.handle, isPublished: exact.isPublished === true };
+    }
   }
-  const node = json.data?.pages?.nodes?.[0];
-  if (!node?.handle) return null;
-  return { id: node.id, handle: node.handle, isPublished: node.isPublished === true };
+  return null;
+}
+
+function pagePublishInput(isPublished: boolean): { isPublished: boolean; publishDate?: string } {
+  if (!isPublished) return { isPublished: false };
+  return { isPublished: true, publishDate: new Date().toISOString() };
 }
 
 async function createRegistrationPage(
@@ -95,7 +112,7 @@ async function createRegistrationPage(
         page: {
           title: REGISTRATION_PAGE_TITLE,
           handle: REGISTRATION_PAGE_HANDLE,
-          isPublished,
+          ...pagePublishInput(isPublished),
           body: "<p>Please complete the registration form below to apply for a customer account.</p>",
         },
       },
@@ -163,7 +180,7 @@ export async function syncRegistrationPageStorefrontVisibility(
         }
       }
     }`,
-    { variables: { id: existing.id, page: { isPublished } } },
+    { variables: { id: existing.id, page: pagePublishInput(isPublished) } },
   );
   const json = (await res.json()) as {
     data?: { pageUpdate?: { userErrors?: Array<{ message?: string }> } };
@@ -250,25 +267,38 @@ export async function ensureRegistrationStorefrontPage(
   try {
     await syncRegistrationPageRedirectSettings(shop);
     const redirectEnabled = await isRegistrationPageRedirectEnabled(shop);
+    const shouldPublish = redirectEnabled;
 
     let existing = await findRegistrationPage(admin);
     if (!existing) {
-      // Always publish on first create so theme editor previewPath does not fall back to the 404 template.
-      created = await createRegistrationPage(admin, true);
-      if (!created) {
-        existing = await findRegistrationPage(admin);
-      } else {
-        existing = await findRegistrationPage(admin);
-      }
+      created = await createRegistrationPage(admin, shouldPublish);
+      existing = await findRegistrationPage(admin);
+      if (existing) created = true;
     }
+
     pageExists = !!existing;
     pagePublished = existing?.isPublished === true;
 
-    // During onboarding, keep the registration page published when redirect is enabled (default).
-    await syncRegistrationPageStorefrontVisibility(admin, shop, redirectEnabled);
-    if (pageExists) {
-      const afterSync = await findRegistrationPage(admin);
-      pagePublished = afterSync?.isPublished === true;
+    if (pageExists && shouldPublish && !pagePublished) {
+      await syncRegistrationPageStorefrontVisibility(admin, shop, true);
+      existing = await findRegistrationPage(admin);
+      pagePublished = existing?.isPublished === true;
+    } else if (pageExists) {
+      await syncRegistrationPageStorefrontVisibility(admin, shop, shouldPublish);
+      existing = await findRegistrationPage(admin);
+      pagePublished = existing?.isPublished === true;
+    }
+
+    // Redirect enabled but page still missing/unpublished — retry create + publish once.
+    if (shouldPublish && (!pageExists || !pagePublished)) {
+      if (!pageExists) {
+        await createRegistrationPage(admin, true);
+      } else if (existing?.id) {
+        await syncRegistrationPageStorefrontVisibility(admin, shop, true);
+      }
+      existing = await findRegistrationPage(admin);
+      pageExists = !!existing;
+      pagePublished = existing?.isPublished === true;
     }
   } catch (error) {
     console.warn("[RegistrationPage] ensureRegistrationStorefrontPage failed:", error);
