@@ -16,15 +16,27 @@
   {% endif %}
 >
   <div class="approvefy-registration-mount">
-    <style>
-      @keyframes approvefyMountSpin { to { transform: rotate(360deg); } }
-    </style>
-    <div class="approvefy-form-loading" style="padding:32px 16px;text-align:center;color:#6b7280;font-size:15px;line-height:1.5;">
-      <div style="display:inline-flex;align-items:center;justify-content:center;gap:12px;">
-        <span style="width:22px;height:22px;border:2px solid #e5e7eb;border-top-color:#111827;border-radius:50%;display:inline-block;animation:approvefyMountSpin .75s linear infinite;flex-shrink:0;" aria-hidden="true"></span>
-        <span>Loading form…</span>
+    {% if request.design_mode %}
+      <div
+        class="approvefy-form-design-preview"
+        data-approvefy-design-preview
+        style="padding:24px 16px;border:1px dashed #c4cdd5;border-radius:8px;background:#f9fafb;color:#374151;font-size:14px;line-height:1.5;"
+      >
+        <p style="margin:0 0 12px;font-weight:600;">Approvefy registration form</p>
+        <p style="margin:0 0 8px;color:#6b7280;">Loading your forms…</p>
+        <ul data-approvefy-form-list style="margin:0;padding-left:20px;color:#4b5563;"></ul>
       </div>
-    </div>
+    {% else %}
+      <style>
+        @keyframes approvefyMountSpin { to { transform: rotate(360deg); } }
+      </style>
+      <div class="approvefy-form-loading" style="padding:32px 16px;text-align:center;color:#6b7280;font-size:15px;line-height:1.5;">
+        <div style="display:inline-flex;align-items:center;justify-content:center;gap:12px;">
+          <span style="width:22px;height:22px;border:2px solid #e5e7eb;border-top-color:#111827;border-radius:50%;display:inline-block;animation:approvefyMountSpin .75s linear infinite;flex-shrink:0;" aria-hidden="true"></span>
+          <span>Loading form…</span>
+        </div>
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -52,7 +64,7 @@
       "id": "form_id",
       "label": "Form to display",
       "placeholder": "Leave blank for default form",
-      "info": "Paste a Form ID from the app (Form configuration) to use a specific form. Leave blank for your default form."
+      "info": "Leave blank to show your default form. To show a specific form, paste its Form ID from Form Builder. Your auto-created default form is used when this field is empty."
     },
     {
       "type": "text",

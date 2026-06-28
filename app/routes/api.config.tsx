@@ -124,7 +124,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             });
         }
 
-        if (!admin || !(await shopHasActiveAppSubscription(admin, shop))) {
+        const themeEditorPreview = url.searchParams.get("themeEditorPreview") === "1";
+
+        if (
+            !themeEditorPreview &&
+            (!admin || !(await shopHasActiveAppSubscription(admin, shop)))
+        ) {
             return new Response(
                 JSON.stringify({
                     fields: [],
@@ -583,6 +588,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 ? sanitizeFormTypeForPlan(config.formType, merchantPlan)
                 : sanitizeFormTypeForPlan("wholesale", merchantPlan);
 
+        const availableForms =
+            themeEditorPreview && shop
+                ? await prisma.formConfig
+                      .findMany({
+                          where: { shop },
+                          orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+                          select: { id: true, name: true, isDefault: true, enabled: true },
+                      })
+                      .catch(() => [])
+                : undefined;
+
         const payload = {
             ...config,
             formType: resolvedFormType,
@@ -594,6 +610,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             customCss,
             googleFont,
             customerApprovalSettings,
+            ...(availableForms ? { availableForms } : {}),
             ...(doPendingRegistrationLookup ? { loggedInCustomerHasPendingRegistration } : {}),
         };
 

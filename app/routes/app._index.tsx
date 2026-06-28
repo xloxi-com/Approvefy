@@ -64,6 +64,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let registrationPageThemeEditorUrl = "";
   let registrationPageStorefrontUrl = "";
   let registrationPageCreated = false;
+  let registrationPageExists = false;
+  let registrationPagePublished = false;
   let appEmbedEnabled = false;
   let registrationFormBlockOnPage = false;
   let themeSetupCheckAvailable = false;
@@ -86,6 +88,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     registrationPageThemeEditorUrl = pageResult.themeEditorUrl;
     registrationPageStorefrontUrl = pageResult.storefrontPageUrl;
     registrationPageCreated = pageResult.created;
+    registrationPageExists = pageResult.pageExists;
+    registrationPagePublished = pageResult.pagePublished;
     appEmbedEnabled = themeSetup.appEmbedEnabled;
     registrationFormBlockOnPage = themeSetup.registrationFormBlockOnPage;
     themeSetupCheckAvailable = themeSetup.themeCheckAvailable;
@@ -128,6 +132,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       registrationPageThemeEditorUrl,
       registrationPageStorefrontUrl,
       registrationPageCreated,
+      registrationPageExists,
+      registrationPagePublished,
       appEmbedEnabled,
       registrationFormBlockOnPage,
       themeSetupCheckAvailable,
@@ -291,6 +297,8 @@ export default function Index() {
     registrationPagePath,
     registrationPageThemeEditorUrl,
     registrationPageStorefrontUrl,
+    registrationPageExists,
+    registrationPagePublished,
     appEmbedEnabled,
     registrationFormBlockOnPage,
     themeSetupCheckAvailable,
@@ -472,6 +480,12 @@ export default function Index() {
 
         <Layout.Section>
           <BlockStack gap="400">
+            {!registrationPageExists && (
+              <Banner tone="warning" title="Registration page not ready">
+                Approvefy could not create the storefront registration page yet. Refresh this page — if it
+                persists, re-open the app and approve the updated permissions when prompted.
+              </Banner>
+            )}
             {!themeSetupCheckAvailable && !extensionSetup.loaded && (
               <Banner tone="info" title="Theme setup status unavailable">
                 Approvefy could not read your live theme files. Re-open the app and approve the updated
@@ -515,7 +529,7 @@ export default function Index() {
               step={2}
               icon={PageIcon}
               title="Add form to registration page"
-              description={`Your registration page is at ${registrationPagePath}. Open the theme editor and add the Registration Form block to that page. The store redirect URL is set automatically when empty.`}
+              description={`Your registration page is at ${registrationPagePath}. This opens the Page template in the theme editor (not the 404 page). Add the Registration Form block to the main section, then save.`}
               complete={registrationPageFormDone}
               optional={!registrationPageFormDone}
               actions={
@@ -527,7 +541,7 @@ export default function Index() {
                   >
                     {registrationPageFormDone ? "Open page in theme editor" : "Add form to page"}
                   </Button>
-                  {registrationPageStorefrontUrl ? (
+                  {registrationPageStorefrontUrl && registrationPagePublished ? (
                     <Button url={registrationPageStorefrontUrl} variant="secondary" external>
                       Preview page
                     </Button>

@@ -16,16 +16,24 @@ function storeHandleFromShop(shop: string): string {
   return shop.replace(/\.myshopify\.com$/i, "");
 }
 
-/** Theme editor deep link: open the registration page and offer the Registration Form app block. */
-export function buildRegistrationPageThemeEditorUrl(shop: string): string {
+/** Theme editor deep link: open the Page template (not 404) and offer the Registration Form app block. */
+export function buildRegistrationPageThemeEditorUrl(
+  shop: string,
+  opts?: { pageExists?: boolean },
+): string {
   const storeHandle = storeHandleFromShop(shop);
   const apiKey = (process.env.SHOPIFY_API_KEY || "").trim();
   const addBlock = apiKey
-    ? `&addAppBlockId=${encodeURIComponent(`${apiKey}/registration-form/registration-form`)}&target=newAppsSection`
+    ? `&addAppBlockId=${encodeURIComponent(`${apiKey}/registration-form`)}&target=mainSection`
     : "";
+  // previewPath on a missing/unpublished page makes Shopify open the 404 template — only use when the page exists.
+  const preview =
+    opts?.pageExists === true
+      ? `&previewPath=${encodeURIComponent(REGISTRATION_PAGE_PATH)}`
+      : "";
   return (
     `https://admin.shopify.com/store/${storeHandle}/themes/current/editor` +
-    `?previewPath=${encodeURIComponent(REGISTRATION_PAGE_PATH)}${addBlock}`
+    `?template=page${preview}${addBlock}`
   );
 }
 
@@ -34,7 +42,9 @@ export function registrationStorefrontUrl(shop: string): string {
   return `https://${handle}.myshopify.com${REGISTRATION_PAGE_PATH}`;
 }
 
-async function findRegistrationPage(admin: AdminGraphqlClient): Promise<{ id: string; handle: string } | null> {
+async function findRegistrationPage(
+  admin: AdminGraphqlClient,
+): Promise<{ id: string; handle: string; isPublished: boolean } | null> {
   const res = await admin.graphql(
     `#graphql
     query RegistrationPageByHandle($query: String!) {
@@ -42,13 +52,14 @@ async function findRegistrationPage(admin: AdminGraphqlClient): Promise<{ id: st
         nodes {
           id
           handle
+          isPublished
         }
       }
     }`,
     { variables: { query: `handle:${REGISTRATION_PAGE_HANDLE}` } },
   );
   const json = (await res.json()) as {
-    data?: { pages?: { nodes?: Array<{ id: string; handle: string }> } };
+    data?: { pages?: { nodes?: Array<{ id: string; handle: string; isPublished?: boolean }> } };
     errors?: unknown;
   };
   if (json.errors) {
@@ -56,7 +67,8 @@ async function findRegistrationPage(admin: AdminGraphqlClient): Promise<{ id: st
     return null;
   }
   const node = json.data?.pages?.nodes?.[0];
-  return node?.handle ? node : null;
+  if (!node?.handle) return null;
+  return { id: node.id, handle: node.handle, isPublished: node.isPublished === true };
 }
 
 async function createRegistrationPage(
@@ -216,6 +228,8 @@ export async function syncRegistrationPageRedirectSettings(shop: string): Promis
 export type EnsureRegistrationPageResult = {
   pagePath: string;
   created: boolean;
+  pageExists: boolean;
+  pagePublished: boolean;
   themeEditorUrl: string;
   storefrontPageUrl: string;
 };
@@ -228,30 +242,45 @@ export async function ensureRegistrationStorefrontPage(
   admin: AdminGraphqlClient,
   shop: string,
 ): Promise<EnsureRegistrationPageResult> {
-  const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop);
   const storefrontPageUrl = registrationStorefrontUrl(shop);
 
   let created = false;
+  let pageExists = false;
+  let pagePublished = false;
   try {
     await syncRegistrationPageRedirectSettings(shop);
     const redirectEnabled = await isRegistrationPageRedirectEnabled(shop);
 
-    const existing = await findRegistrationPage(admin);
+    let existing = await findRegistrationPage(admin);
     if (!existing) {
-      created = await createRegistrationPage(admin, redirectEnabled);
+      // Always publish on first create so theme editor previewPath does not fall back to the 404 template.
+      created = await createRegistrationPage(admin, true);
       if (!created) {
-        const afterCreate = await findRegistrationPage(admin);
-        created = !!afterCreate;
+        existing = await findRegistrationPage(admin);
+      } else {
+        existing = await findRegistrationPage(admin);
       }
     }
+    pageExists = !!existing;
+    pagePublished = existing?.isPublished === true;
+
+    // During onboarding, keep the registration page published when redirect is enabled (default).
     await syncRegistrationPageStorefrontVisibility(admin, shop, redirectEnabled);
+    if (pageExists) {
+      const afterSync = await findRegistrationPage(admin);
+      pagePublished = afterSync?.isPublished === true;
+    }
   } catch (error) {
     console.warn("[RegistrationPage] ensureRegistrationStorefrontPage failed:", error);
   }
 
+  const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, { pageExists: pageExists && pagePublished });
+
   return {
     pagePath: REGISTRATION_PAGE_PATH,
     created,
+    pageExists,
+    pagePublished,
     themeEditorUrl,
     storefrontPageUrl,
   };

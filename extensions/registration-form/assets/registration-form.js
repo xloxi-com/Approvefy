@@ -50,6 +50,102 @@
 
   var cfg = window.__REGISTRATION_FORM_CONFIG__ || {}; var embedFormId = (typeof cfg.embedFormId === 'string') ? cfg.embedFormId : '';
   var formIdParam = (typeof embedFormId === 'string' && embedFormId.trim()) ? '&formId=' + encodeURIComponent(embedFormId.trim()) : '';
+  var themeEditorPreviewParam =
+    (typeof window !== 'undefined' && window.Shopify && window.Shopify.designMode) ? '&themeEditorPreview=1' : '';
+  var CONFIG_FETCH_TIMEOUT_MS = 12000;
+
+  function isShopifyDesignMode() {
+    try {
+      return !!(typeof window !== 'undefined' && window.Shopify && window.Shopify.designMode);
+    } catch (eDesign) {
+      void eDesign;
+      return false;
+    }
+  }
+
+  function fetchConfigWithTimeout(url, fetchOpts, timeoutMs) {
+    var ms = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : CONFIG_FETCH_TIMEOUT_MS;
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        reject(new Error('Approvefy config timed out after ' + ms + 'ms'));
+      }, ms);
+      fetch(url, fetchOpts || { cache: 'default', credentials: 'same-origin' })
+        .then(function (r) {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          if (!r.ok) {
+            reject(new Error('Approvefy config failed (HTTP ' + r.status + '). Check App proxy URL / deploy.'));
+            return;
+          }
+          resolve(r);
+        })
+        .catch(function (err) {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          reject(err);
+        });
+    }).then(function (r) {
+      return r.json();
+    });
+  }
+
+  function withConfigTimeout(promise, timeoutMs) {
+    var ms = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : CONFIG_FETCH_TIMEOUT_MS;
+    return Promise.race([
+      promise,
+      new Promise(function (_resolve, reject) {
+        setTimeout(function () {
+          reject(new Error('Approvefy config timed out after ' + ms + 'ms'));
+        }, ms);
+      }),
+    ]);
+  }
+
+  function renderDesignPreviewFormList(forms, activeFormName) {
+    var listEl = document.querySelector('[data-approvefy-form-list]');
+    var previewRoot = document.querySelector('[data-approvefy-design-preview]');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    if (!Array.isArray(forms) || forms.length === 0) {
+      var emptyLi = document.createElement('li');
+      emptyLi.textContent = 'No forms yet — open Approvefy → Form Builder to create one.';
+      listEl.appendChild(emptyLi);
+      if (previewRoot) {
+        var hint = previewRoot.querySelector('[data-approvefy-form-list-hint]');
+        if (!hint) {
+          hint = document.createElement('p');
+          hint.setAttribute('data-approvefy-form-list-hint', '1');
+          hint.style.margin = '8px 0 0';
+          hint.style.color = '#6b7280';
+          previewRoot.appendChild(hint);
+        }
+        hint.textContent = 'Save the theme after adding this block to your registration page.';
+      }
+      return;
+    }
+    forms.forEach(function (form) {
+      if (!form || typeof form !== 'object') return;
+      var li = document.createElement('li');
+      var label = typeof form.name === 'string' && form.name.trim() ? form.name.trim() : 'Registration form';
+      if (form.isDefault) label += ' (default)';
+      if (activeFormName && label.indexOf(activeFormName) === 0) {
+        li.style.fontWeight = '600';
+      }
+      li.textContent = label;
+      listEl.appendChild(li);
+    });
+    if (previewRoot) {
+      var sub = previewRoot.querySelector('p');
+      if (sub) {
+        sub.textContent = forms.length === 1 ? '1 form available:' : forms.length + ' forms available:';
+      }
+    }
+  }
 
   // Backend translations (from Settings) - set after config fetch. When set, these override fallbacks.
   var backendTranslations = null;
@@ -584,6 +680,7 @@
     '&locale=' +
     encodeURIComponent(locale) +
     formIdParam +
+    themeEditorPreviewParam +
     customerShopifyIdParam +
     customerEmailParam;
 
@@ -604,7 +701,7 @@
   }
   var seededConfig = readCachedConfig();
   if (window.__approvefyConfigPrefetchUrl === configUrl && window.__approvefyConfigPromise) {
-    configPromise = wireConfigPromise(window.__approvefyConfigPromise);
+    configPromise = wireConfigPromise(withConfigTimeout(window.__approvefyConfigPromise, CONFIG_FETCH_TIMEOUT_MS));
     window.__approvefyConfigPromise = configPromise;
   } else if (seededConfig) {
     configPromise = wireConfigPromise(Promise.resolve(seededConfig));
@@ -612,11 +709,7 @@
     window.__approvefyConfigPromise = configPromise;
   } else {
     configPromise = wireConfigPromise(
-      fetch(configUrl, { cache: 'default', credentials: 'same-origin' }).then(function (r) {
-        if (!r.ok)
-          throw new Error('Approvefy config failed (HTTP ' + r.status + '). Check App proxy URL / deploy.');
-        return r.json();
-      })
+      fetchConfigWithTimeout(configUrl, { cache: 'default', credentials: 'same-origin' }, CONFIG_FETCH_TIMEOUT_MS)
     );
     window.__approvefyConfigPrefetchUrl = configUrl;
     window.__approvefyConfigPromise = configPromise;
@@ -624,12 +717,11 @@
 
   function fetchFreshConfig() {
     clearStoredApprovalConfigCache();
-    var fresh = fetch(configUrl + '&_t=' + Date.now(), { cache: 'reload', credentials: 'same-origin' })
-      .then(function (r) {
-        if (!r.ok)
-          throw new Error('Approvefy config refresh failed (HTTP ' + r.status + '). Check App proxy URL / deploy.');
-        return r.json();
-      })
+    var fresh = fetchConfigWithTimeout(
+      configUrl + '&_t=' + Date.now(),
+      { cache: 'reload', credentials: 'same-origin' },
+      CONFIG_FETCH_TIMEOUT_MS,
+    )
       .then(function (cfg) {
         writeCachedConfig(cfg);
         return cfg;
@@ -1849,8 +1941,14 @@
         window.__registrationFormSteps = formResult.steps;
         window.__registrationFormType = formType;
       }
+      if (isShopifyDesignMode() && config && Array.isArray(config.availableForms)) {
+        renderDesignPreviewFormList(config.availableForms, config.name || '');
+      }
     } catch (e) {
       console.warn('[Approvefy] Could not load form config:', e);
+      if (isShopifyDesignMode()) {
+        renderDesignPreviewFormList([], '');
+      }
     } finally {
       clearFloatingInlineLoader();
       clearRegisterSpinnerLoader();
@@ -1901,7 +1999,17 @@
       if (isInline && inlineRoot) {
         var mountEmpty = inlineRoot.querySelector('.approvefy-registration-mount');
         if (mountEmpty) {
-          mountEmpty.innerHTML = '<p class="approvefy-form-not-configured" style="padding:12px;border-radius:8px;background:#fef3c7;color:#92400e;">' + escapeHtml(t('formNotConfigured')) + '</p>';
+          if (isShopifyDesignMode()) {
+            var previewOnly = mountEmpty.querySelector('[data-approvefy-design-preview]');
+            if (!previewOnly) {
+              mountEmpty.innerHTML =
+                '<div class="approvefy-form-not-configured" style="padding:12px;border-radius:8px;background:#fef3c7;color:#92400e;">' +
+                escapeHtml(t('formNotConfigured')) +
+                '</div>';
+            }
+          } else {
+            mountEmpty.innerHTML = '<p class="approvefy-form-not-configured" style="padding:12px;border-radius:8px;background:#fef3c7;color:#92400e;">' + escapeHtml(t('formNotConfigured')) + '</p>';
+          }
         }
       }
       return;
@@ -3705,6 +3813,19 @@
       el.innerHTML = html;
       el.className = 'custom-message ' + (type || 'error');
       el.style.display = 'block';
+    }
+  }
+
+  if (isShopifyDesignMode()) {
+    var approvefyDesignMountObserver = new MutationObserver(function () {
+      var pendingMount = document.querySelector(
+        '[data-approvefy-registration-block]:not([data-approvefy-mounted="1"])'
+      );
+      if (pendingMount) init(shop);
+    });
+    var observeRoot = document.body || document.documentElement;
+    if (observeRoot) {
+      approvefyDesignMountObserver.observe(observeRoot, { childList: true, subtree: true });
     }
   }
 
