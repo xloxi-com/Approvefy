@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "prisma generate && react-router build",
-    "vercel-build": "react-router build",
+    "vercel-build": "prisma generate && prisma migrate deploy && react-router build",
     "postinstall": "node scripts/prisma-generate-safe.cjs",
     "dev": "node scripts/dev-localhost.cjs",
     "dev:localhost": "node scripts/dev-localhost.cjs",
@@ -17,6 +17,7 @@
     "deploy": "shopify app deploy",
     "config:use": "shopify app config use",
     "env": "shopify app env",
+    "env:vercel-check": "node scripts/print-vercel-env-vars.cjs",
     "start": "prisma migrate deploy && react-router-serve ./build/server/nodejs_eyJydW50aW1lIjoibm9kZWpzIn0/index.js",
     "docker-start": "npm run setup && npm run start",
     "setup": "prisma generate && prisma migrate deploy",

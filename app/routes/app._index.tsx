@@ -80,24 +80,49 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let themeSetupCheckAvailable = false;
 
   const t0 = performance.now();
+
+  let appSettingsRow: { customerApprovalSettings: unknown } | null = null;
   try {
-    const [formCount, appSettingsRow, themeSetup, existingPage] = await Promise.all([
+    const [formCount, settingsRow] = await Promise.all([
       prisma.formConfig.count({ where: { shop } }),
       prisma.appSettings.findUnique({
         where: { shop },
         select: { customerApprovalSettings: true },
       }),
-      getThemeSetupStatus(admin),
-      findRegistrationPage(admin),
     ]);
     formsCount = formCount;
+    appSettingsRow = settingsRow;
     if (formCount > 0) {
       void ensureOnboardingFormReviewedWhenFormsExist(shop).catch((err) => {
         console.warn("[Home] ensureOnboardingFormReviewedWhenFormsExist failed:", err);
       });
     }
+  } catch (error) {
+    dbUnavailable = true;
+    console.error("[Home] Database query failed:", error);
+  }
+
+  let themeSetup = {
+    appEmbedEnabled: false,
+    registrationFormBlockOnPage: false,
+    registrationFormOnDefaultPage: false,
+    registrationPageTemplateExists: false,
+    mainThemeId: null as string | null,
+    themeCheckAvailable: false,
+  };
+  let existingPage: Awaited<ReturnType<typeof findRegistrationPage>> = null;
+  try {
+    [themeSetup, existingPage] = await Promise.all([
+      getThemeSetupStatus(admin),
+      findRegistrationPage(admin),
+    ]);
+  } catch (error) {
+    console.warn("[Home] Theme/page setup check failed:", error);
+  }
+
+  if (!dbUnavailable) {
     const approvalSettings = parseCustomerApprovalSettings(appSettingsRow?.customerApprovalSettings);
-    formReviewed = isOnboardingFormReviewed(approvalSettings) || formCount > 0;
+    formReviewed = isOnboardingFormReviewed(approvalSettings) || formsCount > 0;
     settingsSaved = isOnboardingSettingsSaved(approvalSettings);
     const pageExists = !!existingPage;
     const pagePublished = existingPage?.isPublished === true;
@@ -135,9 +160,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         console.warn("[Home] cleanRegistrationFormOffDefaultPageTemplate failed:", err);
       });
     }
-  } catch (error) {
-    dbUnavailable = true;
-    console.error("[Home] Failed to load setup data:", error);
   }
   const dbMs = Math.round(performance.now() - t0);
 
