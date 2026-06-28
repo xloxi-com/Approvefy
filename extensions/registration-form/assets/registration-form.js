@@ -1773,7 +1773,7 @@
         if (gateConfig && typeof gateConfig === 'object') {
           writeCachedConfig(gateConfig);
           var gateCas = gateConfig.customerApprovalSettings;
-          if (!gateCas || gateCas.redirectSignInLinksToFormPage !== true) {
+          if (gateCas && gateCas.redirectSignInLinksToFormPage === false) {
             clearStoredApprovalConfigCache();
             clearStoredRenderedFormCache();
             var homeGate = storefrontHomeHref();
@@ -1887,7 +1887,7 @@
       config &&
       config.customerApprovalSettings &&
       isDedicatedRegistrationPagePath(config.customerApprovalSettings) &&
-      config.customerApprovalSettings.redirectSignInLinksToFormPage !== true
+      config.customerApprovalSettings.redirectSignInLinksToFormPage === false
     ) {
       var homeHref = storefrontHomeHref();
       if (normalizeComparePathForRegistration(window.location.pathname) !== normalizeComparePathForRegistration(homeHref)) {

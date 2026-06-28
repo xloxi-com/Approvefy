@@ -90,7 +90,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const dbMs = Math.round(performance.now() - t0);
 
   const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
-  const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?context=apps`;
+  const apiKey = (process.env.SHOPIFY_API_KEY || "").trim();
+  const appEmbedActivate =
+    apiKey.length > 0
+      ? `&activateAppId=${encodeURIComponent(`${apiKey}/app-embed`)}`
+      : "";
+  const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?context=apps${appEmbedActivate}`;
   const storefrontUrl = `https://${storeHandle}.myshopify.com`;
 
   const setupTasksTotal = 4;

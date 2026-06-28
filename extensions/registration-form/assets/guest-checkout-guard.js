@@ -165,11 +165,18 @@
     return DEFAULT_REGISTRATION_PAGE_PATH;
   }
 
+  function signInRedirectEnabledInSettings() {
+    if (guardConfig && guardConfig.redirectSignInLinksToFormPage === false) {
+      return false;
+    }
+    return true;
+  }
+
   function shouldRedirectSignInLinks() {
     if (cfg.customerLoggedIn) {
       return false;
     }
-    if (!guardConfig || guardConfig.redirectSignInLinksToFormPage !== true) {
+    if (!signInRedirectEnabledInSettings()) {
       return false;
     }
     return !!signInRedirectDestination();
@@ -328,6 +335,7 @@
     return !!el.closest(
       [
         'header',
+        'sticky-header',
         '.header',
         '.shopify-section-header',
         '.section-header',
@@ -353,12 +361,16 @@
       '.header__icons .header__icon--account',
       '.header__icons a[href*="account"]',
       '.header__icons a[href*="customer_authentication"]',
+      '.header__icons a[href*="shopify.com"]',
       'a.header__icon[href*="account"]',
       'a.header__icon[href*="customer_authentication"]',
+      'a.header__icon[href*="shopify.com"]',
       'a.customer-account-link',
       '#HeaderMenu-account',
       'a[href*="/account"][class*="header"]',
       'a[href*="/customer_authentication"][class*="header"]',
+      'a[href*="shopify.com"][class*="header"]',
+      'a[href*="shopify.com"][class*="header__icon"]',
     ].join(', ');
   }
 
@@ -452,6 +464,20 @@
     return null;
   }
 
+  function replayNativeAccountIconNavigation(intent) {
+    window.__approvefyBypassGuestCheckoutGuard = true;
+    if (intent.href) {
+      window.location.href = intent.href;
+      return;
+    }
+    if (intent.kind === 'account-icon') {
+      var accountEl = document.querySelector('header shopify-account, .header shopify-account, shop-header shopify-account, shopify-account');
+      if (accountEl && typeof accountEl.click === 'function') {
+        accountEl.click();
+      }
+    }
+  }
+
   function handleHeaderAccountIconClick(e) {
     if (window.__approvefyBypassGuestCheckoutGuard) {
       return;
@@ -460,16 +486,16 @@
     if (!intent) {
       return;
     }
-    if (guardConfig !== null) {
-      if (!shouldRedirectSignInLinks()) {
-        return;
-      }
+    if (shouldRedirectSignInLinks()) {
       e.preventDefault();
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
       e.stopPropagation();
       goToSignInRedirect(signInRedirectDestination());
+      return;
+    }
+    if (guardConfig !== null) {
       return;
     }
     e.preventDefault();
@@ -482,10 +508,7 @@
         goToSignInRedirect(signInRedirectDestination());
         return;
       }
-      window.__approvefyBypassGuestCheckoutGuard = true;
-      if (intent.href) {
-        window.location.href = intent.href;
-      }
+      replayNativeAccountIconNavigation(intent);
     });
   }
 
@@ -497,10 +520,12 @@
       return;
     }
     var intent = findHeaderAccountIconClick(e);
-    if (!intent || intent.kind !== 'account-icon') {
+    if (!intent) {
       return;
     }
-    handleHeaderAccountIconClick(e);
+    if (intent.kind === 'account-icon' || shouldRedirectSignInLinks()) {
+      handleHeaderAccountIconClick(e);
+    }
   }
 
   function shouldRedirectGuest() {
@@ -988,6 +1013,8 @@
 
   document.addEventListener('click', handleHeaderAccountIconClick, true);
   document.addEventListener('pointerdown', handleHeaderAccountIconPointerDown, true);
+  document.addEventListener('mousedown', handleHeaderAccountIconPointerDown, true);
+  document.addEventListener('touchstart', handleHeaderAccountIconPointerDown, true);
   document.addEventListener('click', handleGuestCheckoutEvent, true);
 
   document.addEventListener(
@@ -1129,6 +1156,29 @@
     });
   }
 
+  function maybeRedirectGuestFromAccountEntry() {
+    if (!cfg || cfg.customerLoggedIn) {
+      return;
+    }
+    if (!pathIsCustomerAccountEntry(window.location.pathname)) {
+      return;
+    }
+    function attemptRedirect() {
+      if (!shouldRedirectSignInLinks()) {
+        return;
+      }
+      var dest = signInRedirectDestination();
+      if (dest && !isAlreadyOnRedirectDestination(dest)) {
+        window.location.replace(dest);
+      }
+    }
+    if (guardConfig !== null) {
+      attemptRedirect();
+      return;
+    }
+    guardReady.then(attemptRedirect);
+  }
+
   function runGuardIdle(fn) {
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(fn);
@@ -1139,6 +1189,7 @@
 
   function runInitialGuardTasks() {
     runGuardIdle(function () {
+      maybeRedirectGuestFromAccountEntry();
       maybeRedirectUnapprovedFromAccount();
       maybeLeaveDisabledRegistrationPage();
     });
