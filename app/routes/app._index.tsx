@@ -33,9 +33,13 @@ import {
   ensureRegistrationStorefrontPage,
   REGISTRATION_PAGE_PATH,
 } from "../lib/registration-page.server";
-import { ensureDefaultCustomerB2BForm } from "../lib/default-form-config.server";
 import { getThemeSetupStatus } from "../lib/theme-setup-status.server";
 import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
+import {
+  isOnboardingFormReviewed,
+  isOnboardingSettingsSaved,
+} from "../lib/onboarding-status.server";
+import { parseCustomerApprovalSettings } from "../lib/customer-approval-settings.server";
 
 type ShopifyAppHome = {
   app?: {
@@ -54,7 +58,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const billingPending = url.searchParams.get("billing") === "callback";
 
   let formsCount = 0;
-  let hasSettings = false;
+  let formReviewed = false;
+  let settingsSaved = false;
   let dbUnavailable = false;
   let registrationPageThemeEditorUrl = "";
   let registrationPageStorefrontUrl = "";
@@ -65,18 +70,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const t0 = performance.now();
   try {
-    await ensureDefaultCustomerB2BForm(shop);
-
-    const [formCount, settingsExists, pageResult, themeSetup] = await Promise.all([
+    const [formCount, appSettingsRow, pageResult, themeSetup] = await Promise.all([
       prisma.formConfig.count({ where: { shop } }),
-      prisma.appSettings
-        .findUnique({ where: { shop }, select: { id: true } })
-        .then((r: { id: string } | null) => !!r),
+      prisma.appSettings.findUnique({
+        where: { shop },
+        select: { customerApprovalSettings: true },
+      }),
       ensureRegistrationStorefrontPage(admin, shop),
       getThemeSetupStatus(admin),
     ]);
     formsCount = formCount;
-    hasSettings = settingsExists;
+    const approvalSettings = parseCustomerApprovalSettings(appSettingsRow?.customerApprovalSettings);
+    formReviewed = isOnboardingFormReviewed(approvalSettings);
+    settingsSaved = isOnboardingSettingsSaved(approvalSettings);
     registrationPageThemeEditorUrl = pageResult.themeEditorUrl;
     registrationPageStorefrontUrl = pageResult.storefrontPageUrl;
     registrationPageCreated = pageResult.created;
@@ -112,7 +118,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       themeEditorUrl,
       storefrontUrl,
       formsCount,
-      hasSettings,
+      formReviewed,
+      settingsSaved,
       dbUnavailable,
       setupTasksTotal,
       analytics: analyticsPromise,
@@ -275,7 +282,8 @@ export default function Index() {
     themeEditorUrl,
     storefrontUrl,
     formsCount,
-    hasSettings,
+    formReviewed,
+    settingsSaved,
     dbUnavailable,
     setupTasksTotal,
     analytics,
@@ -313,11 +321,18 @@ export default function Index() {
     }
   }, []);
 
-  const appEmbedDone = appEmbedEnabled || extensionSetup.appEmbedEnabled;
-  const registrationPageFormDone =
-    registrationFormBlockOnPage || extensionSetup.registrationFormBlockOnPage;
-  const formDone = formsCount > 0;
-  const settingsDone = hasSettings;
+  const appEmbedDone = themeSetupCheckAvailable
+    ? appEmbedEnabled
+    : extensionSetup.loaded
+      ? extensionSetup.appEmbedEnabled
+      : appEmbedEnabled;
+  const registrationPageFormDone = themeSetupCheckAvailable
+    ? registrationFormBlockOnPage
+    : extensionSetup.loaded
+      ? extensionSetup.registrationFormBlockOnPage
+      : registrationFormBlockOnPage;
+  const formDone = formReviewed;
+  const settingsDone = settingsSaved;
 
   const setupTasksComplete =
     (appEmbedDone ? 1 : 0) +
@@ -524,8 +539,8 @@ export default function Index() {
             <SetupStep
               step={3}
               icon={FormsIcon}
-              title="Create a registration form"
-              description="Build at least one form in Form Builder. Leave the theme embed Form ID blank to use your default form."
+              title="Review your registration form"
+              description="A default form is created on install. Open Form Builder, review the fields, and save once — that marks this step complete."
               complete={formDone}
               actions={
                 <Link to="/app/form-config" prefetch="render">
@@ -540,7 +555,7 @@ export default function Index() {
               step={4}
               icon={SettingsIcon}
               title="Configure settings"
-              description="Set languages, form appearance, and approval workflow — including SMTP, notifications, and storefront messages."
+              description="Set languages, form appearance, and approval workflow — including SMTP, notifications, and storefront messages. Save Settings once to complete this step."
               complete={settingsDone}
               actions={
                 <Link to="/app/settings" prefetch="render">

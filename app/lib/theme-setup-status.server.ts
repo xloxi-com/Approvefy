@@ -99,7 +99,7 @@ function hasActiveAppEmbed(settingsData: Record<string, unknown> | null): boolea
 
 const MAIN_THEME_SETUP_FILES_QUERY = `#graphql
   query ApprovefyMainThemeSetupFiles {
-    themes(first: 5, roles: [MAIN, UNPUBLISHED, DEVELOPMENT]) {
+    themes(first: 1, roles: [MAIN]) {
       nodes {
         id
         role
@@ -154,7 +154,7 @@ function readThemeFiles(fileNodes: ThemeFileNode[]) {
 }
 
 /**
- * Reads theme files from MAIN / draft themes to detect app embed + registration block.
+ * Reads the published (MAIN) theme only — draft/dev themes must not mark onboarding complete.
  * Requires read_themes. Prefer merging with shopify.app.extensions() on the client when embedded.
  */
 export async function getThemeSetupStatus(admin: AdminGraphqlClient): Promise<ThemeSetupStatus> {

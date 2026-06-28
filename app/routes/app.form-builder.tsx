@@ -60,6 +60,7 @@ import {
 } from "../lib/theme-settings";
 import { STOREFRONT_FORM_DEFAULTS_EN } from "../lib/storefront-form-defaults";
 import { ensureRegistrationStorefrontPage } from "../lib/registration-page.server";
+import { markOnboardingFormReviewed } from "../lib/onboarding-status.server";
 import {
     DEFAULT_CUSTOMER_B2B_FORM_FIELDS,
     DEFAULT_CUSTOMER_B2B_FORM_NAME,
@@ -1591,6 +1592,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 }
             }
             const fresh = await prisma.formConfig.findFirst({ where: { id: formIdParam, shop }, select: { updatedAt: true } });
+            void markOnboardingFormReviewed(shop).catch((err) => {
+                console.warn("[FormBuilder] markOnboardingFormReviewed failed:", err);
+            });
             return { success: true, formId: formIdParam, formUpdatedAt: fresh?.updatedAt.toISOString() ?? null };
         } else {
             const created = await prisma.formConfig.create({
@@ -1642,6 +1646,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             }
             void ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
                 console.warn("[FormBuilder] ensureRegistrationStorefrontPage after create failed:", err);
+            });
+            void markOnboardingFormReviewed(shop).catch((err) => {
+                console.warn("[FormBuilder] markOnboardingFormReviewed failed:", err);
             });
             return { success: true, formId: created.id, formUpdatedAt: created.updatedAt.toISOString() };
         }

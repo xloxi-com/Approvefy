@@ -68,6 +68,7 @@ import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
 import { invalidateCustomerApprovalModeCache } from "../models/approval.server";
 import { invalidateCache, shopKey } from "../lib/cache.server";
 import { ensureRegistrationStorefrontPage, syncRegistrationPageStorefrontVisibility } from "../lib/registration-page.server";
+import { withOnboardingSettingsSaved } from "../lib/onboarding-status.server";
 import {
     BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
     getSettingsStoreUiStrings,
@@ -994,7 +995,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             updatePayload.formTranslations = formTranslations;
         }
         // Store full customerApprovalSettings (subject, body, preset id) so loader can show last-saved template after reload
-        updatePayload.customerApprovalSettings = settingsToPersist as unknown as Prisma.InputJsonValue;
+        updatePayload.customerApprovalSettings = withOnboardingSettingsSaved(
+            settingsToPersist as unknown as Record<string, unknown>,
+        ) as unknown as Prisma.InputJsonValue;
         await prisma.appSettings.upsert({
             where: { shop },
             update: updatePayload,
@@ -1005,7 +1008,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 formTranslations: formTranslations ?? undefined,
                 customCss,
                 themeSettings: themeSettings as unknown as Prisma.InputJsonValue,
-                customerApprovalSettings: settingsToPersist as unknown as Prisma.InputJsonValue,
+                customerApprovalSettings: withOnboardingSettingsSaved(
+                    settingsToPersist as unknown as Record<string, unknown>,
+                ) as unknown as Prisma.InputJsonValue,
             } as AppSettingsUpsertCreate,
         });
         invalidateCustomerApprovalModeCache(shop);
