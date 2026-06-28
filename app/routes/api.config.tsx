@@ -125,9 +125,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
 
         const themeEditorPreview = url.searchParams.get("themeEditorPreview") === "1";
+        const guardOnly = url.searchParams.get("guardOnly") === "1";
 
         if (
             !themeEditorPreview &&
+            !guardOnly &&
             (!admin || !(await shopHasActiveAppSubscription(admin, shop)))
         ) {
             return new Response(

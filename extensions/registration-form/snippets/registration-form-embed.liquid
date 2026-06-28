@@ -181,3 +181,81 @@ window.__REGISTRATION_FORM_CONFIG__ = {
   <script src="{{ 'registration-form.js' | asset_url }}" defer></script>
 {% endif %}
 <script src="{{ 'guest-checkout-guard.js' | asset_url }}" defer></script>
+<script>
+(function () {
+  var cfg = window.__REGISTRATION_FORM_CONFIG__;
+  if (!cfg || cfg.customerLoggedIn) return;
+  var defaultDest = cfg.registrationPagePath || '/pages/customer-registration';
+  function composedPath(ev) {
+    if (ev.composedPath) return ev.composedPath();
+    var out = [];
+    var n = ev.target;
+    while (n) {
+      out.push(n);
+      n = n.parentNode || (n.host && n.host);
+    }
+    return out;
+  }
+  function normalizePath(pathname) {
+    var p = String(pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
+    var m = p.toLowerCase().match(/^(\/[a-z]{2}(?:-[a-z]{2})?)(\/.*|$)/);
+    if (m && m[1] && m[1].length <= 6) {
+      p = m[2] && m[2].length > 0 ? m[2] : '/';
+    }
+    return p.toLowerCase();
+  }
+  function storefrontRoot() {
+    try {
+      if (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) {
+        return window.Shopify.routes.root;
+      }
+    } catch (e) {
+      void e;
+    }
+    return '/';
+  }
+  function goRelative(dest) {
+    var d = String(dest || '').trim();
+    if (!d) return;
+    var root = storefrontRoot();
+    var path = d.indexOf('/') === 0 ? d : '/' + d;
+    var base = root.charAt(root.length - 1) === '/' ? root : root + '/';
+    window.location.href = base + path.replace(/^\//, '');
+  }
+  function isHeaderAccountTarget(el) {
+    if (!el || !el.closest) return false;
+    if (el.closest('.approvefy-auth-tabs')) return false;
+    var headerSel =
+      'header, sticky-header, .header, #shopify-section-header, [id*="header"], .header__icons, shopify-account';
+    if (!el.closest(headerSel)) return false;
+    if (el.closest('shopify-account')) return true;
+    var link = el.closest('a[href]');
+    if (!link) return false;
+    var href = (link.getAttribute('href') || link.href || '').toLowerCase();
+    if (!href || href === '#') return !!el.closest('.header__icon--account, .header__icons');
+    return (
+      href.indexOf('/account') !== -1 ||
+      href.indexOf('/customer_authentication') !== -1 ||
+      href.indexOf('shopify.com') !== -1
+    );
+  }
+  function onAccountIcon(e) {
+    if (window.__approvefyBypassGuestCheckoutGuard) return;
+    if (window.__approvefySignInRedirectEnabled === false) return;
+    var path = composedPath(e);
+    var i;
+    for (i = 0; i < path.length; i++) {
+      if (isHeaderAccountTarget(path[i])) {
+        if (normalizePath(window.location.pathname) === normalizePath(defaultDest)) return;
+        e.preventDefault();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        e.stopPropagation();
+        goRelative(defaultDest);
+        return;
+      }
+    }
+  }
+  document.addEventListener('click', onAccountIcon, true);
+  document.addEventListener('pointerdown', onAccountIcon, true);
+})();
+</script>

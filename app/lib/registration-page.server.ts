@@ -1,5 +1,9 @@
 import prisma from "../db.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
+import {
+  ensureRegistrationPageThemeTemplate,
+  REGISTRATION_PAGE_TEMPLATE,
+} from "./theme-registration-template.server";
 
 export const REGISTRATION_PAGE_HANDLE = "customer-registration";
 export const REGISTRATION_PAGE_TITLE = "Customer Registration";
@@ -16,24 +20,25 @@ function storeHandleFromShop(shop: string): string {
   return shop.replace(/\.myshopify\.com$/i, "");
 }
 
-/** Theme editor deep link: open the Page template (not 404) and offer the Registration Form app block. */
+/** Theme editor deep link: open the dedicated registration page template (not the default page template). */
 export function buildRegistrationPageThemeEditorUrl(
   shop: string,
-  opts?: { pageExists?: boolean },
+  opts?: { pageExists?: boolean; templateReady?: boolean },
 ): string {
   const storeHandle = storeHandleFromShop(shop);
   const apiKey = (process.env.SHOPIFY_API_KEY || "").trim();
-  const addBlock = apiKey
-    ? `&addAppBlockId=${encodeURIComponent(`${apiKey}/registration-form`)}&target=mainSection`
-    : "";
-  // previewPath on a missing/unpublished page makes Shopify open the 404 template — only use when the page exists.
+  const template = opts?.templateReady === false ? "page" : REGISTRATION_PAGE_TEMPLATE;
+  const addBlock =
+    apiKey && template === REGISTRATION_PAGE_TEMPLATE
+      ? `&addAppBlockId=${encodeURIComponent(`${apiKey}/registration-form`)}&target=mainSection`
+      : "";
   const preview =
     opts?.pageExists === true
       ? `&previewPath=${encodeURIComponent(REGISTRATION_PAGE_PATH)}`
       : "";
   return (
     `https://admin.shopify.com/store/${storeHandle}/themes/current/editor` +
-    `?template=page${preview}${addBlock}`
+    `?template=${encodeURIComponent(template)}${preview}${addBlock}`
   );
 }
 
@@ -99,6 +104,7 @@ async function createRegistrationPage(
         page {
           id
           handle
+          isPublished
         }
         userErrors {
           field
@@ -113,6 +119,7 @@ async function createRegistrationPage(
           title: REGISTRATION_PAGE_TITLE,
           handle: REGISTRATION_PAGE_HANDLE,
           ...pagePublishInput(isPublished),
+          templateSuffix: REGISTRATION_PAGE_HANDLE,
           body: "<p>Please complete the registration form below to apply for a customer account.</p>",
         },
       },
@@ -196,6 +203,45 @@ export async function syncRegistrationPageStorefrontVisibility(
   }
 }
 
+/** Assign the dedicated registration page template suffix on the Shopify page resource. */
+async function syncRegistrationPageTemplateSuffix(admin: AdminGraphqlClient): Promise<void> {
+  const existing = await findRegistrationPage(admin);
+  if (!existing?.id) return;
+
+  const res = await admin.graphql(
+    `#graphql
+    mutation SyncRegistrationPageTemplate($id: ID!, $page: PageUpdateInput!) {
+      pageUpdate(id: $id, page: $page) {
+        page {
+          id
+          templateSuffix
+        }
+        userErrors {
+          message
+        }
+      }
+    }`,
+    {
+      variables: {
+        id: existing.id,
+        page: { templateSuffix: REGISTRATION_PAGE_HANDLE },
+      },
+    },
+  );
+  const json = (await res.json()) as {
+    data?: { pageUpdate?: { userErrors?: Array<{ message?: string }> } };
+    errors?: unknown;
+  };
+  if (json.errors) {
+    console.warn("[RegistrationPage] pageUpdate templateSuffix failed:", json.errors);
+    return;
+  }
+  const userErrors = json.data?.pageUpdate?.userErrors ?? [];
+  if (userErrors.length > 0) {
+    console.warn("[RegistrationPage] pageUpdate templateSuffix userErrors:", userErrors);
+  }
+}
+
 /**
  * When redirect URL is still empty, point guest/sign-in redirects at the registration page
  * and enable sign-in link redirect so storefront links land on the form page.
@@ -247,6 +293,7 @@ export type EnsureRegistrationPageResult = {
   created: boolean;
   pageExists: boolean;
   pagePublished: boolean;
+  templateReady: boolean;
   themeEditorUrl: string;
   storefrontPageUrl: string;
 };
@@ -264,10 +311,14 @@ export async function ensureRegistrationStorefrontPage(
   let created = false;
   let pageExists = false;
   let pagePublished = false;
+  let templateReady = false;
   try {
     await syncRegistrationPageRedirectSettings(shop);
     const redirectEnabled = await isRegistrationPageRedirectEnabled(shop);
     const shouldPublish = redirectEnabled;
+
+    const templateResult = await ensureRegistrationPageThemeTemplate(admin);
+    templateReady = templateResult.templateReady;
 
     let existing = await findRegistrationPage(admin);
     if (!existing) {
@@ -289,7 +340,10 @@ export async function ensureRegistrationStorefrontPage(
       pagePublished = existing?.isPublished === true;
     }
 
-    // Redirect enabled but page still missing/unpublished — retry create + publish once.
+    if (pageExists) {
+      await syncRegistrationPageTemplateSuffix(admin);
+    }
+
     if (shouldPublish && (!pageExists || !pagePublished)) {
       if (!pageExists) {
         await createRegistrationPage(admin, true);
@@ -304,13 +358,17 @@ export async function ensureRegistrationStorefrontPage(
     console.warn("[RegistrationPage] ensureRegistrationStorefrontPage failed:", error);
   }
 
-  const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, { pageExists: pageExists && pagePublished });
+  const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
+    pageExists: pageExists && pagePublished,
+    templateReady,
+  });
 
   return {
     pagePath: REGISTRATION_PAGE_PATH,
     created,
     pageExists,
     pagePublished,
+    templateReady,
     themeEditorUrl,
     storefrontPageUrl,
   };

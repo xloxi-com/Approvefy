@@ -201,10 +201,7 @@ export async function getThemeSetupStatus(admin: AdminGraphqlClient): Promise<Th
       if (hasActiveAppEmbed(parsed.settingsData)) {
         appEmbedEnabled = true;
       }
-      if (
-        hasActiveBlockInJson(parsed.dedicatedPageTemplate, REGISTRATION_FORM_BLOCK_HANDLE) ||
-        hasActiveBlockInJson(parsed.defaultPageTemplate, REGISTRATION_FORM_BLOCK_HANDLE)
-      ) {
+      if (hasActiveBlockInJson(parsed.dedicatedPageTemplate, REGISTRATION_FORM_BLOCK_HANDLE)) {
         registrationFormBlockOnPage = true;
       }
     }

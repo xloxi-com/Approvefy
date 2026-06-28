@@ -40,10 +40,13 @@
     }
   }
 
-  var cfg = window.__REGISTRATION_FORM_CONFIG__;
-  if (!cfg || !cfg.shop) {
+  var cfg = window.__REGISTRATION_FORM_CONFIG__ || {};
+  var shop = cfg.shop || (typeof window !== 'undefined' && window.Shopify && window.Shopify.shop) || '';
+  if (!shop) {
     return;
   }
+  cfg.shop = shop;
+  window.__REGISTRATION_FORM_CONFIG__ = cfg;
   if (!Array.isArray(cfg.customerTags)) {
     cfg.customerTags = [];
   }
@@ -70,6 +73,11 @@
     guardTranslations = (data && data.translations) || null;
     var cas = data && data.customerApprovalSettings;
     guardConfig = cas || null;
+    if (guardConfig && guardConfig.redirectSignInLinksToFormPage === false) {
+      window.__approvefySignInRedirectEnabled = false;
+    } else {
+      window.__approvefySignInRedirectEnabled = true;
+    }
     writeGuardConfigCache(data);
     return guardConfig;
   }
@@ -119,7 +127,8 @@
           '/apps/customer-approval/config?shop=' +
             encodeURIComponent(shop) +
             '&locale=' +
-            encodeURIComponent(guardLocaleParam())
+            encodeURIComponent(guardLocaleParam()) +
+            '&guardOnly=1'
         )
           .then(function (r) {
             return r.json();
@@ -342,6 +351,7 @@
         '.header-wrapper',
         'shop-header',
         '#shopify-section-header',
+        '[id^="shopify-section"][id*="header"]',
         '.site-header',
         '#header',
         '[class*="header__icons"]',
@@ -362,6 +372,7 @@
       '.header__icons a[href*="account"]',
       '.header__icons a[href*="customer_authentication"]',
       '.header__icons a[href*="shopify.com"]',
+      '.header__icons a[href*="/account"]',
       'a.header__icon[href*="account"]',
       'a.header__icon[href*="customer_authentication"]',
       'a.header__icon[href*="shopify.com"]',
@@ -371,6 +382,12 @@
       'a[href*="/customer_authentication"][class*="header"]',
       'a[href*="shopify.com"][class*="header"]',
       'a[href*="shopify.com"][class*="header__icon"]',
+      '#shopify-section-header a[href*="/account"]',
+      '#shopify-section-header a[href*="/customer_authentication"]',
+      '#shopify-section-header shopify-account',
+      'header a[href="/account"]',
+      'header a[href*="/account/login"]',
+      'header a[href*="/account/register"]',
     ].join(', ');
   }
 
@@ -841,7 +858,24 @@
   }
 
   function go(dest) {
-    window.location.href = dest;
+    var d = String(dest || '').trim();
+    if (!d) return;
+    if (d.indexOf('http://') === 0 || d.indexOf('https://') === 0 || d.indexOf('//') === 0) {
+      window.location.href = d.indexOf('//') === 0 ? 'https:' + d : d;
+      return;
+    }
+    var root = '/';
+    try {
+      if (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) {
+        root = window.Shopify.routes.root;
+      }
+    } catch (eRoot) {
+      void eRoot;
+    }
+    var path = d.indexOf('/') === 0 ? d : '/' + d;
+    var base = String(root || '/');
+    if (base.charAt(base.length - 1) !== '/') base += '/';
+    window.location.href = base + path.replace(/^\//, '');
   }
 
   var CHECKOUT_BLOCK_MODAL_ID = 'approvefy-checkout-block-modal';

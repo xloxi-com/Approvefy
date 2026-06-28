@@ -509,7 +509,7 @@ export default function Index() {
               step={1}
               icon={ThemeEditIcon}
               title="Enable app embed block"
-              description="Turn on the Approvefy app embed in your theme (Theme settings → App embeds → Approvefy) so registration scripts load on your storefront."
+              description="Turn on the Approvefy app embed in your theme (Theme settings → App embeds → Approvefy). Required for the header account icon redirect and registration scripts on every page."
               complete={appEmbedDone}
               optional={!appEmbedDone}
               actions={
@@ -542,7 +542,7 @@ export default function Index() {
               step={2}
               icon={PageIcon}
               title="Add form to registration page"
-              description={`Your registration page is at ${registrationPagePath}. This opens the Page template in the theme editor (not the 404 page). Add the Registration Form block to the main section, then save.`}
+              description={`Opens the Customer Registration page template (${registrationPagePath}) — not the default page template. The Registration Form block is added only to this page.`}
               complete={registrationPageFormDone}
               optional={!registrationPageFormDone}
               actions={
