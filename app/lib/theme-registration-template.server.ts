@@ -2,6 +2,10 @@ import {
   REGISTRATION_FORM_BLOCK_HANDLE,
   THEME_EXTENSION_HANDLE,
 } from "./theme-extension-setup-status";
+import {
+  pushRegistrationTemplateViaCli,
+  themeNumericIdFromGid,
+} from "./theme-cli-push.server";
 
 const REGISTRATION_PAGE_HANDLE = "customer-registration";
 
@@ -538,13 +542,44 @@ async function ensureDedicatedRegistrationTemplateFile(
       admin,
       themeId,
       REGISTRATION_PAGE_TEMPLATE_FILE,
-      4,
-      500,
+      6,
+      700,
     );
-    if (copiedContent?.trim()) return copiedContent;
+    if (copiedContent?.trim()) {
+      const stripped = stripRegistrationFormBlocksFromTemplate(copiedContent);
+      if (stripped) {
+        await upsertThemeFileByFilename(
+          admin,
+          themeId,
+          REGISTRATION_PAGE_TEMPLATE_FILE,
+          stripped,
+        );
+        const cleaned = await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+        if (cleaned?.trim()) return cleaned;
+      }
+      return copiedContent;
+    }
   }
 
-  return upsertDedicatedRegistrationTemplateShell(admin, themeId);
+  const shellUpsert = await upsertDedicatedRegistrationTemplateShell(admin, themeId);
+  if (shellUpsert?.trim()) return shellUpsert;
+
+  // Last resort: write the minimal main-page shell directly.
+  const minimalShell = buildRegistrationPageTemplateShellJson();
+  const upsert = await upsertThemeFileByFilename(
+    admin,
+    themeId,
+    REGISTRATION_PAGE_TEMPLATE_FILE,
+    minimalShell,
+  );
+  if (!upsert.ok) return null;
+  return pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+}
+
+export function isThemeFileWriteAccessDenied(message: string | undefined | null): boolean {
+  return /access denied|required access|not authorized|exemption|write_themes/i.test(
+    message ?? "",
+  );
 }
 
 export async function upsertThemeFileByFilename(
@@ -553,75 +588,84 @@ export async function upsertThemeFileByFilename(
   filename: string,
   templateBody: string,
   opts?: { skipJobWait?: boolean },
-): Promise<{ ok: boolean; userErrors: Array<{ message?: string }> }> {
-  const res = await admin.graphql(
-    `#graphql
-    mutation ApprovefyUpsertThemeFile($themeId: ID!, $files: [OnlineStoreThemeFilesUpsertFileInput!]!) {
-      themeFilesUpsert(themeId: $themeId, files: $files) {
-        upsertedThemeFiles {
-          filename
+): Promise<{ ok: boolean; userErrors: Array<{ message?: string }>; accessDenied: boolean }> {
+  try {
+    const res = await admin.graphql(
+      `#graphql
+      mutation ApprovefyUpsertThemeFile($themeId: ID!, $files: [OnlineStoreThemeFilesUpsertFileInput!]!) {
+        themeFilesUpsert(themeId: $themeId, files: $files) {
+          upsertedThemeFiles {
+            filename
+          }
+          job {
+            id
+            done
+          }
+          userErrors {
+            field
+            message
+          }
         }
-        job {
-          id
-          done
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }`,
-    {
-      variables: {
-        themeId,
-        files: [{ filename, body: { type: "TEXT", value: templateBody } }],
+      }`,
+      {
+        variables: {
+          themeId,
+          files: [{ filename, body: { type: "TEXT", value: templateBody } }],
+        },
       },
-    },
-  );
-  const json = (await res.json()) as {
-    data?: {
-      themeFilesUpsert?: {
-        upsertedThemeFiles?: Array<{ filename?: string }>;
-        job?: { id?: string; done?: boolean } | null;
-        userErrors?: Array<{ message?: string }>;
+    );
+    const json = (await res.json()) as {
+      data?: {
+        themeFilesUpsert?: {
+          upsertedThemeFiles?: Array<{ filename?: string }>;
+          job?: { id?: string; done?: boolean } | null;
+          userErrors?: Array<{ message?: string }>;
+        };
       };
+      errors?: Array<{ message?: string }>;
     };
-    errors?: Array<{ message?: string }>;
-  };
-  if (json.errors?.length) {
-    const denied = json.errors.some((e) =>
-      /access denied|required access|not authorized|exemption|scope/i.test(e.message ?? ""),
-    );
-    console.warn(
-      "[ThemeRegistrationTemplate] themeFilesUpsert GraphQL errors:",
-      json.errors.map((e) => e.message).join("; "),
-      denied ? "(needs write_themes + theme file exemption)" : "",
-    );
-    return { ok: false, userErrors: [] };
-  }
-  const payload = json.data?.themeFilesUpsert;
-  const userErrors = payload?.userErrors ?? [];
-  if (userErrors.length > 0) {
-    console.warn("[ThemeRegistrationTemplate] themeFilesUpsert userErrors:", userErrors);
-    return { ok: false, userErrors };
-  }
-  const jobId = payload?.job?.id;
-  const jobInitiallyDone = payload?.job?.done === true;
-  if (!opts?.skipJobWait && jobId && !jobInitiallyDone) {
-    await waitForThemeWriteJob(admin, jobId);
-  }
+    if (json.errors?.length) {
+      const denied = json.errors.some((e) => isThemeFileWriteAccessDenied(e.message));
+      console.warn(
+        "[ThemeRegistrationTemplate] themeFilesUpsert GraphQL errors:",
+        json.errors.map((e) => e.message).join("; "),
+        denied ? "(needs write_themes + theme file exemption)" : "",
+      );
+      return { ok: false, userErrors: [], accessDenied: denied };
+    }
+    const payload = json.data?.themeFilesUpsert;
+    if (!payload) {
+      return { ok: false, userErrors: [], accessDenied: true };
+    }
+    const userErrors = payload.userErrors ?? [];
+    if (userErrors.length > 0) {
+      console.warn("[ThemeRegistrationTemplate] themeFilesUpsert userErrors:", userErrors);
+      const denied = userErrors.some((e) => isThemeFileWriteAccessDenied(e.message));
+      return { ok: false, userErrors, accessDenied: denied };
+    }
+    const jobId = payload.job?.id;
+    const jobInitiallyDone = payload.job?.done === true;
+    if (!opts?.skipJobWait && jobId && !jobInitiallyDone) {
+      await waitForThemeWriteJob(admin, jobId);
+    }
 
-  const upsertedNow = (payload?.upsertedThemeFiles ?? []).some((f) => f.filename === filename);
-  if (upsertedNow) {
-    return { ok: true, userErrors };
-  }
+    const upsertedNow = (payload.upsertedThemeFiles ?? []).some((f) => f.filename === filename);
+    if (upsertedNow) {
+      return { ok: true, userErrors, accessDenied: false };
+    }
 
-  // themeFilesUpsert often returns only a job id — verify the file was written.
-  const written = await readThemeFile(admin, themeId, filename);
-  return {
-    ok: !!written?.trim(),
-    userErrors,
-  };
+    const written = await readThemeFile(admin, themeId, filename);
+    return {
+      ok: !!written?.trim(),
+      userErrors,
+      accessDenied: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const accessDenied = isThemeFileWriteAccessDenied(message);
+    console.warn("[ThemeRegistrationTemplate] themeFilesUpsert failed:", message);
+    return { ok: false, userErrors: [], accessDenied };
+  }
 }
 
 /** Strip Registration Form blocks mistakenly added to templates/page.json (Default page). */
@@ -651,7 +695,7 @@ async function upsertThemeTemplateFile(
   themeId: string,
   templateBody: string,
   opts?: { skipJobWait?: boolean },
-): Promise<{ ok: boolean; userErrors: Array<{ message?: string }> }> {
+): Promise<{ ok: boolean; userErrors: Array<{ message?: string }>; accessDenied: boolean }> {
   return upsertThemeFileByFilename(
     admin,
     themeId,
@@ -689,6 +733,8 @@ export type RegistrationPageThemeTemplateStatus = {
   templateExists: boolean;
   /** Registration Form app block is present in that template file. */
   blockOnTemplate: boolean;
+  /** themeFilesUpsert blocked — merchant must create template in theme editor */
+  themeFileWriteAccessDenied: boolean;
 };
 
 export type EnsureRegistrationPageThemeTemplateOptions = {
@@ -702,17 +748,39 @@ export type EnsureRegistrationPageThemeTemplateOptions = {
  */
 export async function prepareCustomerRegistrationPageForAppsDeepLink(
   admin: AdminGraphqlClient,
-): Promise<{ templateExists: boolean; themeId: string | null; blockOnTemplate: boolean }> {
-  const empty = { templateExists: false, themeId: null, blockOnTemplate: false };
+): Promise<{
+  templateExists: boolean;
+  themeId: string | null;
+  blockOnTemplate: boolean;
+  themeFileWriteAccessDenied: boolean;
+}> {
+  const empty = {
+    templateExists: false,
+    themeId: null,
+    blockOnTemplate: false,
+    themeFileWriteAccessDenied: false,
+  };
   try {
     const themeId = await getMainThemeId(admin);
     if (!themeId) return empty;
 
     await removeRegistrationFormFromDefaultPageTemplate(admin, themeId);
 
-    const existing = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+    let existing = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
     if (existing?.trim() && registrationFormBlockPlacement(existing) === "apps") {
-      return { templateExists: true, themeId, blockOnTemplate: true };
+      return {
+        templateExists: true,
+        themeId,
+        blockOnTemplate: true,
+        themeFileWriteAccessDenied: false,
+      };
+    }
+
+    if (!existing?.trim()) {
+      const created = await ensureDedicatedRegistrationTemplateFile(admin, themeId);
+      if (created?.trim()) {
+        existing = created;
+      }
     }
 
     const shellBody = buildMainOnlyRegistrationTemplateShell(existing);
@@ -730,6 +798,7 @@ export async function prepareCustomerRegistrationPageForAppsDeepLink(
         themeId,
         blockOnTemplate:
           !!stillThere?.trim() && registrationFormBlockPlacement(stillThere) === "apps",
+        themeFileWriteAccessDenied: upsert.accessDenied,
       };
     }
 
@@ -740,6 +809,7 @@ export async function prepareCustomerRegistrationPageForAppsDeepLink(
       templateExists,
       themeId,
       blockOnTemplate: templateExists && registrationFormBlockPlacement(written!) === "apps",
+      themeFileWriteAccessDenied: false,
     };
   } catch (error) {
     console.warn(
@@ -820,6 +890,7 @@ export async function ensureRegistrationPageThemeTemplate(
     created: false,
     templateExists: false,
     blockOnTemplate: false,
+    themeFileWriteAccessDenied: false,
   };
   try {
     const themeId = await getMainThemeId(admin);
@@ -833,7 +904,12 @@ export async function ensureRegistrationPageThemeTemplate(
     if (existing?.trim()) {
       const placement = registrationFormBlockPlacement(existing);
       if (placement === "apps") {
-        return { created: false, templateExists: true, blockOnTemplate: true };
+        return {
+          created: false,
+          templateExists: true,
+          blockOnTemplate: true,
+          themeFileWriteAccessDenied: false,
+        };
       }
       if (placement === "main") {
         const migrated = mergeRegistrationFormBlockIntoTemplate(existing);
@@ -842,7 +918,15 @@ export async function ensureRegistrationPageThemeTemplate(
             skipJobWait: quick,
           });
           if (migrateUpsert.ok) {
-            return { created: true, templateExists: true, blockOnTemplate: true };
+            return {
+              created: true,
+              templateExists: true,
+              blockOnTemplate: true,
+              themeFileWriteAccessDenied: false,
+            };
+          }
+          if (migrateUpsert.accessDenied) {
+            return { ...fallback, themeFileWriteAccessDenied: true };
           }
         }
       }
@@ -856,7 +940,7 @@ export async function ensureRegistrationPageThemeTemplate(
     let upsert = await upsertThemeTemplateFile(admin, themeId, templateBody, {
       skipJobWait: quick,
     });
-    if (!upsert.ok && !quick) {
+    if (!upsert.ok && !quick && !upsert.accessDenied) {
       upsert = await upsertThemeTemplateFile(admin, themeId, templateBody);
     }
 
@@ -871,7 +955,12 @@ export async function ensureRegistrationPageThemeTemplate(
         created: blockOnTemplate,
         templateExists,
         blockOnTemplate,
+        themeFileWriteAccessDenied: false,
       };
+    }
+
+    if (upsert.accessDenied) {
+      return { ...fallback, themeFileWriteAccessDenied: true };
     }
 
     if (quick) {
@@ -881,6 +970,7 @@ export async function ensureRegistrationPageThemeTemplate(
           created: false,
           templateExists: true,
           blockOnTemplate: registrationFormBlockPlacement(existingQuick) === "apps",
+          themeFileWriteAccessDenied: false,
         };
       }
       return fallback;
@@ -894,6 +984,7 @@ export async function ensureRegistrationPageThemeTemplate(
       created: false,
       templateExists,
       blockOnTemplate,
+      themeFileWriteAccessDenied: false,
     };
   } catch (error) {
     console.warn("[ThemeRegistrationTemplate] ensureRegistrationPageThemeTemplate failed:", error);
@@ -912,3 +1003,105 @@ export async function readRegistrationPageTemplateOnMainTheme(
 }
 
 export { REGISTRATION_PAGE_TEMPLATE, REGISTRATION_PAGE_TEMPLATE_FILE };
+
+/** Try to write templates/page.customer-registration.json on the live theme. */
+export async function writeRegistrationPageTemplateShell(
+  admin: AdminGraphqlClient,
+  shop: string,
+): Promise<{
+  templateExists: boolean;
+  themeId: string | null;
+  savedViaApi: boolean;
+  savedViaCli: boolean;
+  themeFileWriteAccessDenied: boolean;
+}> {
+  const empty = {
+    templateExists: false,
+    themeId: null,
+    savedViaApi: false,
+    savedViaCli: false,
+    themeFileWriteAccessDenied: false,
+  };
+  try {
+    const themeId = await getMainThemeId(admin);
+    if (!themeId) return empty;
+
+    const existing = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+    if (existing?.trim()) {
+      return {
+        templateExists: true,
+        themeId,
+        savedViaApi: false,
+        savedViaCli: false,
+        themeFileWriteAccessDenied: false,
+      };
+    }
+
+    const pageJson = await readThemeFile(admin, themeId, "templates/page.json");
+    const stripped = pageJson?.trim()
+      ? stripRegistrationFormBlocksFromTemplate(pageJson)
+      : null;
+    const shellBody =
+      stripped ?? pageJson?.trim() ?? buildRegistrationPageTemplateShellJson();
+
+    const upsert = await upsertThemeFileByFilename(
+      admin,
+      themeId,
+      REGISTRATION_PAGE_TEMPLATE_FILE,
+      shellBody,
+    );
+    if (upsert.ok) {
+      const written = await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+      return {
+        templateExists: !!written?.trim(),
+        themeId,
+        savedViaApi: true,
+        savedViaCli: false,
+        themeFileWriteAccessDenied: false,
+      };
+    }
+
+    if (upsert.accessDenied) {
+      const themeNumericId = themeNumericIdFromGid(themeId);
+      if (themeNumericId) {
+        const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId);
+        if (cli.ok) {
+          const written = await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+          if (written?.trim()) {
+            console.info(
+              "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
+            );
+            return {
+              templateExists: true,
+              themeId,
+              savedViaApi: false,
+              savedViaCli: true,
+              themeFileWriteAccessDenied: false,
+            };
+          }
+        } else if (cli.error) {
+          console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error);
+        }
+      }
+
+      return {
+        templateExists: false,
+        themeId,
+        savedViaApi: false,
+        savedViaCli: false,
+        themeFileWriteAccessDenied: true,
+      };
+    }
+
+    return {
+      templateExists: false,
+      themeId,
+      savedViaApi: false,
+      savedViaCli: false,
+      themeFileWriteAccessDenied: false,
+    };
+  } catch (error) {
+    console.warn("[ThemeRegistrationTemplate] writeRegistrationPageTemplateShell failed:", error);
+    return empty;
+  }
+}

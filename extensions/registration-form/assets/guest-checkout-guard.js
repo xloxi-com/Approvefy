@@ -51,7 +51,6 @@
     cfg.customerTags = [];
   }
 
-  var shop = cfg.shop;
   var guardConfig = null;
   var guardTranslations = null;
   function guardLocaleParam() {

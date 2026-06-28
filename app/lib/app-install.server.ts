@@ -29,6 +29,9 @@ export async function runAppInstallSetup(
       registrationPageCreated: page.created,
       registrationPageExists: page.pageExists,
       registrationPagePublished: page.pagePublished,
+      registrationPageTemplateExists: page.templateExists,
+      registrationFormOnTemplate: page.blockOnTemplate,
+      templateWriteFailed: page.templateWriteFailed,
       pagePath: page.pagePath,
     });
   } catch (error) {
