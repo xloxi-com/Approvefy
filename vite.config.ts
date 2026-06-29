@@ -58,11 +58,24 @@ export default defineConfig({
     cssMinify: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          polaris: ["@shopify/polaris", "@shopify/polaris-icons"],
-          "shopify-bridge": ["@shopify/app-bridge-react", "@shopify/shopify-app-react-router"],
-          dnd: ["@dnd-kit/core", "@dnd-kit/sortable", "@dnd-kit/utilities"],
-          vendor: ["react", "react-dom", "react-router"],
+        // Function-based splitting: object keys fail for packages without a "." export
+        // (e.g. @shopify/shopify-app-react-router breaks Vercel builds).
+        manualChunks: (id) => {
+          if (!id.includes("node_modules")) return;
+          if (
+            id.includes("react-dom") ||
+            id.includes("node_modules/react/") ||
+            id.includes("react-router")
+          ) {
+            return "vendor";
+          }
+          if (id.includes("@shopify/polaris") || id.includes("@shopify/polaris-icons")) {
+            return "polaris";
+          }
+          if (id.includes("@shopify/app-bridge") || id.includes("@shopify/shopify-app")) {
+            return "shopify-bridge";
+          }
+          if (id.includes("@dnd-kit")) return "dnd";
         },
       },
     },
