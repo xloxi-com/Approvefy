@@ -373,17 +373,15 @@ export default function Index() {
     if (result.intent === "create-registration-template") {
       if (result.templateExists) {
         setRegistrationNotice(
-          `${REGISTRATION_PAGE_TITLE} page and theme template are ready — no theme editor steps needed. Continue to Step 3 to add the registration form.`,
+          result.servedViaAppEmbed
+            ? "Customer Registration is live on your storefront via the Approvefy app embed (no theme template file needed on live stores)."
+            : `${REGISTRATION_PAGE_TITLE} theme template is ready. Continue to Step 3 if you want the form block in the theme editor.`,
         );
         return;
       }
       if (result.needsManualTemplate || result.themeFileWriteAccessDenied) {
-        const cliAvailable =
-          "themeCliAvailable" in result && result.themeCliAvailable === true;
         setRegistrationNotice(
-          cliAvailable
-            ? "Template could not be pushed yet. Keep shopify app dev running in your terminal, then click Create template again."
-            : "Could not create the Customer Registration template on the live store. Use shopify app dev locally, or contact Shopify for theme-file API access.",
+          "Complete Step 1 (Enable app embed) first, then click Create template again. The registration form will load on your page automatically.",
         );
         return;
       }
@@ -574,15 +572,15 @@ export default function Index() {
             {registrationPageExists && !registrationPageTemplateExists && (
               <Banner tone="warning" title="Create Customer Registration template">
                 <p style={{ margin: 0 }}>
-                  Click{" "}
+                  Enable the Approvefy app embed in Step 1, then click{" "}
                   <Text as="span" variant="bodyMd" fontWeight="semibold">
                     Create template
-                  </Text>{" "}
-                  below — Approvefy will copy your Default page template and create{" "}
+                  </Text>
+                  . On live stores the registration form loads automatically on{" "}
                   <Text as="span" variant="bodyMd" fontWeight="semibold">
-                    {REGISTRATION_PAGE_TITLE}
+                    {registrationPagePath}
                   </Text>{" "}
-                  automatically (no theme editor steps).
+                  via the app embed — no theme editor required.
                 </p>
               </Banner>
             )}

@@ -11,6 +11,12 @@ import {
 } from "./theme-registration-template.server";
 import { ensureAppEmbedEnabled } from "./theme-app-embed.server";
 import { canUseThemeCliPush } from "./theme-cli-push.server";
+import { getThemeSetupStatus } from "./theme-setup-status.server";
+import {
+  canServeRegistrationPageViaAppEmbed,
+  isRegistrationFormLiveOnStorefront,
+  isRegistrationPageStorefrontReady,
+} from "./registration-page-storefront.server";
 import { REGISTRATION_FORM_BLOCK_HANDLE } from "./theme-extension-setup-status";
 import {
   REGISTRATION_PAGE_HANDLE,
@@ -461,9 +467,24 @@ export async function ensureRegistrationStorefrontPage(
     console.warn("[RegistrationPage] ensureRegistrationStorefrontPage failed:", error);
   }
 
+  const themeStatus = await getThemeSetupStatus(admin);
+  const templateFileOnTheme = templateExists;
+  const storefrontReady = isRegistrationPageStorefrontReady({
+    pageExists,
+    pagePublished,
+    templateFileExists: templateFileOnTheme,
+    appEmbedEnabled: themeStatus.appEmbedEnabled,
+  });
+  const formLive = isRegistrationFormLiveOnStorefront({
+    blockOnDedicatedTemplate: blockOnTemplate,
+    pageExists,
+    pagePublished,
+    appEmbedEnabled: themeStatus.appEmbedEnabled,
+  });
+
   const themeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
     pageExists,
-    templateExists,
+    templateExists: templateFileOnTheme,
     blockOnTemplate,
   });
 
@@ -472,12 +493,12 @@ export async function ensureRegistrationStorefrontPage(
     created,
     pageExists,
     pagePublished,
-    templateExists,
-    blockOnTemplate,
+    templateExists: storefrontReady,
+    blockOnTemplate: formLive,
     themeEditorUrl,
     storefrontPageUrl,
-    templateWriteFailed,
-    needsManualTemplate,
+    templateWriteFailed: !storefrontReady,
+    needsManualTemplate: !storefrontReady,
   };
 }
 
@@ -635,6 +656,9 @@ export async function runCreateRegistrationTemplateOnlySetup(
   pageExists: boolean;
   pagePublished: boolean;
   templateExists: boolean;
+  /** Theme JSON file on the live theme (false when only app-embed mode is used). */
+  templateFileExists: boolean;
+  servedViaAppEmbed: boolean;
   templateCreated: boolean;
   needsManualTemplate: boolean;
   blockOnTemplate: boolean;
@@ -686,30 +710,56 @@ export async function runCreateRegistrationTemplateOnlySetup(
     page = await findRegistrationPage(admin);
   }
 
-  const blockOnTemplate = verified.blockOnTemplate;
+  const themeSetup = await getThemeSetupStatus(admin);
+  const pagePublished = page?.isPublished === true;
+  const templateFileExists = templateExists;
+  const servedViaAppEmbed =
+    !templateFileExists &&
+    canServeRegistrationPageViaAppEmbed({
+      pageExists: !!page,
+      pagePublished,
+      appEmbedEnabled: themeSetup.appEmbedEnabled,
+    });
+  const templateReady = isRegistrationPageStorefrontReady({
+    pageExists: !!page,
+    pagePublished,
+    templateFileExists,
+    appEmbedEnabled: themeSetup.appEmbedEnabled,
+  });
+  const blockOnTemplate = isRegistrationFormLiveOnStorefront({
+    blockOnDedicatedTemplate: verified.blockOnTemplate,
+    pageExists: !!page,
+    pagePublished,
+    appEmbedEnabled: themeSetup.appEmbedEnabled,
+  });
 
   console.info("[RegistrationPage] create-registration-template setup:", {
     pageExists: !!page,
-    pagePublished: page?.isPublished === true,
-    templateExists,
+    pagePublished,
+    templateFileExists,
+    servedViaAppEmbed,
+    templateReady,
     templateCreated,
     templateSuffix: page?.templateSuffix,
     themeFileWriteAccessDenied,
+    appEmbedEnabled: themeSetup.appEmbedEnabled,
   });
 
   return {
     pageExists: !!page,
-    pagePublished: page?.isPublished === true,
-    templateExists,
-    templateCreated,
-    needsManualTemplate: !templateExists,
+    pagePublished,
+    templateExists: templateReady,
+    templateFileExists,
+    servedViaAppEmbed,
+    templateCreated: templateCreated || servedViaAppEmbed,
+    needsManualTemplate: !templateReady,
     blockOnTemplate,
-    themeFileWriteAccessDenied,
+    themeFileWriteAccessDenied: themeFileWriteAccessDenied && !servedViaAppEmbed,
     themeCliAvailable: canUseThemeCliPush(),
     themeEditorUrl: buildRegistrationPageThemeEditorUrl(shop, {
       pageExists: !!page,
-      templateExists,
-      blockOnTemplate,
+      templateExists: templateFileExists,
+      blockOnTemplate: verified.blockOnTemplate,
     }),
   };
 }

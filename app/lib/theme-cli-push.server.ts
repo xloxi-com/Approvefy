@@ -10,7 +10,10 @@ export function canUseThemeCliPush(): boolean {
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "false") return false;
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "true") return true;
 
-  // Serverless cannot spawn Shopify CLI.
+  // Theme Access password (CI/CD) — works on Vercel for automated theme push.
+  if (process.env.SHOPIFY_CLI_THEME_TOKEN?.trim()) return true;
+
+  // Serverless cannot spawn Shopify CLI without a theme access token.
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) return false;
 
   // `shopify app dev` (see .env SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT).
@@ -89,9 +92,11 @@ export function resolveShopifyThemePushCommand(): {
 export async function pushRegistrationTemplateViaCli(
   shop: string,
   themeNumericId: string,
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; themeAccessPassword?: string },
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!canUseThemeCliPush()) {
+  const themeToken =
+    opts?.themeAccessPassword?.trim() || process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
+  if (!canUseThemeCliPush() && !themeToken) {
     return { ok: false, error: "Theme CLI push is disabled in production" };
   }
   if (!themeNumericId?.trim()) {
@@ -137,6 +142,9 @@ export async function pushRegistrationTemplateViaCli(
       REGISTRATION_THEME_PATH,
       "--force",
     ];
+    if (themeToken) {
+      pushArgs.push("--password", themeToken);
+    }
 
     const child = spawn(invoker.executable, pushArgs, {
       cwd: process.cwd(),
