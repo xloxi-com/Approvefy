@@ -1,5 +1,6 @@
 import prisma from "../db.server";
 import type { PricingTierId } from "./pricing-tiers";
+import { CACHE_TTL, getCache, invalidateCache, setCache, shopKey } from "./cache.server";
 
 export type MerchantPlanId = PricingTierId;
 
@@ -13,17 +14,6 @@ export function normalizeMerchantPlan(raw: string | null | undefined): MerchantP
   const v = (raw ?? "").toLowerCase().trim();
   if (v === "basic" || v === "standard" || v === "premium") return v;
   return "standard";
-}
-
-const MERCHANT_PLAN_CACHE_TTL_MS = 30_000;
-const merchantPlanCache = new Map<string, { value: MerchantPlanId; at: number }>();
-
-function setBoundedCacheEntry<V>(map: Map<string, V>, key: string, value: V, max: number): void {
-  map.set(key, value);
-  if (map.size > max) {
-    const oldest = map.keys().next().value;
-    if (oldest != null) map.delete(oldest);
-  }
 }
 
 /** Env override + DB value — no extra query when the row is already loaded. */
@@ -41,10 +31,9 @@ export async function getMerchantPlanForShop(shop: string): Promise<MerchantPlan
   const key = (shop || "").trim().toLowerCase();
   if (!key) return "standard";
 
-  const cached = merchantPlanCache.get(key);
-  if (cached && Date.now() - cached.at < MERCHANT_PLAN_CACHE_TTL_MS) {
-    return cached.value;
-  }
+  const cacheKey = shopKey(key, "merchantPlan");
+  const cached = getCache<MerchantPlanId>(cacheKey);
+  if (cached) return cached;
 
   try {
     const row = await prisma.appSettings.findUnique({
@@ -52,7 +41,7 @@ export async function getMerchantPlanForShop(shop: string): Promise<MerchantPlan
       select: { merchantPlan: true },
     });
     const plan = resolveMerchantPlan(row?.merchantPlan ?? undefined);
-    setBoundedCacheEntry(merchantPlanCache, key, { value: plan, at: Date.now() }, 200);
+    setCache(cacheKey, plan, CACHE_TTL.merchantPlan);
     return plan;
   } catch {
     return "standard";
@@ -61,7 +50,7 @@ export async function getMerchantPlanForShop(shop: string): Promise<MerchantPlan
 
 export function invalidateMerchantPlanCache(shop: string): void {
   const key = (shop || "").trim().toLowerCase();
-  if (key) merchantPlanCache.delete(key);
+  if (key) invalidateCache(shopKey(key, "merchantPlan"));
 }
 
 export function allowMerchantPlanDevSelector(): boolean {
@@ -116,7 +105,7 @@ export function sanitizeFormFieldsJsonForPlan(fields: unknown[], plan: MerchantP
 
     if (t === "file_upload") {
       if (plan !== "premium") {
-        const next = { ...(f as Record<string, unknown>), type: "text", required: false };
+        const next: Record<string, unknown> = { ...f, type: "text", required: false };
         delete next.maxFileCount;
         delete next.maxFileSizeMb;
         return next;
@@ -125,7 +114,7 @@ export function sanitizeFormFieldsJsonForPlan(fields: unknown[], plan: MerchantP
     }
 
     if (plan === "basic" && !BASIC_ALLOWED_FIELD_TYPES.has(t)) {
-      const next = { ...(f as Record<string, unknown>), type: "text", required: false };
+      const next: Record<string, unknown> = { ...f, type: "text", required: false };
       delete next.options;
       delete next.dateFormat;
       delete next.minRequired;

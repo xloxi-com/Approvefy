@@ -1,6 +1,7 @@
 import type { MerchantPlanId } from "./merchant-plan.server";
 import type { PricingTierId } from "./pricing-tiers";
 import { SUBSCRIPTION_AMOUNT_USD } from "./billing-plans";
+import { CACHE_TTL, getCache, invalidateCache, setCache, shopKey } from "./cache.server";
 
 /** Map active subscription USD price to our plan id (matches Pricing page amounts). */
 export function planFromRecurringUsd(amount: number, currencyCode: string): PricingTierId | null {
@@ -17,8 +18,11 @@ export type AdminGraphql = (
   options?: { variables?: Record<string, unknown> },
 ) => Promise<Response>;
 
-const SUBSCRIPTION_CACHE_TTL_MS = 60_000;
-const subscriptionActiveCache = new Map<string, { active: boolean; at: number }>();
+const SUBSCRIPTION_CACHE_TTL_MS = CACHE_TTL.billingStatus;
+
+function billingCacheKey(shop: string): string {
+  return shopKey(shop, "billingStatus");
+}
 
 /** Local QA: skip install-time billing gate (does not affect Shopify billing itself). */
 export function isBillingGateSkipped(): boolean {
@@ -36,7 +40,7 @@ export function isBillingExemptAppPath(pathname: string): boolean {
 
 export function invalidateAppSubscriptionCache(shop: string): void {
   const key = (shop || "").trim().toLowerCase();
-  if (key) subscriptionActiveCache.delete(key);
+  if (key) invalidateCache(billingCacheKey(key));
 }
 
 function parseActiveSubscriptionPlan(
@@ -150,14 +154,13 @@ export async function shopHasActiveAppSubscription(
   const key = (shop || "").trim().toLowerCase();
   if (!key) return false;
 
-  const cached = subscriptionActiveCache.get(key);
-  if (cached && Date.now() - cached.at < SUBSCRIPTION_CACHE_TTL_MS) {
-    return cached.active;
-  }
+  const cacheKey = billingCacheKey(key);
+  const cached = getCache<boolean>(cacheKey);
+  if (cached !== undefined) return cached;
 
   const plan = await queryActiveAppSubscriptionPlan(admin);
   const active = plan != null;
-  subscriptionActiveCache.set(key, { active, at: Date.now() });
+  setCache(cacheKey, active, SUBSCRIPTION_CACHE_TTL_MS);
   return active;
 }
 

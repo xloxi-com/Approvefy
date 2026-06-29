@@ -1532,6 +1532,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         // (customer detail, customers list, CSV export) see the new schema immediately.
         invalidateFormFieldsCache(shop);
         invalidateCache(shopKey(shop, "formConfig"));
+        if (formIdParam) invalidateCache(shopKey(shop, `formConfig:${formIdParam}`));
 
         if (formIdParam) {
             const existing = await prisma.formConfig.findFirst({ where: { id: formIdParam, shop } });

@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useActionData, useNavigation, useNavigate, Form, useFetcher, redirect } from "react-router";
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
 import { flushSync } from "react-dom";
-import { Page, BlockStack, InlineStack, Text, TextField, Button, Banner, Thumbnail, Box, ButtonGroup, Modal } from "@shopify/polaris";
+import { Page, BlockStack, InlineStack, Text, TextField, Button, Banner, Thumbnail, Box, ButtonGroup, Modal, Select } from "@shopify/polaris";
 import { SectionCard } from "../components/SectionCard";
 import { FileIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -954,7 +954,7 @@ export default function CustomerDetailPage() {
                             helpText={helpText}
                             options={selectOptions}
                             value={v}
-                            onChange={(next) =>
+                            onChange={(next: string) =>
                               setCustomDataValues((prev) => ({
                                 ...prev,
                                 [apiKey]: next,

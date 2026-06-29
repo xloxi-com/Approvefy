@@ -14,8 +14,14 @@ export const CACHE_TTL = {
   approvalMode: 5 * 60_000,
   analytics: 2 * 60_000,
   shopMeta: 30 * 60_000,
-  formConfig: 5 * 60_000,
-  appSettings: 5 * 60_000,
+  /** Storefront + admin form config reads */
+  formConfig: 300_000,
+  /** AppSettings row (approval copy, theme, translations subset) */
+  appSettings: 60_000,
+  /** merchantPlan column on AppSettings */
+  merchantPlan: 120_000,
+  /** Shopify active subscription gate */
+  billingStatus: 180_000,
 } as const;
 
 export function shopKey(shop: string, resource: string): string {

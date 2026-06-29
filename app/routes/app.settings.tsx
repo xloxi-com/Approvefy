@@ -48,6 +48,7 @@ import prisma from "../db.server";
 import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
 import {
     getMerchantPlanForShop,
+    invalidateMerchantPlanCache,
     mergeIncomingApprovalSettingsForBasicSave,
     resolveMerchantPlan,
     type MerchantPlanId,
@@ -434,14 +435,38 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     let smtpSettings: Awaited<ReturnType<typeof getSmtpSettings>> = null;
     let appSettingsUpdatedAt: string | null = null;
     if (shop) {
-        let settings: Awaited<ReturnType<typeof prisma.appSettings.findUnique>> = null;
+        type SettingsLoaderRow = {
+            updatedAt: Date;
+            defaultLanguage: string;
+            languageOptions: unknown;
+            formTranslations: unknown;
+            customerApprovalSettings: unknown;
+            customCss: string | null;
+            themeSettings: unknown;
+            merchantPlan: string;
+            shopCountryCode: string | null;
+        };
+        let settings: SettingsLoaderRow | null = null;
         let smtp: Awaited<ReturnType<typeof getSmtpSettings>> = null;
         let rejectionTemplate: EmailTemplateRecord | null = null;
         let approvalTemplate: EmailTemplateRecord | null = null;
         const cachedShopMeta = getCachedShopMeta(shop);
         try {
             const [settingsResult, smtpResult, emailTemplatesBySlug] = await Promise.all([
-                prisma.appSettings.findUnique({ where: { shop } }),
+                prisma.appSettings.findUnique({
+                    where: { shop },
+                    select: {
+                        updatedAt: true,
+                        defaultLanguage: true,
+                        languageOptions: true,
+                        formTranslations: true,
+                        customerApprovalSettings: true,
+                        customCss: true,
+                        themeSettings: true,
+                        merchantPlan: true,
+                        shopCountryCode: true,
+                    },
+                }),
                 getSmtpSettings(shop),
                 getEmailTemplatesBySlugs(shop, ["rejection", "approval"]),
                 ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
@@ -1016,6 +1041,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         invalidateCustomerApprovalModeCache(shop);
         invalidateCache(shopKey(shop, "appSettings"));
         invalidateCache(shopKey(shop, "registrationAfterSubmit"));
+        invalidateMerchantPlanCache(shop);
         try {
             if (settingsToPersist.redirectSignInLinksToFormPage === true) {
                 await ensureRegistrationStorefrontPage(admin, shop);

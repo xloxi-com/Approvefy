@@ -3091,6 +3091,7 @@
       var errorEl = document.getElementById('phone-field-error');
       if (!phoneInput || !errorEl) return;
       var checkTimeout = null;
+      var PHONE_CHECK_DEBOUNCE_MS = 600;
       function doCheck() {
         if (validatePhoneInput(phoneInput)) {
           errorEl.style.display = 'none';
@@ -3134,12 +3135,14 @@
           return;
         }
         if (checkTimeout) clearTimeout(checkTimeout);
-        checkTimeout = setTimeout(doCheck, 300);
+        checkTimeout = setTimeout(doCheck, PHONE_CHECK_DEBOUNCE_MS);
       });
       phoneInput.addEventListener('input', function() {
         errorEl.style.display = 'none';
         errorEl.textContent = '';
         phoneInput.removeAttribute('data-phone-taken');
+        if (checkTimeout) clearTimeout(checkTimeout);
+        checkTimeout = setTimeout(doCheck, PHONE_CHECK_DEBOUNCE_MS);
       });
     }
 
@@ -3421,7 +3424,9 @@
     }
 
     function runApprovefyFieldEnhancements() {
-      initFileUploadZones();
+      if (form.querySelector('.custom-file-upload-zone')) {
+        initFileUploadZones();
+      }
       initPhoneCountryDropdowns();
       initPhoneInputSyncCountryCode();
       initAddressAutocomplete(form);

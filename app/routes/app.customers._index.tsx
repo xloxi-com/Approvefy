@@ -214,6 +214,23 @@ function parseLimitParam(value: string | null): { limitParam: string; pageSize: 
   return { limitParam: limitParam === "all" ? "all" : limitParam, pageSize };
 }
 
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  defaultShouldRevalidate,
+}: {
+  currentUrl: URL;
+  nextUrl: URL;
+  defaultShouldRevalidate: boolean;
+}) {
+  // Skip redundant revalidation on the same route + query (e.g. after action + revalidator).
+  // Search/filter/pagination still revalidate because `search` changes.
+  if (currentUrl.pathname === nextUrl.pathname && currentUrl.search === nextUrl.search) {
+    return false;
+  }
+  return defaultShouldRevalidate;
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
@@ -224,8 +241,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const to = url.searchParams.get("to") || "";
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
   const { limitParam, pageSize } = parseLimitParam(url.searchParams.get("limit"));
+  const cursor = url.searchParams.get("cursor") || "";
+  const direction = url.searchParams.get("dir") === "prev" ? "backward" as const : "forward" as const;
 
-  const loadParams = [shop, query, status, from || null, to || null, pageSize, page] as const;
+  const loadParams = [
+    shop,
+    query,
+    status,
+    from || null,
+    to || null,
+    pageSize,
+    page,
+    cursor || null,
+    direction,
+  ] as const;
 
   // Wall-clock for the awaited DB fan-out — emitted as `Server-Timing: db;dur=…` so we
   // can spot regressions (slow Supabase pool, missing index) directly from DevTools.
@@ -536,7 +565,16 @@ export default function Index() {
   }, [customers, clearSelection]);
 
   const buildListFormData = useCallback(
-    (overrides: { query?: string; status?: string; from?: string; to?: string; page?: number; limit?: string } = {}) => {
+    (overrides: {
+      query?: string;
+      status?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+      limit?: string;
+      cursor?: string | null;
+      dir?: string | null;
+    } = {}) => {
       const formData = new FormData();
       const tabs = ["all", "pending", "approved", "denied"];
       formData.set("query", overrides.query ?? searchValue);
@@ -547,6 +585,8 @@ export default function Index() {
       else if (toDate) formData.set("to", toDate);
       formData.set("page", String(overrides.page ?? initialPage));
       formData.set("limit", overrides.limit ?? initialLimitParam);
+      if (overrides.cursor) formData.set("cursor", overrides.cursor);
+      if (overrides.dir) formData.set("dir", overrides.dir);
       return formData;
     },
     [searchValue, selectedTab, fromDate, toDate, initialPage, initialLimitParam]
@@ -605,16 +645,25 @@ export default function Index() {
 
   const handlePaginationPrevious = useCallback(() => {
     if (initialPage <= 1) return;
-    const formData = buildListFormData({ page: initialPage - 1 });
+    const first = (customers as Customer[])[0];
+    const formData = buildListFormData({
+      page: initialPage - 1,
+      cursor: first?.registrationId ?? undefined,
+      dir: "prev",
+    });
     submit(formData, { method: "get", action: "/app/customers" });
-  }, [initialPage, buildListFormData, submit]);
+  }, [initialPage, customers, buildListFormData, submit]);
 
   const handlePaginationNext = useCallback(() => {
     const nextStart = initialPage * pageSize + 1;
     if (totalCount < nextStart) return;
-    const formData = buildListFormData({ page: initialPage + 1 });
+    const last = (customers as Customer[])[customers.length - 1];
+    const formData = buildListFormData({
+      page: initialPage + 1,
+      cursor: last?.registrationId ?? undefined,
+    });
     submit(formData, { method: "get", action: "/app/customers" });
-  }, [initialPage, pageSize, totalCount, buildListFormData, submit]);
+  }, [initialPage, pageSize, totalCount, customers, buildListFormData, submit]);
 
   const handlePageSizeChange = useCallback(
     (value: string) => {

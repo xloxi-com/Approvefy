@@ -58,25 +58,24 @@ export default defineConfig({
     cssMinify: true,
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          if (id.includes("node_modules")) {
-            if (
-              id.includes("react-dom") ||
-              id.includes("node_modules/react/") ||
-              id.includes("react-router")
-            ) {
-              return "vendor";
-            }
-            if (id.includes("@shopify/polaris") || id.includes("@shopify/polaris-icons")) return "polaris";
-            if (id.includes("@shopify/app-bridge") || id.includes("@shopify/shopify-app")) return "shopify";
-            if (id.includes("@dnd-kit")) return "dnd-kit";
-          }
+        manualChunks: {
+          polaris: ["@shopify/polaris", "@shopify/polaris-icons"],
+          "shopify-bridge": ["@shopify/app-bridge-react", "@shopify/shopify-app-react-router"],
+          dnd: ["@dnd-kit/core", "@dnd-kit/sortable", "@dnd-kit/utilities"],
+          vendor: ["react", "react-dom", "react-router"],
         },
       },
     },
   },
   optimizeDeps: {
-    include: ["@shopify/app-bridge-react", "@shopify/polaris", "@shopify/polaris-icons", "react", "react-dom"],
+    include: [
+      "@shopify/app-bridge-react",
+      "@shopify/polaris",
+      "@shopify/polaris-icons",
+      "@prisma/client",
+      "react",
+      "react-dom",
+    ],
     esbuildOptions: {
       target: "es2020",
     },

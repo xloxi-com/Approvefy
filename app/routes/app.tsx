@@ -35,6 +35,8 @@ import {
 } from "../lib/app-subscription.server";
 
 import { syncMerchantPlanFromActiveSubscription } from "../lib/sync-merchant-plan-from-billing.server";
+import { invalidateMerchantPlanCache } from "../lib/merchant-plan.server";
+import { invalidateCache, shopKey } from "../lib/cache.server";
 
 import {
 
@@ -71,11 +73,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   if (billingCallback) {
     invalidateAppSubscriptionCache(session.shop);
+    invalidateMerchantPlanCache(session.shop);
+    invalidateCache(shopKey(session.shop, "billingStatus"));
   }
 
-  /** Sync before nav/gating so Pricing "Current" and sidebar links stay aligned (avoids stale 60s cache). */
+  /** Sync before nav/gating so Pricing "Current" and sidebar links stay aligned (avoids stale cache). */
   const subscribedPlan = await syncMerchantPlanFromActiveSubscription(admin, session.shop);
   invalidateAppSubscriptionCache(session.shop);
+  invalidateMerchantPlanCache(session.shop);
+  invalidateCache(shopKey(session.shop, "billingStatus"));
 
   const hasActiveSubscription =
     subscribedPlan != null ||

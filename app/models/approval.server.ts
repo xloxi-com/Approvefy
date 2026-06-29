@@ -228,6 +228,39 @@ interface AdminGraphQL {
   graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response>;
 }
 
+/** One HTTP round-trip for remove-then-add tag updates (Shopify executes mutations in order). */
+async function mutateCustomerTags(
+  admin: AdminGraphQL,
+  customerGid: string,
+  tagsToRemove: string[],
+  tagsToAdd: string[],
+): Promise<void> {
+  const id = (customerGid || "").trim();
+  if (!id.startsWith("gid://shopify/Customer/")) return;
+  if (tagsToRemove.length === 0 && tagsToAdd.length === 0) return;
+  try {
+    const res = await admin.graphql(
+      `#graphql
+      mutation CustomerTagsBatch($id: ID!, $remove: [String!]!, $add: [String!]!) {
+        tagsRemove(id: $id, tags: $remove) {
+          userErrors { field message }
+        }
+        tagsAdd(id: $id, tags: $add) {
+          userErrors { field message }
+        }
+      }`,
+      { variables: { id, remove: tagsToRemove, add: tagsToAdd } },
+    );
+    const data = await res.json();
+    const removeErrs = data.data?.tagsRemove?.userErrors as Array<{ message?: string }> | undefined;
+    const addErrs = data.data?.tagsAdd?.userErrors as Array<{ message?: string }> | undefined;
+    if (removeErrs?.length) console.warn("tagsRemove userErrors:", removeErrs);
+    if (addErrs?.length) console.warn("tagsAdd userErrors:", addErrs);
+  } catch (e) {
+    console.warn("mutateCustomerTags:", e);
+  }
+}
+
 /** Get the tag to assign when a customer is approved (from AppSettings or default). Returns single string for backward compatibility. */
 export async function getApprovedTag(shop: string): Promise<string> {
   const tags = await getApprovedTags(shop);
@@ -237,8 +270,11 @@ export async function getApprovedTag(shop: string): Promise<string> {
 /** Get all tags to assign when a customer is approved. Supports multiple tags separated by commas (e.g. "wholesale, VIP customer, 2025"). */
 export async function getApprovedTags(shop: string): Promise<string[]> {
   try {
-    const settings = await prisma.appSettings.findUnique({ where: { shop } });
-    const cas = (settings as { customerApprovalSettings?: unknown })?.customerApprovalSettings;
+    const settings = await prisma.appSettings.findUnique({
+      where: { shop },
+      select: { customerApprovalSettings: true },
+    });
+    const cas = settings?.customerApprovalSettings;
     if (cas && typeof cas === "object" && !Array.isArray(cas)) {
       const tag = (cas as Record<string, unknown>).approvedTag;
       if (typeof tag === "string" && tag.trim()) {
@@ -390,34 +426,7 @@ async function tagOnlyApproveLinkedRegistration(
   registrationId: string,
   tagsToApply: string[]
 ): Promise<void> {
-  await admin.graphql(
-    `#graphql
-    mutation tagsRemove($id: ID!, $tags: [String!]!) {
-      tagsRemove(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        id: customerGid,
-        tags: ["status:pending", "status:denied"],
-      },
-    }
-  );
-  await admin.graphql(
-    `#graphql
-    mutation tagsAdd($id: ID!, $tags: [String!]!) {
-      tagsAdd(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        id: customerGid,
-        tags: tagsToApply,
-      },
-    }
-  );
+  await mutateCustomerTags(admin, customerGid, ["status:pending", "status:denied"], tagsToApply);
   await prisma.registration.update({
     where: { id: registrationId },
     data: {
@@ -607,7 +616,9 @@ export async function getCustomers(
   from?: string | null,
   to?: string | null,
   limit = DEFAULT_PAGE_SIZE,
-  page = 1
+  page = 1,
+  cursor?: string | null,
+  direction: "forward" | "backward" = "forward",
 ): Promise<CustomersResponse> {
   try {
     const where: Record<string, unknown> = { shop };
@@ -644,35 +655,44 @@ export async function getCustomers(
       ];
     }
 
-    // Bounded pagination: take is capped at 10 000 (only "All" view) and `skip = (page-1) * take`
-    // — guarantees we never run an unbounded scan against Registration.
+    // Cursor pagination: `cursor` + `take` + `skip: 1` avoids OFFSET scans on large tables.
     const take = Math.min(Math.max(1, limit), 10000);
-    const skip = Math.max(0, (page - 1) * take);
+    const cursorId = (cursor || "").trim() || null;
+    const listSelect = {
+      id: true,
+      customerId: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      company: true,
+      phone: true,
+      status: true,
+      createdAt: true,
+    } as const;
 
-    // Page > 1 (or full page on page 1) needs an exact total for the Pagination control;
-    // run findMany + count in the SAME Promise.all so they fan out as one round-trip latency.
-    // First page that under-fills `take` skips the count entirely (we already know the exact total).
-    const findManyPromise = prisma.registration.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip,
-      take,
-      select: {
-        id: true,
-        customerId: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        company: true,
-        phone: true,
-        status: true,
-        createdAt: true,
-      },
-    });
+    const findManyPromise =
+      cursorId && direction === "backward"
+        ? prisma.registration
+            .findMany({
+              where,
+              orderBy: { createdAt: "asc" },
+              take,
+              cursor: { id: cursorId },
+              skip: 1,
+              select: listSelect,
+            })
+            .then((rows) => rows.reverse())
+        : prisma.registration.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            take,
+            ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+            select: listSelect,
+          });
 
     let dbCustomers: Awaited<typeof findManyPromise>;
     let totalCount: number;
-    if (page === 1) {
+    if (!cursorId && page === 1) {
       dbCustomers = await findManyPromise;
       totalCount =
         dbCustomers.length < take
@@ -1319,34 +1339,11 @@ export async function approveCustomer(
   // Existing Shopify customer — update tags and DB
   shopifyCustomerId = id;
 
-  await admin.graphql(
-    `#graphql
-    mutation tagsRemove($id: ID!, $tags: [String!]!) {
-      tagsRemove(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        id: shopifyCustomerId,
-        tags: ["status:pending", "status:denied"],
-      },
-    }
-  );
-
-  await admin.graphql(
-    `#graphql
-    mutation tagsAdd($id: ID!, $tags: [String!]!) {
-      tagsAdd(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        id: shopifyCustomerId,
-        tags: tagsToApply,
-      },
-    }
+  await mutateCustomerTags(
+    admin,
+    shopifyCustomerId,
+    ["status:pending", "status:denied"],
+    tagsToApply,
   );
 
   try {
@@ -1391,34 +1388,11 @@ export async function denyCustomer(
 
   // Existing Shopify customer — update tags and DB
   const customerId = id;
-  await admin.graphql(
-    `#graphql
-    mutation tagsRemove($id: ID!, $tags: [String!]!) {
-      tagsRemove(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        id: customerId,
-        tags: ["status:pending", "status:approved"],
-      },
-    }
-  );
-
-  await admin.graphql(
-    `#graphql
-    mutation tagsAdd($id: ID!, $tags: [String!]!) {
-      tagsAdd(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        id: customerId,
-        tags: ["status:denied"],
-      },
-    }
+  await mutateCustomerTags(
+    admin,
+    customerId,
+    ["status:pending", "status:approved"],
+    ["status:denied"],
   );
 
   try {

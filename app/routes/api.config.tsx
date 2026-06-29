@@ -13,6 +13,7 @@ import {
     getMerchantPlanForShop,
     sanitizeFormTypeForPlan,
 } from "../lib/merchant-plan.server";
+import { getCachedAppSettings, getCachedFormConfig } from "../lib/cached-settings.server";
 
 /** App proxy JSON — no cache when response includes per-customer pending state. */
 const CONFIG_JSON_NO_CACHE: Record<string, string> = {
@@ -199,85 +200,34 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         let formConfigUpdatedAt: string | null = null;
 
         const formConfigPromise = shop
-            ? (async () => {
-                try {
-                    let dbConfig = null;
-                    if (formId) {
-                        dbConfig = await prisma.formConfig.findFirst({
-                            where: { id: formId, shop },
-                            select: {
-                                fields: true,
-                                name: true,
-                                formType: true,
-                                showProgressBar: true,
-                                storefrontHeading: true,
-                                storefrontDescription: true,
-                                updatedAt: true,
-                            },
-                        });
-                    } else if (formType) {
-                        dbConfig = await prisma.formConfig.findFirst({
-                            where: { shop, formType },
-                            select: {
-                                fields: true,
-                                name: true,
-                                formType: true,
-                                showProgressBar: true,
-                                storefrontHeading: true,
-                                storefrontDescription: true,
-                                updatedAt: true,
-                            },
-                        } as never);
-                    }
-                    if (!dbConfig) {
-                        dbConfig = await prisma.formConfig.findFirst({
-                            where: { shop },
-                            orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
-                            select: {
-                                fields: true,
-                                name: true,
-                                formType: true,
-                                showProgressBar: true,
-                                storefrontHeading: true,
-                                storefrontDescription: true,
-                                updatedAt: true,
-                            },
-                        } as never);
-                    }
-                    if (dbConfig) {
-                        formConfigUpdatedAt = dbConfig.updatedAt.toISOString();
-                        const row = dbConfig as {
-                            name?: string;
-                            formType?: string;
-                            showProgressBar?: boolean;
-                            storefrontHeading?: string | null;
-                            storefrontDescription?: string | null;
-                        };
-                        return {
-                            fields: (dbConfig.fields ?? []) as unknown[],
-                            formType: row.formType ?? "wholesale",
-                            name: row.name ?? "Registration Form",
-                            showProgressBar: row.showProgressBar !== false,
-                            storefrontHeading:
-                                typeof row.storefrontHeading === "string" && row.storefrontHeading.trim()
-                                    ? row.storefrontHeading.trim()
-                                    : null,
-                            storefrontDescription:
-                                typeof row.storefrontDescription === "string" && row.storefrontDescription.trim()
-                                    ? row.storefrontDescription.trim()
-                                    : null,
-                        };
-                    }
-                } catch (dbError) {
-                    console.warn("DB config fetch failed, falling back to metafields:", dbError);
-                }
-                return {
-                    fields: [] as unknown[],
-                    formType: undefined as string | undefined,
-                    name: undefined as string | undefined,
-                    showProgressBar: true,
-                };
-            })()
+            ? getCachedFormConfig(shop, { formId, formType }).then((dbConfig) => {
+                  if (!dbConfig) {
+                      return {
+                          fields: [] as unknown[],
+                          formType: undefined as string | undefined,
+                          name: undefined as string | undefined,
+                          showProgressBar: true,
+                          storefrontHeading: null as string | null,
+                          storefrontDescription: null as string | null,
+                      };
+                  }
+                  formConfigUpdatedAt = dbConfig.updatedAt.toISOString();
+                  return {
+                      fields: (dbConfig.fields ?? []) as unknown[],
+                      formType: dbConfig.formType ?? "wholesale",
+                      name: dbConfig.name ?? "Registration Form",
+                      showProgressBar: dbConfig.showProgressBar !== false,
+                      storefrontHeading:
+                          typeof dbConfig.storefrontHeading === "string" && dbConfig.storefrontHeading.trim()
+                              ? dbConfig.storefrontHeading.trim()
+                              : null,
+                      storefrontDescription:
+                          typeof dbConfig.storefrontDescription === "string" &&
+                          dbConfig.storefrontDescription.trim()
+                              ? dbConfig.storefrontDescription.trim()
+                              : null,
+                  };
+              })
             : Promise.resolve({
                   fields: [] as unknown[],
                   formType: undefined as string | undefined,
@@ -285,20 +235,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                   showProgressBar: true,
               });
 
-        const settingsPromise = shop
-            ? prisma.appSettings.findUnique({
-                  where: { shop },
-                  select: {
-                      updatedAt: true,
-                      shopCountryCode: true,
-                      formTranslations: true,
-                      languageOptions: true,
-                      customCss: true,
-                      themeSettings: true,
-                      customerApprovalSettings: true,
-                  },
-              })
-            : Promise.resolve(null);
+        const settingsPromise = shop ? getCachedAppSettings(shop) : Promise.resolve(null);
 
         const [formConfigResult, settings, pendingForCustomerRow] = await Promise.all([
             formConfigPromise,
