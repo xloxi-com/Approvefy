@@ -951,7 +951,12 @@ export async function ensureRegistrationPageThemeTemplate(
       await removeRegistrationFormFromDefaultPageTemplate(admin, themeId);
     }
 
-    let existing = await ensureDedicatedRegistrationTemplateFile(admin, themeId);
+    let existing: string | null;
+    if (quick) {
+      existing = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+    } else {
+      existing = await ensureDedicatedRegistrationTemplateFile(admin, themeId);
+    }
     if (existing?.trim()) {
       const placement = registrationFormBlockPlacement(existing);
       if (placement === "apps") {
@@ -985,8 +990,10 @@ export async function ensureRegistrationPageThemeTemplate(
 
     const templateBody = existing?.trim()
       ? (mergeRegistrationFormBlockIntoTemplate(existing) ??
-        (await buildRegistrationPageTemplateBody(admin, themeId)))
-      : await buildRegistrationPageTemplateBody(admin, themeId);
+        (quick ? buildRegistrationPageTemplateJson() : await buildRegistrationPageTemplateBody(admin, themeId)))
+      : quick
+        ? buildRegistrationPageTemplateJson()
+        : await buildRegistrationPageTemplateBody(admin, themeId);
 
     let upsert = await upsertThemeTemplateFile(admin, themeId, templateBody, {
       skipJobWait: quick,
@@ -1190,6 +1197,7 @@ export async function createCustomerRegistrationPageTemplate(
     }
 
     const canTryCli =
+      !quick &&
       !!themeNumericId &&
       canAttemptThemeCliPush({
         themeAccessPassword: isServerlessRuntime()

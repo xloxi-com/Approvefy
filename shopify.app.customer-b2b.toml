@@ -25,7 +25,8 @@ api_version = "2026-01"
   uri = "/webhooks/customers_create"
 
 [access_scopes]
-scopes = "write_products,read_customers,write_customers,write_app_proxy,read_locales,read_online_store_pages,write_online_store_pages,read_themes,write_themes"
+# Keep in sync with app/lib/app-scopes.server.ts (APP_OAUTH_SCOPES)
+scopes = "read_customers,read_locales,read_online_store_pages,read_themes,write_app_proxy,write_customers,write_online_store_pages,write_products,write_themes"
 
 [auth]
 redirect_urls = [ "https://approvefy-app.vercel.app/auth/callback", "https://approvefy-app.vercel.app/api/auth" ]

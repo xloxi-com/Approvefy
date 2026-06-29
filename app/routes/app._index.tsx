@@ -104,10 +104,10 @@ const MetricsRow = memo(function MetricsRow({
 
   return (
     <InlineGrid columns={{ xs: 2, sm: 2, md: 4 }} gap="400">
-      <MetricCard label="Total registrations" value={loading ? "—" : total} />
-      <MetricCard label="Pending approval" value={loading ? "—" : pending} tone="caution" />
+      <MetricCard label="Registrations" value={loading ? "—" : total} />
+      <MetricCard label="Pending" value={loading ? "—" : pending} tone="caution" />
       <MetricCard label="Approved" value={loading ? "—" : approved} tone="success" />
-      <MetricCard label="Registration forms" value={formsCount} />
+      <MetricCard label="Forms" value={formsCount} />
     </InlineGrid>
   );
 });
@@ -125,7 +125,7 @@ function SetupStep({
   step: number;
   icon: typeof ThemeEditIcon;
   title: string;
-  description: string;
+  description: ReactNode;
   complete?: boolean;
   optional?: boolean;
   actions: ReactNode;
@@ -171,9 +171,13 @@ function SetupStep({
               </BlockStack>
             </InlineStack>
           </InlineStack>
-          <Text as="p" variant="bodyMd" tone="subdued">
-            {description}
-          </Text>
+          {typeof description === "string" ? (
+            <Text as="p" variant="bodyMd" tone="subdued">
+              {description}
+            </Text>
+          ) : (
+            description
+          )}
           <InlineStack gap="300" wrap blockAlign="center">
             {actions}
           </InlineStack>
@@ -209,7 +213,6 @@ export default function Index() {
     registrationPageThemeEditorUrl,
     registrationPageStorefrontUrl,
     registrationPagePublished,
-    registrationThemeTemplateFileExists,
     registrationFormOnDefaultPage,
     appEmbedEnabled,
     registrationFormBlockOnPage,
@@ -308,7 +311,7 @@ export default function Index() {
     pendingAppEmbedOpenRef.current = false;
 
     if (!appEmbedFetcher.data?.ok || appEmbedFetcher.data.intent !== "enable-app-embed") {
-      setAppEmbedNotice("Could not enable the app embed. Refresh the app and try again.");
+      setAppEmbedNotice("Couldn't enable app embed. Refresh and try again.");
       return;
     }
 
@@ -320,31 +323,36 @@ export default function Index() {
     }
 
     if (appEmbedFetcher.data.savedViaApi) {
-      setAppEmbedNotice(
-        "Approvefy app embed enabled on your theme. Theme editor opened — click Save if prompted.",
-      );
+      setAppEmbedNotice("App embed enabled. Click Save in the theme editor.");
       return;
     }
 
     setAppEmbedNotice(
-      "Theme editor opened — toggle Approvefy under App embeds and click Save. Approve write_themes for Approvefy to auto-enable next time.",
+      "Theme editor opened. Turn on Approvefy under App embeds and click Save.",
     );
   }, [appEmbedFetcher.state, appEmbedFetcher.data, revalidator]);
 
+  const submitCreateRegistrationTemplate = useCallback(() => {
+    setRegistrationNotice(null);
+    setRegistrationNotice("Setting up registration page…");
+    lastRegistrationResultRef.current = null;
+    registrationFetcher.submit({ intent: "create-registration-template" }, { method: "post" });
+  }, [registrationFetcher]);
+
   const submitAddRegistrationForm = useCallback(() => {
     setRegistrationNotice(null);
-    setRegistrationNotice("Adding Registration Form to the Customer Registration template…");
+    setRegistrationNotice("Adding registration form…");
     lastRegistrationResultRef.current = null;
     registrationFetcher.submit({ intent: "add-registration-form" }, { method: "post" });
   }, [registrationFetcher]);
 
-  const registrationBusy = registrationFetcher.state !== "idle";
-  const registrationBusyIntent = registrationBusy
+  const registrationSubmitting = registrationFetcher.state === "submitting";
+  const registrationBusyIntent = registrationSubmitting
     ? String(registrationFetcher.formData?.get("intent") ?? "")
     : null;
 
   useEffect(() => {
-    if (registrationFetcher.state !== "idle") return;
+    if (registrationFetcher.state === "submitting") return;
 
     const result = registrationFetcher.data;
     if (!result || result === lastRegistrationResultRef.current) return;
@@ -352,11 +360,58 @@ export default function Index() {
 
     if (!("intent" in result)) return;
 
-    revalidator.revalidate();
+    if (result.ok && result.intent === "create-registration-template" && "blockOnTemplate" in result) {
+      setExtensionSetup((prev) => ({
+        ...prev,
+        registrationFormBlockOnPage: prev.registrationFormBlockOnPage || result.blockOnTemplate === true,
+        loaded: true,
+      }));
+    }
+
+    queueMicrotask(() => {
+      revalidator.revalidate();
+    });
 
     if (!result.ok) {
-      setRegistrationNotice("Could not complete registration page setup. Refresh and try again.");
+      setRegistrationNotice("Setup failed. Refresh and try again.");
       return;
+    }
+
+    if (result.intent === "create-registration-template") {
+      if (!result.pageExists) {
+        setRegistrationNotice("Couldn't create the page. Check Pages permissions.");
+        return;
+      }
+
+      if (result.openUrl) {
+        openThemeEditorUrl(result.openUrl);
+      }
+
+      if (result.needsManualTemplate) {
+        setRegistrationNotice(
+          `Page ready at ${registrationPagePath}. Create the Customer Registration template in the theme editor, then try again.`,
+        );
+        return;
+      }
+
+      if (result.needsEditorSave) {
+        setRegistrationNotice("Theme editor opened. Click Save to publish the form.");
+        return;
+      }
+
+      if ("blockOnTemplate" in result && result.blockOnTemplate) {
+        setRegistrationNotice(
+          `${"pageCreated" in result && result.pageCreated ? "Page created. " : ""}Form added. Review in the theme editor and click Save.`,
+        );
+        return;
+      }
+
+      if (result.templateExists) {
+        setRegistrationNotice("Template ready. Add the Registration Form block in the theme editor if needed.");
+        return;
+      }
+
+      setRegistrationNotice(`Page created at ${registrationPagePath}.`);
     }
 
     if (result.intent === "add-registration-form") {
@@ -364,31 +419,35 @@ export default function Index() {
         openThemeEditorUrl(result.openUrl);
       }
       if (result.needsManualTemplate) {
-        setRegistrationNotice(
-          "Create the customer-registration template in the theme editor first, then click Add form to page again.",
-        );
+        setRegistrationNotice("Create the template in the theme editor, then try again.");
+        return;
+      }
+      if (
+        result.blockOnTemplate &&
+        "savedViaApi" in result &&
+        result.savedViaApi
+      ) {
+        setRegistrationNotice("Form added. Review in the theme editor.");
         return;
       }
       if (result.needsEditorSave) {
-        setRegistrationNotice(
-          "Theme editor opened — Registration Form will be added. Click Save to publish.",
-        );
+        setRegistrationNotice("Theme editor opened. Click Save to publish the form.");
         return;
       }
       if (result.blockOnTemplate) {
-        setRegistrationNotice("Registration Form is already on Customer Registration.");
+        setRegistrationNotice("Form is already on the registration page.");
         return;
       }
-      setRegistrationNotice("Theme editor opened on Customer Registration.");
+      setRegistrationNotice("Theme editor opened.");
     }
   }, [registrationFetcher.state, registrationFetcher.data, revalidator]);
 
   return (
     <Page
       title={APP_DISPLAY_NAME}
-      subtitle="Customer registration and B2B approval workflow"
+      subtitle="B2B registration and approvals"
       primaryAction={{
-        content: "View customers",
+        content: "Customers",
         onAction: () => navigate("/app/customers"),
       }}
       secondaryActions={[
@@ -400,29 +459,25 @@ export default function Index() {
       <Layout>
         {billingPending && (
           <Layout.Section>
-            <Banner tone="info" title="Activating your plan">
-              Thanks for subscribing — your plan is being confirmed. This page will refresh automatically.
+            <Banner tone="info" title="Activating plan">
+              Confirming your subscription. This page will refresh shortly.
             </Banner>
           </Layout.Section>
         )}
 
         {dbUnavailable && (
           <Layout.Section>
-            <Banner tone="critical" title="Database connection issue detected">
+            <Banner tone="critical" title="Database unavailable">
               <p style={{ margin: 0 }}>
-                We could not load setup data from the database. Please verify your production{" "}
+                Setup data couldn&apos;t load. Check{" "}
                 <Text as="span" variant="bodyMd" fontWeight="semibold">
                   DATABASE_URL
                 </Text>{" "}
-                (Supabase pooler on port 6543 with{" "}
-                <Text as="span" variant="bodyMd" fontWeight="semibold">
-                  ?pgbouncer=true
-                </Text>
-                ) and{" "}
+                and{" "}
                 <Text as="span" variant="bodyMd" fontWeight="semibold">
                   DIRECT_URL
-                </Text>{" "}
-                (direct port 5432), then redeploy.
+                </Text>
+                , then redeploy.
               </p>
             </Banner>
           </Layout.Section>
@@ -461,14 +516,13 @@ export default function Index() {
                   Getting started
                 </Text>
                 <Text as="p" variant="bodyMd" tone="subdued">
-                  Complete these steps to show your registration form on the storefront and route new sign-ups
-                  into your approval workflow.
+                  Finish these steps to publish your registration form.
                 </Text>
               </BlockStack>
               <Divider />
               <InlineStack align="space-between" blockAlign="center" wrap={false}>
                 <Text id={progressLabelId} as="span" variant="bodySm" fontWeight="medium">
-                  {setupTasksComplete} of {setupTasksTotal} configuration steps complete
+                  {setupTasksComplete} of {setupTasksTotal} steps done
                 </Text>
                 <Text as="span" variant="bodySm" tone="subdued">
                   {progressPercent}%
@@ -487,20 +541,18 @@ export default function Index() {
         <Layout.Section>
           <BlockStack gap="400">
             {registrationFormOnDefaultPage && (
-              <Banner tone="warning" title="Registration Form is on the wrong page template">
-                The Registration Form block is on the <Text as="span" variant="bodyMd" fontWeight="semibold">Default page</Text>{" "}
-                template (e.g. Your Privacy Choices). Remove it there in the theme editor (Template → Apps → Registration Form → Remove), click Save,
-                then use &quot;Add form to page&quot; — Approvefy adds it only to{" "}
+              <Banner tone="warning" title="Form on wrong template">
+                Registration Form is on <Text as="span" variant="bodyMd" fontWeight="semibold">Default page</Text>.
+                Remove it there (Template → Apps → Registration Form), click Save, then run{" "}
                 <Text as="span" variant="bodyMd" fontWeight="semibold">
-                  Customer Registration
-                </Text>{" "}
-                ({registrationPagePath}).
+                  Set up registration page
+                </Text>.
               </Banner>
             )}
             {appEmbedNotice ? (
               <Banner
-                tone={appEmbedNotice.includes("Could not") ? "warning" : "success"}
-                title="App embed setup"
+                tone={appEmbedNotice.includes("Couldn't") ? "warning" : "success"}
+                title="App embed"
                 onDismiss={() => setAppEmbedNotice(null)}
               >
                 <p style={{ margin: 0 }}>{appEmbedNotice}</p>
@@ -508,24 +560,23 @@ export default function Index() {
             ) : null}
             {registrationNotice ? (
               <Banner
-                tone={registrationNotice.includes("Could not") ? "warning" : "success"}
-                title="Registration page setup"
+                tone={registrationNotice.includes("Couldn't") || registrationNotice.includes("failed") ? "warning" : "success"}
+                title="Registration page"
                 onDismiss={() => setRegistrationNotice(null)}
               >
                 <p style={{ margin: 0 }}>{registrationNotice}</p>
               </Banner>
             ) : null}
             {!themeSetupCheckAvailable && !extensionSetup.loaded && (
-              <Banner tone="info" title="Theme setup status unavailable">
-                Approvefy could not read your live theme files. Re-open the app and approve the updated
-                permissions if prompted, then refresh this page.
+              <Banner tone="info" title="Theme status unavailable">
+                Couldn&apos;t read theme files. Re-open the app, approve permissions, and refresh.
               </Banner>
             )}
             <SetupStep
               step={1}
               icon={ThemeEditIcon}
-              title="Enable app embed block"
-              description="Turn on the Approvefy app embed in your theme (Theme settings → App embeds → Approvefy). Required for the header account icon redirect and registration scripts on every page."
+              title="Enable app embed"
+              description="Turn on Approvefy under Theme settings → App embeds, then click Save."
               complete={appEmbedDone}
               optional={!appEmbedDone}
               actions={
@@ -537,7 +588,7 @@ export default function Index() {
                   ) : (
                     <Button
                       onClick={enableAppEmbed}
-                      loading={appEmbedFetcher.state !== "idle"}
+                      loading={appEmbedFetcher.state === "submitting"}
                       variant="primary"
                     >
                       Enable app embed
@@ -548,17 +599,17 @@ export default function Index() {
                     variant="secondary"
                     external
                   >
-                    Preview theme
+                    Preview store
                   </Button>
                 </>
               }
               footer={
                 <InlineStack align="space-between" blockAlign="center" gap="400" wrap>
                   <Text as="span" variant="bodySm" tone="subdued">
-                    Required for storefront activation
+                    Required on every page
                   </Text>
                   <Button variant="plain" icon={ViewIcon} url={SETUP_TUTORIAL_URL} external>
-                    View tutorial
+                    Tutorial
                   </Button>
                 </InlineStack>
               }
@@ -567,8 +618,28 @@ export default function Index() {
             <SetupStep
               step={2}
               icon={PageIcon}
-              title="Add form to registration page"
-              description={`Opens only the Customer Registration template (${registrationPagePath}) — never Default page. The Registration Form block is added exclusively to this page.`}
+              title="Add form to page"
+              description={
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodyMd" tone="subdued">
+                    After Step 1, click Set up registration page. Approvefy will:
+                  </Text>
+                  <BlockStack gap="100">
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      1. Create page {registrationPagePath}
+                    </Text>
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      2. Create Customer Registration template
+                    </Text>
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      3. Insert Registration Form block
+                    </Text>
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      4. Open theme editor — click Save
+                    </Text>
+                  </BlockStack>
+                </BlockStack>
+              }
               complete={registrationPageFormDone}
               optional={!registrationPageFormDone}
               actions={
@@ -579,16 +650,15 @@ export default function Index() {
                       variant="secondary"
                       external
                     >
-                      Open page in theme editor
+                      Open in theme editor
                     </Button>
                   ) : (
                     <Button
-                      onClick={submitAddRegistrationForm}
-                      loading={registrationBusyIntent === "add-registration-form"}
+                      onClick={submitCreateRegistrationTemplate}
+                      loading={registrationBusyIntent === "create-registration-template"}
                       variant="primary"
-                      disabled={!registrationThemeTemplateFileExists}
                     >
-                      Add form to page
+                      Set up registration page
                     </Button>
                   )}
                   {registrationPageStorefrontUrl && registrationPagePublished ? (
@@ -603,13 +673,13 @@ export default function Index() {
             <SetupStep
               step={3}
               icon={FormsIcon}
-              title="Review your registration form"
-              description="A default Customer B2B form is created when you install Approvefy. Open Form Builder anytime to customize fields or add more forms."
+              title="Review registration form"
+              description="A default B2B form is included. Customize it anytime in Form Builder."
               complete={formDone}
               actions={
                 <Link to="/app/form-config" prefetch="render">
                   <Button variant={formDone ? "secondary" : "primary"}>
-                    {formDone ? "Open Form Builder" : "Go to Form Builder"}
+                    {formDone ? "Form Builder" : "Open Form Builder"}
                   </Button>
                 </Link>
               }
@@ -619,12 +689,12 @@ export default function Index() {
               step={4}
               icon={SettingsIcon}
               title="Configure settings"
-              description="Set languages, form appearance, and approval workflow — including SMTP, notifications, and storefront messages. Save Settings once to complete this step."
+              description="Languages, form style, approvals, email, and storefront messages. Save once to finish."
               complete={settingsDone}
               actions={
                 <Link to="/app/settings" prefetch="render">
                   <Button variant={settingsDone ? "secondary" : "primary"}>
-                    {settingsDone ? "Open Settings" : "Go to Settings"}
+                    {settingsDone ? "Settings" : "Open Settings"}
                   </Button>
                 </Link>
               }
@@ -640,7 +710,7 @@ export default function Index() {
               </Text>
               <InlineStack gap="400" wrap>
                 <Button variant="plain" onClick={() => navigate("/app/customers")}>
-                  Review customers
+                  Customers
                 </Button>
                 <Button variant="plain" onClick={() => navigate("/app/form-config")}>
                   Form Builder
@@ -649,10 +719,10 @@ export default function Index() {
                   Settings
                 </Button>
                 <Button variant="plain" url={APP_URL} external>
-                  Help & support
+                  Support
                 </Button>
                 <Button variant="plain" url={SETUP_TUTORIAL_URL} external>
-                  Documentation
+                  Docs
                 </Button>
               </InlineStack>
             </BlockStack>

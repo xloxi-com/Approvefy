@@ -6,15 +6,16 @@ import { getAnalytics } from "../models/registration-analytics.server";
 import { REGISTRATION_PAGE_HANDLE, REGISTRATION_PAGE_PATH } from "./registration-page.constants";
 import {
   buildRegistrationPageThemeEditorUrl,
+  buildRegistrationPagePreviewThemeEditorUrl,
   ensureRegistrationStorefrontPage,
   findRegistrationPage,
   registrationStorefrontUrl,
   runAddRegistrationFormSetup,
+  runCreateRegistrationTemplateSetup,
   resolveThemeWriteAccessToken,
 } from "./registration-page.server";
 import { cleanRegistrationFormOffDefaultPageTemplate } from "./theme-registration-template.server";
 import {
-  isRegistrationFormLiveOnStorefront,
   isRegistrationPageStorefrontReady,
 } from "./registration-page-storefront.server";
 import { getThemeSetupStatus } from "./theme-setup-status.server";
@@ -111,8 +112,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       const needsSuffixSync =
         templateFileExists &&
         existingPage?.templateSuffix?.toLowerCase() !== REGISTRATION_PAGE_HANDLE;
+      const setupAlreadyComplete =
+        pageExists &&
+        pagePublished &&
+        templateFileExists &&
+        blockOnTemplate &&
+        !needsSuffixSync;
       const needsRegistrationPageEnsure =
-        !pageExists || !storefrontReadyInitial || needsSuffixSync;
+        !setupAlreadyComplete &&
+        (!pageExists || !storefrontReadyInitial || needsSuffixSync);
 
       if (needsRegistrationPageEnsure) {
         try {
@@ -153,12 +161,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     registrationPageTemplateExists = registrationThemeTemplateFileExists;
     registrationFormOnDefaultPage = themeSetup.registrationFormOnDefaultPage;
     appEmbedEnabled = themeSetup.appEmbedEnabled;
-    registrationFormBlockOnPage = isRegistrationFormLiveOnStorefront({
-      blockOnDedicatedTemplate: blockOnTemplate,
-      pageExists,
-      pagePublished,
-      appEmbedEnabled: themeSetup.appEmbedEnabled,
-    });
+    registrationFormBlockOnPage = blockOnTemplate;
     themeSetupCheckAvailable = themeSetup.themeCheckAvailable;
     registrationNeedsManualTemplate =
       !registrationStorefrontReady && !registrationThemeTemplateFileExists;
@@ -231,6 +234,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
+  if (intent === "create-registration-template") {
+    try {
+      const token = await resolveThemeWriteAccessToken(shop, session.accessToken);
+      const setup = await runCreateRegistrationTemplateSetup(admin, shop, token);
+      return data({
+        ok: true as const,
+        intent: "create-registration-template" as const,
+        openUrl: setup.themeEditorUrl,
+        templateExists: setup.templateExists,
+        blockOnTemplate: setup.blockOnTemplate,
+        savedViaApi: setup.savedViaApi,
+        formSavedViaApi: setup.formSavedViaApi,
+        needsManualTemplate: setup.needsManualTemplate,
+        needsEditorSave: setup.needsEditorSave,
+        pageExists: setup.pageExists,
+        pagePublished: setup.pagePublished,
+        pageCreated: setup.pageCreated,
+      });
+    } catch (error) {
+      console.error("[Home] create-registration-template action failed:", error);
+      return data({
+        ok: false as const,
+        intent: "create-registration-template" as const,
+        openUrl: buildRegistrationPagePreviewThemeEditorUrl(shop),
+      });
+    }
+  }
+
   if (intent === "add-registration-form") {
     try {
       const token = await resolveThemeWriteAccessToken(shop, session.accessToken);
@@ -251,6 +282,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         needsManualTemplate: setup.needsManualTemplate,
         pageExists: setup.pageExists,
         needsEditorSave: setup.needsEditorSave,
+        savedViaApi: setup.savedViaApi,
       });
     } catch (error) {
       console.error("[Home] add-registration-form action failed:", error);
