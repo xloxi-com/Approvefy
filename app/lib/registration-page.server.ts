@@ -13,7 +13,6 @@ import { ensureAppEmbedEnabled } from "./theme-app-embed.server";
 import { canUseThemeCliPush } from "./theme-cli-push.server";
 import { getThemeSetupStatus } from "./theme-setup-status.server";
 import {
-  canServeRegistrationPageViaAppEmbed,
   isRegistrationFormLiveOnStorefront,
   isRegistrationPageStorefrontReady,
 } from "./registration-page-storefront.server";
@@ -393,8 +392,6 @@ export async function ensureRegistrationStorefrontPage(
   let pagePublished = false;
   let templateExists = false;
   let blockOnTemplate = false;
-  let templateWriteFailed = false;
-  let needsManualTemplate = false;
   try {
     await syncRegistrationPageRedirectSettings(shop);
     await ensureAppEmbedEnabled(admin);
@@ -420,9 +417,6 @@ export async function ensureRegistrationStorefrontPage(
         templateExists = templateResult.templateExists;
         blockOnTemplate = templateResult.blockOnTemplate;
       }
-      needsManualTemplate =
-        !templateExists && write.themeFileWriteAccessDenied && !canUseThemeCliPush();
-      templateWriteFailed = !templateExists;
     }
 
     let existing = await findRegistrationPage(admin);

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useId, useRef, useState, memo, type ReactNode } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Await, useFetcher, useLoaderData, useNavigate, Link, useRevalidator } from "react-router";
 import {
@@ -69,7 +69,7 @@ function countsFromAnalytics(analytics: HomeAnalytics): {
   return { pending, approved, rejected: denied, total };
 }
 
-function MetricCard({
+const MetricCard = memo(function MetricCard({
   label,
   value,
   tone,
@@ -90,9 +90,9 @@ function MetricCard({
       </BlockStack>
     </Card>
   );
-}
+});
 
-function MetricsRow({
+const MetricsRow = memo(function MetricsRow({
   analytics,
   formsCount,
 }: {
@@ -110,7 +110,7 @@ function MetricsRow({
       <MetricCard label="Registration forms" value={formsCount} />
     </InlineGrid>
   );
-}
+});
 
 function SetupStep({
   step,

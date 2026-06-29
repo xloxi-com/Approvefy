@@ -3,7 +3,6 @@ import { ensureRegistrationStorefrontPage } from "./registration-page.server";
 import { ensureOnboardingFormReviewedWhenFormsExist } from "./onboarding-status.server";
 import { ensureAppEmbedEnabled } from "./theme-app-embed.server";
 import { sessionHasWriteThemesScope } from "./app-scopes.server";
-import { canUseThemeCliPush } from "./theme-cli-push.server";
 
 type AdminGraphqlClient = {
   graphql: (

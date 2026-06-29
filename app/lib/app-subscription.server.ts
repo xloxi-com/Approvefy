@@ -43,6 +43,18 @@ export function invalidateAppSubscriptionCache(shop: string): void {
   if (key) invalidateCache(billingCacheKey(key));
 }
 
+/** Populate billing + merchant-plan caches after a fresh Shopify read (avoids invalidate-then-refetch). */
+export function warmBillingCaches(shop: string, plan: MerchantPlanId | null): void {
+  const key = (shop || "").trim().toLowerCase();
+  if (!key) return;
+  setCache(billingCacheKey(key), plan != null, SUBSCRIPTION_CACHE_TTL_MS);
+  if (plan) {
+    setCache(shopKey(key, "merchantPlan"), plan, CACHE_TTL.merchantPlan);
+  }
+}
+
+const subscriptionInflight = new Map<string, Promise<MerchantPlanId | null>>();
+
 function parseActiveSubscriptionPlan(
   subs: Array<{
     name?: string | null;
@@ -93,55 +105,69 @@ function parseActiveSubscriptionPlan(
 /** Reads Shopify active app subscription for the current installation (no DB write). */
 export async function queryActiveAppSubscriptionPlan(
   admin: { graphql: AdminGraphql },
+  shop?: string,
 ): Promise<MerchantPlanId | null> {
-  try {
-    const response = await admin.graphql(
-      `#graphql
-      query ActiveAppSubscriptionPrice {
-        currentAppInstallation {
-          activeSubscriptions {
-            name
-            status
-            lineItems {
-              plan {
-                pricingDetails {
-                  __typename
-                  ... on AppRecurringPricing {
-                    price {
-                      amount
-                      currencyCode
+  const inflightKey = (shop || "").trim().toLowerCase() || "__session__";
+  const existing = subscriptionInflight.get(inflightKey);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<MerchantPlanId | null> => {
+    try {
+      const response = await admin.graphql(
+        `#graphql
+        query ActiveAppSubscriptionPrice {
+          currentAppInstallation {
+            activeSubscriptions {
+              name
+              status
+              lineItems {
+                plan {
+                  pricingDetails {
+                    __typename
+                    ... on AppRecurringPricing {
+                      price {
+                        amount
+                        currencyCode
+                      }
                     }
                   }
                 }
               }
             }
           }
-        }
-      }`,
-    );
-    const json = (await response.json()) as {
-      data?: {
-        currentAppInstallation?: {
-          activeSubscriptions?: Array<{
-            name?: string | null;
-            status?: string;
-            lineItems?: Array<{
-              plan?: {
-                pricingDetails?: {
-                  __typename?: string;
-                  price?: { amount?: unknown; currencyCode?: string };
+        }`,
+      );
+      const json = (await response.json()) as {
+        data?: {
+          currentAppInstallation?: {
+            activeSubscriptions?: Array<{
+              name?: string | null;
+              status?: string;
+              lineItems?: Array<{
+                plan?: {
+                  pricingDetails?: {
+                    __typename?: string;
+                    price?: { amount?: unknown; currencyCode?: string };
+                  };
                 };
-              };
+              }>;
             }>;
-          }>;
+          };
         };
       };
-    };
 
-    const subs = json?.data?.currentAppInstallation?.activeSubscriptions ?? [];
-    return parseActiveSubscriptionPlan(subs);
-  } catch {
-    return null;
+      const subs = json?.data?.currentAppInstallation?.activeSubscriptions ?? [];
+      return parseActiveSubscriptionPlan(subs);
+    } catch {
+      return null;
+    }
+  })();
+
+  subscriptionInflight.set(inflightKey, promise);
+  try {
+    return await promise;
+  } finally {
+    subscriptionInflight.delete(inflightKey);
   }
 }
 
@@ -158,9 +184,9 @@ export async function shopHasActiveAppSubscription(
   const cached = getCache<boolean>(cacheKey);
   if (cached !== undefined) return cached;
 
-  const plan = await queryActiveAppSubscriptionPlan(admin);
+  const plan = await queryActiveAppSubscriptionPlan(admin, key);
   const active = plan != null;
-  setCache(cacheKey, active, SUBSCRIPTION_CACHE_TTL_MS);
+  warmBillingCaches(key, plan);
   return active;
 }
 

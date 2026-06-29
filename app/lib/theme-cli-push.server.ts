@@ -148,12 +148,11 @@ export async function pushRegistrationTemplateViaCli(
 
   return new Promise((resolve) => {
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const finish = (result: { ok: boolean; error?: string }) => {
       if (settled) return;
       settled = true;
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
       resolve(result);
     };
 
@@ -196,7 +195,7 @@ export async function pushRegistrationTemplateViaCli(
       output += String(chunk);
     });
 
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       try {
         child.kill();
       } catch {

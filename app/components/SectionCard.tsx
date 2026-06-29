@@ -1,5 +1,5 @@
 import { Card, BlockStack, Text } from "@shopify/polaris";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 
 type Props = {
   /** Card heading (matches former LegacyCard title). */
@@ -10,7 +10,7 @@ type Props = {
 /**
  * Polaris Card with optional title — replaces deprecated LegacyCard with `sectioned`.
  */
-export function SectionCard({ title, children }: Props) {
+export const SectionCard = memo(function SectionCard({ title, children }: Props) {
   return (
     <div className="app-backend-card">
       <Card>
@@ -25,4 +25,4 @@ export function SectionCard({ title, children }: Props) {
       </Card>
     </div>
   );
-}
+});

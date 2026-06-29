@@ -56,6 +56,8 @@ export default defineConfig({
     assetsInlineLimit: 0,
     target: "es2022",
     cssMinify: true,
+    cssCodeSplit: true,
+    modulePreload: { polyfill: true },
     rollupOptions: {
       output: {
         // Function-based splitting: object keys fail for packages without a "." export

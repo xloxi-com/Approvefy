@@ -1,10 +1,10 @@
 import prisma from "../db.server";
-import { invalidateAppSubscriptionCache } from "./app-subscription.server";
-import { invalidateMerchantPlanCache, type MerchantPlanId } from "./merchant-plan.server";
 import {
   queryActiveAppSubscriptionPlan,
+  warmBillingCaches,
   type AdminGraphql,
 } from "./app-subscription.server";
+import type { MerchantPlanId } from "./merchant-plan.server";
 
 export type { AdminGraphql };
 export { planFromRecurringUsd } from "./app-subscription.server";
@@ -19,7 +19,8 @@ export async function syncMerchantPlanFromActiveSubscription(
 ): Promise<MerchantPlanId | null> {
   if (!shop?.trim()) return null;
 
-  const detected = await queryActiveAppSubscriptionPlan(admin);
+  const detected = await queryActiveAppSubscriptionPlan(admin, shop);
+  warmBillingCaches(shop, detected);
   if (!detected) return null;
 
   try {
@@ -28,8 +29,6 @@ export async function syncMerchantPlanFromActiveSubscription(
       create: { shop, merchantPlan: detected },
       update: { merchantPlan: detected },
     });
-    invalidateMerchantPlanCache(shop);
-    invalidateAppSubscriptionCache(shop);
   } catch {
     /* ignore — still return detected so Pricing can show “Current” */
   }

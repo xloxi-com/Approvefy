@@ -6,6 +6,7 @@ import { CACHE_TTL, getCache, setCache, shopKey } from "./cache.server";
 
 export type CachedAppSettingsRow = {
   updatedAt: Date;
+  defaultLanguage: string;
   shopCountryCode: string | null;
   formTranslations: unknown;
   languageOptions: unknown;
@@ -27,6 +28,7 @@ export type CachedFormConfigRow = {
 
 const appSettingsSelect = {
   updatedAt: true,
+  defaultLanguage: true,
   shopCountryCode: true,
   formTranslations: true,
   languageOptions: true,

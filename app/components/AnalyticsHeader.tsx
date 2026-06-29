@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
     Grid,
     Text,
@@ -11,7 +12,11 @@ interface AnalyticsHeaderProps {
     denied: number;
 }
 
-export function AnalyticsHeader({ total, pending, denied }: AnalyticsHeaderProps) {
+export const AnalyticsHeader = memo(function AnalyticsHeader({
+    total,
+    pending,
+    denied,
+}: AnalyticsHeaderProps) {
     return (
         <Grid>
             <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 4, lg: 4, xl: 4 }}>
@@ -43,4 +48,4 @@ export function AnalyticsHeader({ total, pending, denied }: AnalyticsHeaderProps
             </Grid.Cell>
         </Grid>
     );
-}
+});

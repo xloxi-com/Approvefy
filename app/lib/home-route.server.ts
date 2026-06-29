@@ -25,6 +25,7 @@ import {
   isOnboardingSettingsSaved,
 } from "./onboarding-status.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
+import { getCachedAppSettings } from "./cached-settings.server";
 
 type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
 
@@ -58,10 +59,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
     const [formCount, settingsRow] = await Promise.all([
       prisma.formConfig.count({ where: { shop } }),
-      prisma.appSettings.findUnique({
-        where: { shop },
-        select: { customerApprovalSettings: true },
-      }),
+      getCachedAppSettings(shop),
     ]);
     formsCount = formCount;
     appSettingsRow = settingsRow;

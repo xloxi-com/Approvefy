@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Banner, Button, InlineStack } from "@shopify/polaris";
 import { mergeEmbedParamsForAppPath } from "../lib/shopify-embed-navigation";
@@ -12,13 +13,17 @@ export type PlanUpgradeBannerProps = {
 };
 
 /** Polaris banner + link to in-app Pricing (upgrade path). */
-export function PlanUpgradeBanner({
+export const PlanUpgradeBanner = memo(function PlanUpgradeBanner({
   title = "Unlock more features",
   message,
   requiredPlan = "Standard",
 }: PlanUpgradeBannerProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  const openPricing = useCallback(() => {
+    navigate(mergeEmbedParamsForAppPath("/app/pricing", searchParams));
+  }, [navigate, searchParams]);
 
   return (
     <Banner tone="info" title={title}>
@@ -27,13 +32,11 @@ export function PlanUpgradeBanner({
         <Button
           variant="plain"
           accessibilityLabel={`Open Pricing to upgrade to ${requiredPlan} or higher`}
-          onClick={() =>
-            navigate(mergeEmbedParamsForAppPath("/app/pricing", searchParams))
-          }
+          onClick={openPricing}
         >
           {`Upgrade — ${requiredPlan}+`}
         </Button>
       </InlineStack>
     </Banner>
   );
-}
+});

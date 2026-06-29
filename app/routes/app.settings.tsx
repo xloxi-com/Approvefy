@@ -68,6 +68,7 @@ import { getShopDisplayName, parseShopFromGraphqlResponse, replaceLiquidPlacehol
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
 import { invalidateCustomerApprovalModeCache } from "../models/approval.server";
 import { invalidateCache, shopKey } from "../lib/cache.server";
+import { getCachedAppSettings } from "../lib/cached-settings.server";
 import { ensureRegistrationStorefrontPage, syncRegistrationPageStorefrontVisibility } from "../lib/registration-page.server";
 import { withOnboardingSettingsSaved } from "../lib/onboarding-status.server";
 import {
@@ -453,20 +454,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const cachedShopMeta = getCachedShopMeta(shop);
         try {
             const [settingsResult, smtpResult, emailTemplatesBySlug] = await Promise.all([
-                prisma.appSettings.findUnique({
-                    where: { shop },
-                    select: {
-                        updatedAt: true,
-                        defaultLanguage: true,
-                        languageOptions: true,
-                        formTranslations: true,
-                        customerApprovalSettings: true,
-                        customCss: true,
-                        themeSettings: true,
-                        merchantPlan: true,
-                        shopCountryCode: true,
-                    },
-                }),
+                getCachedAppSettings(shop),
                 getSmtpSettings(shop),
                 getEmailTemplatesBySlugs(shop, ["rejection", "approval"]),
                 ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
