@@ -26,7 +26,7 @@ import {
   SettingsIcon,
 } from "@shopify/polaris-icons";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
-import { REGISTRATION_PAGE_TITLE } from "../lib/registration-page.constants";
+import { REGISTRATION_PAGE_TITLE, REGISTRATION_PAGE_HANDLE } from "../lib/registration-page.constants";
 import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
 import { openThemeEditorUrl } from "../lib/open-theme-editor.client";
 
@@ -372,26 +372,38 @@ export default function Index() {
     revalidator.revalidate();
 
     if (result.intent === "create-registration-template") {
+      const openUrl = "openUrl" in result && result.openUrl ? result.openUrl : undefined;
+
       if (result.templateFileExists) {
+        if (openUrl) openThemeEditorUrl(openUrl);
         setRegistrationNotice(
           `${REGISTRATION_PAGE_TITLE} theme template is ready on your current theme. Continue to Step 3 if you want the form block in the theme editor.`,
         );
         return;
       }
+
+      if (
+        result.needsThemeEditorTemplate ||
+        result.needsManualTemplate ||
+        result.themeFileWriteAccessDenied
+      ) {
+        if (openUrl) openThemeEditorUrl(openUrl);
+        setRegistrationNotice(
+          `Shopify blocked automatic template creation on live stores. Theme editor opened — click the template dropdown (top) → + Create template → name it "${REGISTRATION_PAGE_HANDLE}" → Save, then refresh this page.`,
+        );
+        return;
+      }
+
       if (result.servedViaAppEmbed) {
         setRegistrationNotice(
-          "Registration form is live via the Approvefy app embed. To add a theme template on this theme, Shopify may require manual creation in the theme editor — or click Create template again after enabling app embed.",
+          "Registration form is live via the Approvefy app embed on your page. A separate theme template is optional — enable app embed in Step 1 if you have not already.",
         );
         return;
       }
-      if (result.needsManualTemplate || result.themeFileWriteAccessDenied) {
-        setRegistrationNotice(
-          "Complete Step 1 (Enable app embed) first, then click Create template again. The registration form will load on your page automatically.",
-        );
-        return;
-      }
+
+      if (openUrl) openThemeEditorUrl(openUrl);
       setRegistrationNotice(
-        "Could not create the Customer Registration theme template. Refresh and try again.",
+        "Could not create the Customer Registration theme template automatically. Theme editor opened — use + Create template in the template dropdown, name it customer-registration, then Save.",
       );
       return;
     }

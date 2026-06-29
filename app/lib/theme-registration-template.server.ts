@@ -6,9 +6,8 @@ import {
 } from "./theme-extension-setup-status";
 import {
   canUseThemeCliPush,
-  CLI_PUSH_QUICK_TIMEOUT_MS,
-  CLI_PUSH_TIMEOUT_MS,
   pushRegistrationTemplateViaCli,
+  resolveThemeCliPushTimeoutMs,
   themeNumericIdFromGid,
 } from "./theme-cli-push.server";
 import { putThemeAssetViaRest } from "./theme-rest-asset.server";
@@ -1059,6 +1058,8 @@ export type WriteRegistrationPageTemplateShellOptions = {
   skipCliPush?: boolean;
   /** Shorter poll when responding to a merchant click. */
   quickPoll?: boolean;
+  /** Session/offline token — used as Theme CLI --password on live stores. */
+  accessToken?: string;
 };
 
 export type CreateCustomerRegistrationPageTemplateOptions = {
@@ -1151,15 +1152,20 @@ export async function createCustomerRegistrationPageTemplate(
       });
     }
 
-    if (canUseThemeCliPush() && themeNumericId) {
+    const canTryCli = !!themeNumericId && (canUseThemeCliPush() || !!accessToken);
+    if (canTryCli && themeNumericId) {
       const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
-        timeoutMs: quick ? CLI_PUSH_QUICK_TIMEOUT_MS : CLI_PUSH_TIMEOUT_MS,
+        timeoutMs: resolveThemeCliPushTimeoutMs(quick),
+        themeAccessPassword: accessToken,
       });
       if (cli.ok) {
-        console.info(
-          "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
-        );
-        return templateCreateSuccess(themeId, false, true);
+        const verified = await verifyRegistrationTemplateWritten(admin, themeId, quick);
+        if (verified?.trim()) {
+          console.info(
+            "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
+          );
+          return templateCreateSuccess(themeId, false, true);
+        }
       }
       console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
     }
@@ -1209,8 +1215,9 @@ export async function createCustomerRegistrationPageTemplate(
     }
 
     const shellResult = await writeRegistrationPageTemplateShell(admin, shop, {
-      skipCliPush: true,
+      skipCliPush: false,
       quickPoll: quick,
+      accessToken,
     });
     if (shellResult.templateExists) {
       return {
@@ -1325,7 +1332,8 @@ export async function writeRegistrationPageTemplateShell(
       const themeNumericId = themeNumericIdFromGid(themeId);
       if (themeNumericId) {
         const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
-          timeoutMs: opts?.quickPoll ? 12_000 : undefined,
+          timeoutMs: resolveThemeCliPushTimeoutMs(opts?.quickPoll),
+          themeAccessPassword: opts?.accessToken,
         });
         if (cli.ok) {
           const written = await pollForThemeFile(

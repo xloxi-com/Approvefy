@@ -39,8 +39,10 @@ export function canUseThemeCliPush(): boolean {
 
 const CLI_PUSH_TIMEOUT_MS = 60_000;
 const CLI_PUSH_QUICK_TIMEOUT_MS = 45_000;
+/** Vercel serverless — stay under function timeout while attempting theme push. */
+const CLI_PUSH_SERVERLESS_TIMEOUT_MS = 8_000;
 
-export { CLI_PUSH_TIMEOUT_MS, CLI_PUSH_QUICK_TIMEOUT_MS };
+export { CLI_PUSH_TIMEOUT_MS, CLI_PUSH_QUICK_TIMEOUT_MS, CLI_PUSH_SERVERLESS_TIMEOUT_MS };
 
 /** Resolve @shopify/cli/bin/run.js — spawn via Node (Windows-safe; raw `shopify` / npm often hang). */
 export function resolveShopifyCliBin(): string | null {
@@ -92,6 +94,13 @@ export function resolveShopifyThemePushCommand(): {
   }
 
   return { executable: "shopify", baseArgs: [], useShell: true };
+}
+
+export function resolveThemeCliPushTimeoutMs(quick?: boolean): number {
+  if (isServerlessRuntime()) {
+    return quick ? CLI_PUSH_SERVERLESS_TIMEOUT_MS : CLI_PUSH_SERVERLESS_TIMEOUT_MS;
+  }
+  return quick ? CLI_PUSH_QUICK_TIMEOUT_MS : CLI_PUSH_TIMEOUT_MS;
 }
 
 export async function pushRegistrationTemplateViaCli(

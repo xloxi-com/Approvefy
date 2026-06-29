@@ -680,6 +680,7 @@ export async function runCreateRegistrationTemplateOnlySetup(
   servedViaAppEmbed: boolean;
   templateCreated: boolean;
   needsManualTemplate: boolean;
+  needsThemeEditorTemplate: boolean;
   blockOnTemplate: boolean;
   themeFileWriteAccessDenied: boolean;
   themeEditorUrl: string;
@@ -770,10 +771,11 @@ export async function runCreateRegistrationTemplateOnlySetup(
     templateExists: templateReady,
     templateFileExists,
     servedViaAppEmbed,
-    templateCreated: templateCreated || servedViaAppEmbed,
-    needsManualTemplate: !templateReady,
+    templateCreated,
+    needsManualTemplate: !templateFileExists && themeFileWriteAccessDenied,
+    needsThemeEditorTemplate: !templateFileExists && themeFileWriteAccessDenied,
     blockOnTemplate,
-    themeFileWriteAccessDenied: themeFileWriteAccessDenied && !servedViaAppEmbed,
+    themeFileWriteAccessDenied,
     themeCliAvailable: canUseThemeCliPush(),
     themeEditorUrl: buildRegistrationPageThemeEditorUrl(shop, {
       pageExists: !!page,

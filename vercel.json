@@ -4,6 +4,11 @@
   "buildCommand": "npm run vercel-build",
   "installCommand": "npm ci --prefer-offline --no-audit --no-fund --progress=false",
   "regions": ["sin1"],
+  "functions": {
+    "index.func": {
+      "maxDuration": 60
+    }
+  },
   "headers": [
     {
       "source": "/assets/(.*)",
