@@ -96,6 +96,17 @@ export function resolveShopifyThemePushCommand(): {
   return { executable: "shopify", baseArgs: [], useShell: true };
 }
 
+export function hasThemeAccessPassword(): boolean {
+  return !!process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
+}
+
+/** On Vercel, only Theme Access env password may drive CLI — never the OAuth access token. */
+export function canAttemptThemeCliPush(opts?: { themeAccessPassword?: string }): boolean {
+  if (canUseThemeCliPush()) return true;
+  if (isServerlessRuntime()) return false;
+  return !!opts?.themeAccessPassword?.trim();
+}
+
 export function resolveThemeCliPushTimeoutMs(quick?: boolean): number {
   if (isServerlessRuntime()) {
     return quick ? CLI_PUSH_SERVERLESS_TIMEOUT_MS : CLI_PUSH_SERVERLESS_TIMEOUT_MS;
@@ -108,10 +119,15 @@ export async function pushRegistrationTemplateViaCli(
   themeNumericId: string,
   opts?: { timeoutMs?: number; themeAccessPassword?: string },
 ): Promise<{ ok: boolean; error?: string }> {
-  const themeToken =
-    opts?.themeAccessPassword?.trim() || process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
-  if (!canUseThemeCliPush() && !themeToken) {
+  const envThemeToken = process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
+  const themeToken = isServerlessRuntime()
+    ? envThemeToken
+    : opts?.themeAccessPassword?.trim() || envThemeToken;
+  if (!canAttemptThemeCliPush({ themeAccessPassword: themeToken })) {
     return { ok: false, error: "Theme CLI push is disabled in production" };
+  }
+  if (!themeToken && isServerlessRuntime()) {
+    return { ok: false, error: "Theme CLI push requires SHOPIFY_CLI_THEME_TOKEN on Vercel" };
   }
   if (!themeNumericId?.trim()) {
     return { ok: false, error: "Missing theme id" };

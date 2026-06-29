@@ -5,7 +5,10 @@ import {
   THEME_EXTENSION_HANDLE,
 } from "./theme-extension-setup-status";
 import {
+  canAttemptThemeCliPush,
   canUseThemeCliPush,
+  hasThemeAccessPassword,
+  isServerlessRuntime,
   pushRegistrationTemplateViaCli,
   resolveThemeCliPushTimeoutMs,
   themeNumericIdFromGid,
@@ -1146,17 +1149,57 @@ export async function createCustomerRegistrationPageTemplate(
     const templateBody = resolveTemplateBodyFromDefaultPage(defaultPageJson);
     const themeNumericId = themeNumericIdFromGid(themeId);
 
+    // Live Vercel: skip CLI/REST/shell — Shopify blocks theme file APIs for App Store apps.
+    if (quick && isServerlessRuntime() && !hasThemeAccessPassword()) {
+      const copied = await copyThemeFile(
+        admin,
+        themeId,
+        "templates/page.json",
+        REGISTRATION_PAGE_TEMPLATE_FILE,
+      );
+      if (copied) {
+        return templateCreateSuccess(themeId, true, false);
+      }
+
+      const upsert = await upsertThemeFileByFilename(
+        admin,
+        themeId,
+        REGISTRATION_PAGE_TEMPLATE_FILE,
+        templateBody,
+      );
+      if (upsert.ok) {
+        const written = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+        if (written?.trim()) {
+          return templateCreateSuccess(themeId, true, false);
+        }
+      }
+
+      return {
+        ...empty,
+        themeId,
+        themeFileWriteAccessDenied: true,
+      };
+    }
+
     if (!quick) {
       void removeRegistrationFormFromDefaultPageTemplate(admin, themeId).catch((err) => {
         console.warn("[ThemeRegistrationTemplate] default page cleanup failed:", err);
       });
     }
 
-    const canTryCli = !!themeNumericId && (canUseThemeCliPush() || !!accessToken);
+    const canTryCli =
+      !!themeNumericId &&
+      canAttemptThemeCliPush({
+        themeAccessPassword: isServerlessRuntime()
+          ? process.env.SHOPIFY_CLI_THEME_TOKEN
+          : accessToken,
+      });
     if (canTryCli && themeNumericId) {
       const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
         timeoutMs: resolveThemeCliPushTimeoutMs(quick),
-        themeAccessPassword: accessToken,
+        themeAccessPassword: isServerlessRuntime()
+          ? process.env.SHOPIFY_CLI_THEME_TOKEN
+          : accessToken,
       });
       if (cli.ok) {
         const verified = await verifyRegistrationTemplateWritten(admin, themeId, quick);

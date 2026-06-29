@@ -341,7 +341,10 @@ export default function Index() {
     (intent: string) => {
       setRegistrationNotice(null);
       if (intent === "create-registration-template") {
-        setRegistrationNotice("Creating Customer Registration page and theme template…");
+        if (registrationPageThemeEditorUrl) {
+          openThemeEditorUrl(registrationPageThemeEditorUrl);
+        }
+        setRegistrationNotice("Creating Customer Registration theme template…");
       } else if (intent === "create-registration-page") {
         setRegistrationNotice("Creating and publishing the registration page…");
       } else if (intent === "publish-registration-page") {
@@ -352,13 +355,24 @@ export default function Index() {
       lastRegistrationResultRef.current = null;
       registrationFetcher.submit({ intent }, { method: "post" });
     },
-    [registrationFetcher],
+    [registrationFetcher, registrationPageThemeEditorUrl],
   );
 
   const registrationBusy = registrationFetcher.state !== "idle";
   const registrationBusyIntent = registrationBusy
     ? String(registrationFetcher.formData?.get("intent") ?? "")
     : null;
+
+  useEffect(() => {
+    if (registrationFetcher.state === "idle") return;
+    if (registrationBusyIntent !== "create-registration-template") return;
+    const timer = window.setTimeout(() => {
+      setRegistrationNotice(
+        `Taking longer than expected. Theme editor should be open — click the template dropdown → + Create template → name it "${REGISTRATION_PAGE_HANDLE}" → Save, then refresh this page.`,
+      );
+    }, 12_000);
+    return () => window.clearTimeout(timer);
+  }, [registrationFetcher.state, registrationBusyIntent]);
 
   useEffect(() => {
     if (registrationFetcher.state !== "idle") return;
@@ -387,9 +401,8 @@ export default function Index() {
         result.needsManualTemplate ||
         result.themeFileWriteAccessDenied
       ) {
-        if (openUrl) openThemeEditorUrl(openUrl);
         setRegistrationNotice(
-          `Shopify blocked automatic template creation on live stores. Theme editor opened — click the template dropdown (top) → + Create template → name it "${REGISTRATION_PAGE_HANDLE}" → Save, then refresh this page.`,
+          `Shopify blocked automatic template creation on live stores. In the theme editor (already open), click the template dropdown → + Create template → name it "${REGISTRATION_PAGE_HANDLE}" → Save, then refresh this page.`,
         );
         return;
       }
@@ -401,9 +414,8 @@ export default function Index() {
         return;
       }
 
-      if (openUrl) openThemeEditorUrl(openUrl);
       setRegistrationNotice(
-        "Could not create the Customer Registration theme template automatically. Theme editor opened — use + Create template in the template dropdown, name it customer-registration, then Save.",
+        "Could not create the Customer Registration theme template automatically. In the theme editor, use + Create template in the template dropdown, name it customer-registration, then Save.",
       );
       return;
     }
