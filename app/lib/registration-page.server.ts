@@ -10,8 +10,7 @@ import {
   REGISTRATION_PAGE_TEMPLATE,
 } from "./theme-registration-template.server";
 import { buildAppEmbedThemeEditorUrl, ensureAppEmbedEnabled } from "./theme-app-embed.server";
-import { canUseThemeCliPush, resolveThemeWriteQuickMode } from "./theme-cli-push.server";
-import { resolveShopThemeCliPassword } from "./theme-access.server";
+import { canUseThemeCliPush } from "./theme-cli-push.server";
 import { getThemeSetupStatus } from "./theme-setup-status.server";
 import {
   canServeRegistrationPageViaAppEmbed,
@@ -97,11 +96,6 @@ export function buildRegistrationPageThemeEditorUrl(
   }
 
   return `${base}?${params.join("&")}`;
-}
-
-/** Theme editor: create customer-registration template manually (production fallback when Theme API is blocked). */
-export function buildManualRegistrationTemplateSetupThemeEditorUrl(shop: string): string {
-  return buildRegistrationPagePreviewThemeEditorUrl(shop, { templateExists: false });
 }
 
 /** Theme editor preview for Customer Registration — only targets customer-registration template when it exists on the theme. */
@@ -473,7 +467,7 @@ export async function ensureRegistrationStorefrontPage(
     if (!templateExists) {
       const write = await createCustomerRegistrationPageTemplate(admin, shop, {
         accessToken: themeToken,
-        quick: resolveThemeWriteQuickMode(opts?.installSetup === true),
+        quick: opts?.installSetup === true,
       });
       templateExists = write.templateExists;
       if (templateExists) {
@@ -481,7 +475,7 @@ export async function ensureRegistrationStorefrontPage(
         blockOnTemplate = verified.blockOnTemplate;
       } else if (!write.themeFileWriteAccessDenied) {
         const templateResult = await ensureRegistrationPageThemeTemplate(admin, {
-          quick: resolveThemeWriteQuickMode(true),
+          quick: true,
           shop,
           accessToken: themeToken,
         });
@@ -567,7 +561,6 @@ type RegistrationPageTemplateSetup = {
   templateExists: boolean;
   templateCreated: boolean;
   blockOnTemplate: boolean;
-  themeFileWriteAccessDenied: boolean;
   needsManualTemplate: boolean;
 };
 
@@ -587,17 +580,14 @@ async function ensureRegistrationPageAndTemplateForSetup(
   let templateExists = !!verified.raw?.trim();
   let blockOnTemplate = verified.blockOnTemplate;
   let templateCreated = false;
-  let themeFileWriteAccessDenied = false;
-  const themeAccessPassword = await resolveShopThemeCliPassword(shop);
 
   if (!templateExists) {
     const write = await createCustomerRegistrationPageTemplate(admin, shop, {
       accessToken: opts?.accessToken,
-      quick: resolveThemeWriteQuickMode(true),
+      quick: true,
     });
     templateExists = write.templateExists;
     templateCreated = write.savedViaApi || write.savedViaCli;
-    themeFileWriteAccessDenied = write.themeFileWriteAccessDenied;
     if (templateExists) {
       verified = await readRegistrationPageTemplateOnMainTheme(admin);
       blockOnTemplate = verified.blockOnTemplate;
@@ -635,11 +625,7 @@ async function ensureRegistrationPageAndTemplateForSetup(
     templateExists,
     templateCreated,
     blockOnTemplate,
-    themeFileWriteAccessDenied,
-    needsManualTemplate:
-      !templateExists &&
-      themeFileWriteAccessDenied &&
-      !canUseThemeCliPush({ themeAccessPassword }),
+    needsManualTemplate: !templateExists && !canUseThemeCliPush(),
   };
 }
 
@@ -675,11 +661,11 @@ export async function runAddRegistrationFormSetup(
     let templateExists = setup.templateExists;
     let blockOnTemplate = setup.blockOnTemplate;
     let savedViaApi = setup.templateCreated;
-    let themeFileWriteAccessDenied = setup.themeFileWriteAccessDenied;
+    let themeFileWriteAccessDenied = false;
 
     if (templateExists && !blockOnTemplate) {
       const templateResult = await ensureRegistrationPageThemeTemplate(admin, {
-        quick: resolveThemeWriteQuickMode(true),
+        quick: true,
         shop,
         accessToken,
       });
@@ -717,7 +703,7 @@ export async function runAddRegistrationFormSetup(
       templateExists,
       blockOnTemplate,
       themeEditorUrl,
-      templateWriteFailed: !templateExists && themeFileWriteAccessDenied,
+      templateWriteFailed: !templateExists && canUseThemeCliPush(),
       needsManualTemplate: setup.needsManualTemplate,
       savedViaApi,
       needsEditorSave,
@@ -935,11 +921,9 @@ export async function runCreateRegistrationTemplateSetup(
     let formSavedViaApi = false;
     let themeFileWriteAccessDenied = false;
 
-    const themeWriteQuick = resolveThemeWriteQuickMode(true);
-
     if (!templateExists || !blockOnTemplate) {
       const templateWrite = await createCustomerRegistrationPageTemplate(admin, shop, {
-        quick: themeWriteQuick,
+        quick: true,
         accessToken,
       });
       templateExists = templateWrite.templateExists || templateExists;
@@ -951,7 +935,7 @@ export async function runCreateRegistrationTemplateSetup(
 
       if (templateExists && !blockOnTemplate) {
         const themeResult = await ensureRegistrationPageThemeTemplate(admin, {
-          quick: themeWriteQuick,
+          quick: true,
           shop,
           accessToken,
         });
@@ -1022,14 +1006,9 @@ export async function runCreateRegistrationTemplateSetup(
       console.warn("[RegistrationPage] cleanRegistrationFormOffDefaultPageTemplate failed:", err);
     });
 
-    const themeAccessPassword = await resolveShopThemeCliPassword(shop);
-    const needsManualTemplate =
-      !templateExists &&
-      themeFileWriteAccessDenied &&
-      !canUseThemeCliPush({ themeAccessPassword });
+    const needsManualTemplate = !templateExists;
     const needsDeepLinkFallback = templateExists && !blockOnTemplate;
     const needsEditorSave = needsDeepLinkFallback && !themeFileWriteAccessDenied;
-    const manualThemeEditorUrl = buildManualRegistrationTemplateSetupThemeEditorUrl(shop);
 
     return {
       pageExists: true,
@@ -1047,9 +1026,7 @@ export async function runCreateRegistrationTemplateSetup(
             blockOnTemplate,
             forceAddAppsBlock: needsDeepLinkFallback,
           })
-        : themeFileWriteAccessDenied
-          ? manualThemeEditorUrl
-          : buildPreviewThemeEditorUrl(false),
+        : buildPreviewThemeEditorUrl(false),
     };
   } catch (error) {
     console.warn("[RegistrationPage] runCreateRegistrationTemplateSetup failed:", error);

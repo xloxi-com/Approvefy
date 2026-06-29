@@ -6,14 +6,10 @@ import {
 } from "./theme-extension-setup-status";
 import {
   canUseThemeCliPush,
-  isServerlessRuntime,
   pushRegistrationTemplateViaCli,
   resolveThemeCliPushTimeoutMs,
-  resolveThemeWriteQuickMode,
-  shouldSkipThemeWriteJobWait,
   themeNumericIdFromGid,
 } from "./theme-cli-push.server";
-import { resolveShopThemeCliPassword } from "./theme-access.server";
 import { putThemeAssetViaRest } from "./theme-rest-asset.server";
 
 const REGISTRATION_PAGE_HANDLE = "customer-registration";
@@ -548,9 +544,7 @@ async function pollForThemeFile(
 }
 
 function quickThemeFilePoll(): ThemeFilePollOptions {
-  if (isServerlessRuntime()) {
-    return { attempts: 4, delayMs: 350 };
-  }
+  // Theme copy/upsert jobs can take a few seconds on live stores — short polls caused false failures.
   return { attempts: 12, delayMs: 450 };
 }
 
@@ -842,7 +836,7 @@ export async function prepareCustomerRegistrationPageForAppsDeepLink(
       themeId,
       REGISTRATION_PAGE_TEMPLATE_FILE,
       shellBody,
-      { skipJobWait: shouldSkipThemeWriteJobWait(quick) },
+      { skipJobWait: quick },
     );
 
     if (!upsert.ok) {
@@ -945,7 +939,7 @@ export async function ensureRegistrationPageThemeTemplate(
   admin: AdminGraphqlClient,
   opts?: EnsureRegistrationPageThemeTemplateOptions,
 ): Promise<RegistrationPageThemeTemplateStatus> {
-  const quick = resolveThemeWriteQuickMode(opts?.quick === true);
+  const quick = opts?.quick === true;
   const fallback: RegistrationPageThemeTemplateStatus = {
     created: false,
     templateExists: false,
@@ -980,7 +974,7 @@ export async function ensureRegistrationPageThemeTemplate(
         const migrated = mergeRegistrationFormBlockIntoTemplate(existing);
         if (migrated) {
           const migrateUpsert = await upsertThemeTemplateFile(admin, themeId, migrated, {
-            skipJobWait: shouldSkipThemeWriteJobWait(quick),
+            skipJobWait: quick,
           });
           if (migrateUpsert.ok) {
             return {
@@ -1005,7 +999,7 @@ export async function ensureRegistrationPageThemeTemplate(
         : await buildRegistrationPageTemplateBody(admin, themeId);
 
     let upsert = await upsertThemeTemplateFile(admin, themeId, templateBody, {
-      skipJobWait: shouldSkipThemeWriteJobWait(quick),
+      skipJobWait: quick,
     });
     if (!upsert.ok && !quick && !upsert.accessDenied) {
       upsert = await upsertThemeTemplateFile(admin, themeId, templateBody);
@@ -1054,29 +1048,25 @@ export async function ensureRegistrationPageThemeTemplate(
         }
       }
 
-      if (shop && themeNumericId) {
-        const themeAccessPassword = shop ? await resolveShopThemeCliPassword(shop) : undefined;
-        if (canUseThemeCliPush({ themeAccessPassword })) {
-          const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
-            timeoutMs: resolveThemeCliPushTimeoutMs(quick),
-            templateBody,
-            themeAccessPassword,
-          });
-          if (cli.ok) {
-            const written = quick
-              ? (await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? ""
-              : (await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? "";
-            const templateExists = !!written.trim();
-            return {
-              created: templateExists,
-              templateExists,
-              blockOnTemplate:
-                templateExists && registrationFormBlockPlacement(written) === "apps",
-              themeFileWriteAccessDenied: false,
-            };
-          }
-          console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
+      if (shop && themeNumericId && canUseThemeCliPush()) {
+        const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
+          timeoutMs: resolveThemeCliPushTimeoutMs(quick),
+          templateBody,
+        });
+        if (cli.ok) {
+          const written = quick
+            ? (await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? ""
+            : (await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? "";
+          const templateExists = !!written.trim();
+          return {
+            created: templateExists,
+            templateExists,
+            blockOnTemplate:
+              templateExists && registrationFormBlockPlacement(written) === "apps",
+            themeFileWriteAccessDenied: false,
+          };
         }
+        console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
       }
 
       return { ...fallback, themeFileWriteAccessDenied: true };
@@ -1199,7 +1189,7 @@ export async function createCustomerRegistrationPageTemplate(
   };
 
   try {
-    const quick = resolveThemeWriteQuickMode(opts?.quick === true);
+    const quick = opts?.quick === true;
     const accessToken = opts?.accessToken?.trim();
 
     const themeId = await getMainThemeId(admin);
@@ -1214,19 +1204,15 @@ export async function createCustomerRegistrationPageTemplate(
     }
 
     const templateBody = resolveTemplateBodyFromDefaultPage(defaultPageJson);
-    const fullTemplateBody = buildRegistrationPageTemplateJson();
     const themeNumericId = themeNumericIdFromGid(themeId);
-    const themeAccessPassword = await resolveShopThemeCliPassword(shop);
-    const serverless = isServerlessRuntime();
 
     const tryCliPushRegistrationTemplate = async (
       body?: string,
     ): Promise<boolean> => {
-      if (!themeNumericId || !canUseThemeCliPush({ themeAccessPassword })) return false;
+      if (!themeNumericId || !canUseThemeCliPush()) return false;
       const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
         timeoutMs: resolveThemeCliPushTimeoutMs(quick),
-        templateBody: body ?? fullTemplateBody,
-        themeAccessPassword,
+        templateBody: body ?? buildRegistrationPageTemplateJson(),
       });
       if (!cli.ok) {
         console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
@@ -1235,6 +1221,13 @@ export async function createCustomerRegistrationPageTemplate(
       const verified = await verifyRegistrationTemplateWritten(admin, themeId, quick);
       return !!verified?.trim();
     };
+
+    if (await tryCliPushRegistrationTemplate()) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
+      );
+      return templateCreateSuccess(themeId, false, true);
+    }
 
     const tryCopyDefaultPageTemplate = async (): Promise<boolean> => {
       const copied = await copyThemeFile(
@@ -1248,60 +1241,28 @@ export async function createCustomerRegistrationPageTemplate(
       return !!written?.trim();
     };
 
-    let upsertAccessDenied = false;
-
-    const runGraphqlThenCli = async (): Promise<CreateCustomerRegistrationPageTemplateResult | null> => {
-      if (await tryCopyDefaultPageTemplate()) {
-        console.info(
-          "[ThemeRegistrationTemplate] page.customer-registration.json created via themeFilesCopy",
-        );
-        return templateCreateSuccess(themeId, true, false);
-      }
-
-      const upsertBody = serverless ? fullTemplateBody : templateBody;
-      const upsert = await upsertThemeFileByFilename(
-        admin,
-        themeId,
-        REGISTRATION_PAGE_TEMPLATE_FILE,
-        upsertBody,
+    if (await tryCopyDefaultPageTemplate()) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json created via themeFilesCopy",
       );
-      upsertAccessDenied = upsert.accessDenied;
-      if (upsert.ok && (await verifyRegistrationTemplateWritten(admin, themeId, quick))?.trim()) {
+      return templateCreateSuccess(themeId, true, false);
+    }
+
+    const upsert = await upsertThemeFileByFilename(
+      admin,
+      themeId,
+      REGISTRATION_PAGE_TEMPLATE_FILE,
+      templateBody,
+    );
+    if (upsert.ok) {
+      const written = await verifyRegistrationTemplateWritten(admin, themeId, quick);
+      if (written?.trim()) {
         console.info(
           "[ThemeRegistrationTemplate] page.customer-registration.json created via themeFilesUpsert",
         );
         return templateCreateSuccess(themeId, true, false);
       }
-
-      if (await tryCliPushRegistrationTemplate(upsertBody)) {
-        console.info(
-          "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
-        );
-        return templateCreateSuccess(themeId, false, true);
-      }
-
-      return null;
-    };
-
-    if (serverless) {
-      const graphqlResult = await runGraphqlThenCli();
-      if (graphqlResult) return graphqlResult;
-      return {
-        ...empty,
-        themeId,
-        themeFileWriteAccessDenied: upsertAccessDenied,
-      };
     }
-
-    if (await tryCliPushRegistrationTemplate()) {
-        console.info(
-          "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
-        );
-        return templateCreateSuccess(themeId, false, true);
-    }
-
-    const graphqlResult = await runGraphqlThenCli();
-    if (graphqlResult) return graphqlResult;
 
     if (!quick) {
       void removeRegistrationFormFromDefaultPageTemplate(admin, themeId).catch((err) => {
@@ -1377,7 +1338,7 @@ export async function createCustomerRegistrationPageTemplate(
       ...empty,
       themeId,
       themeFileWriteAccessDenied:
-        upsertAccessDenied || shellResult.themeFileWriteAccessDenied,
+        upsert.accessDenied || shellResult.themeFileWriteAccessDenied,
     };
   } catch (error) {
     console.warn(
@@ -1468,35 +1429,31 @@ export async function writeRegistrationPageTemplateShell(
 
       const themeNumericId = themeNumericIdFromGid(themeId);
       if (themeNumericId) {
-        const themeAccessPassword = await resolveShopThemeCliPassword(shop);
-        if (canUseThemeCliPush({ themeAccessPassword })) {
-          const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
-            timeoutMs: resolveThemeCliPushTimeoutMs(opts?.quickPoll),
-            themeAccessPassword,
-          });
-          if (cli.ok) {
-            const written = await pollForThemeFile(
-              admin,
-              themeId,
-              REGISTRATION_PAGE_TEMPLATE_FILE,
-              pollAttempts,
-              pollDelayMs,
+        const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
+          timeoutMs: resolveThemeCliPushTimeoutMs(opts?.quickPoll),
+        });
+        if (cli.ok) {
+          const written = await pollForThemeFile(
+            admin,
+            themeId,
+            REGISTRATION_PAGE_TEMPLATE_FILE,
+            pollAttempts,
+            pollDelayMs,
+          );
+          if (written?.trim()) {
+            console.info(
+              "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
             );
-            if (written?.trim()) {
-              console.info(
-                "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
-              );
-              return {
-                templateExists: true,
-                themeId,
-                savedViaApi: false,
-                savedViaCli: true,
-                themeFileWriteAccessDenied: false,
-              };
-            }
-          } else if (cli.error) {
-            console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error);
+            return {
+              templateExists: true,
+              themeId,
+              savedViaApi: false,
+              savedViaCli: true,
+              themeFileWriteAccessDenied: false,
+            };
           }
+        } else if (cli.error) {
+          console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error);
         }
       }
 

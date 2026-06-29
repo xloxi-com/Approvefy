@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 const { execSync } = require("node:child_process");
 
-// Vercel runs `prisma generate` once in vercel-build — skip duplicate postinstall work.
-if (process.env.VERCEL === "1") {
-  process.exit(0);
-}
-
 try {
   const stdio = process.env.VERCEL === "1" ? "inherit" : ["ignore", "pipe", "pipe"];
   execSync("npx prisma generate", { stdio });
