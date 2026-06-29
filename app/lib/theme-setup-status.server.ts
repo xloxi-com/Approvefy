@@ -1,4 +1,4 @@
-import { REGISTRATION_PAGE_HANDLE } from "./registration-page.server";
+import { REGISTRATION_PAGE_HANDLE } from "./registration-page.constants";
 import {
   APP_EMBED_BLOCK_HANDLE,
   blockTypeMatchesApprovefyBlock,

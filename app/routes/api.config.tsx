@@ -6,7 +6,7 @@ import { CORE_LANGUAGES, normalizeLangCode } from "../lib/languages";
 import { buildThemeCss, getGoogleFontName, normalizeThemeSettings } from "../lib/theme-settings";
 import { appendAppearanceTemplateCss, getAppearanceTemplateId } from "../lib/appearance-templates";
 import { BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE } from "../lib/settings-ui-i18n";
-import { REGISTRATION_PAGE_PATH } from "../lib/registration-page.server";
+import { REGISTRATION_PAGE_PATH } from "../lib/registration-page.constants";
 import { shopHasActiveAppSubscription } from "../lib/app-subscription.server";
 import {
     filterStorefrontFieldsForPlan,
