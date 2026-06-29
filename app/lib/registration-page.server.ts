@@ -364,7 +364,11 @@ export type EnsureRegistrationPageResult = {
   created: boolean;
   pageExists: boolean;
   pagePublished: boolean;
+  /** Page can load the registration form (theme template file and/or app embed). */
   templateExists: boolean;
+  /** templates/page.customer-registration.json on the current published theme. */
+  templateFileExists: boolean;
+  storefrontReady: boolean;
   blockOnTemplate: boolean;
   themeEditorUrl: string;
   storefrontPageUrl: string;
@@ -507,6 +511,8 @@ export async function ensureRegistrationStorefrontPage(
     pageExists,
     pagePublished,
     templateExists: storefrontReady,
+    templateFileExists: templateFileOnTheme,
+    storefrontReady,
     blockOnTemplate: formLive,
     themeEditorUrl,
     storefrontPageUrl,

@@ -48,6 +48,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let registrationPageExists = false;
   let registrationPagePublished = false;
   let registrationPageTemplateExists = false;
+  let registrationThemeTemplateFileExists = false;
+  let registrationStorefrontReady = false;
   let registrationFormOnDefaultPage = false;
   let appEmbedEnabled = false;
   let registrationFormBlockOnPage = false;
@@ -102,18 +104,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
     let pageExists = !!existingPage;
     let pagePublished = existingPage?.isPublished === true;
-    let templateExists = themeSetup.registrationPageTemplateExists;
+    let templateFileExists = themeSetup.registrationPageTemplateExists;
     let blockOnTemplate = themeSetup.registrationFormBlockOnPage;
 
     if (themeSetup.themeCheckAvailable) {
       const storefrontReadyInitial = isRegistrationPageStorefrontReady({
         pageExists,
         pagePublished,
-        templateFileExists: templateExists,
+        templateFileExists,
         appEmbedEnabled: themeSetup.appEmbedEnabled,
       });
       const needsSuffixSync =
-        templateExists &&
+        templateFileExists &&
         existingPage?.templateSuffix?.toLowerCase() !== REGISTRATION_PAGE_HANDLE;
       const needsRegistrationPageEnsure =
         !pageExists || !storefrontReadyInitial || needsSuffixSync;
@@ -123,7 +125,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           const ensured = await ensureRegistrationStorefrontPage(admin, shop);
           pageExists = ensured.pageExists;
           pagePublished = ensured.pagePublished;
-          templateExists = ensured.templateExists;
+          templateFileExists = ensured.templateFileExists;
           blockOnTemplate = ensured.blockOnTemplate;
           registrationPageCreated = ensured.created;
           registrationNeedsManualTemplate = ensured.needsManualTemplate;
@@ -140,21 +142,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
     registrationPageThemeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
       pageExists,
-      templateExists: templateExists,
+      templateExists: templateFileExists,
       blockOnTemplate,
       themeGid: themeSetup.mainThemeId,
     });
     registrationPageStorefrontUrl = registrationStorefrontUrl(shop);
     registrationPageExists = pageExists;
     registrationPagePublished = pagePublished;
-    const templateFileOnTheme = templateExists;
-    const registrationStorefrontReady = isRegistrationPageStorefrontReady({
+    registrationThemeTemplateFileExists = templateFileExists;
+    registrationStorefrontReady = isRegistrationPageStorefrontReady({
       pageExists,
       pagePublished,
-      templateFileExists: templateFileOnTheme,
+      templateFileExists,
       appEmbedEnabled: themeSetup.appEmbedEnabled,
     });
-    registrationPageTemplateExists = registrationStorefrontReady;
+    registrationPageTemplateExists = registrationThemeTemplateFileExists;
     registrationFormOnDefaultPage = themeSetup.registrationFormOnDefaultPage;
     appEmbedEnabled = themeSetup.appEmbedEnabled;
     registrationFormBlockOnPage = isRegistrationFormLiveOnStorefront({
@@ -164,7 +166,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       appEmbedEnabled: themeSetup.appEmbedEnabled,
     });
     themeSetupCheckAvailable = themeSetup.themeCheckAvailable;
-    registrationNeedsManualTemplate = !registrationStorefrontReady;
+    registrationNeedsManualTemplate =
+      !registrationStorefrontReady && !registrationThemeTemplateFileExists;
 
     if (!themeSetup.appEmbedEnabled && themeSetup.themeCheckAvailable) {
       void ensureAppEmbedEnabled(admin).catch((err) => {
@@ -205,6 +208,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       registrationPageExists,
       registrationPagePublished,
       registrationPageTemplateExists,
+      registrationThemeTemplateFileExists,
+      registrationStorefrontReady,
       registrationFormOnDefaultPage,
       appEmbedEnabled,
       registrationFormBlockOnPage,

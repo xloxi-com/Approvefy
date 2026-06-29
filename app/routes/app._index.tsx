@@ -211,7 +211,8 @@ export default function Index() {
     registrationPageStorefrontUrl,
     registrationPageExists,
     registrationPagePublished,
-    registrationPageTemplateExists,
+    registrationThemeTemplateFileExists,
+    registrationStorefrontReady,
     registrationFormOnDefaultPage,
     appEmbedEnabled,
     registrationFormBlockOnPage,
@@ -255,7 +256,7 @@ export default function Index() {
       ? extensionSetup.appEmbedEnabled
       : appEmbedEnabled;
   const registrationPageSetupDone =
-    registrationPageExists && registrationPagePublished && registrationPageTemplateExists;
+    registrationPageExists && registrationPagePublished && registrationStorefrontReady;
   const registrationPageFormDone = themeSetupCheckAvailable
     ? registrationFormBlockOnPage
     : extensionSetup.loaded
@@ -371,11 +372,15 @@ export default function Index() {
     revalidator.revalidate();
 
     if (result.intent === "create-registration-template") {
-      if (result.templateExists) {
+      if (result.templateFileExists) {
         setRegistrationNotice(
-          result.servedViaAppEmbed
-            ? "Customer Registration is live on your storefront via the Approvefy app embed (no theme template file needed on live stores)."
-            : `${REGISTRATION_PAGE_TITLE} theme template is ready. Continue to Step 3 if you want the form block in the theme editor.`,
+          `${REGISTRATION_PAGE_TITLE} theme template is ready on your current theme. Continue to Step 3 if you want the form block in the theme editor.`,
+        );
+        return;
+      }
+      if (result.servedViaAppEmbed) {
+        setRegistrationNotice(
+          "Registration form is live via the Approvefy app embed. To add a theme template on this theme, Shopify may require manual creation in the theme editor — or click Create template again after enabling app embed.",
         );
         return;
       }
@@ -569,7 +574,9 @@ export default function Index() {
                 ({registrationPagePath}).
               </Banner>
             )}
-            {registrationPageExists && !registrationPageTemplateExists && (
+            {registrationPageExists &&
+              !registrationThemeTemplateFileExists &&
+              !registrationStorefrontReady && (
               <Banner tone="warning" title="Create Customer Registration template">
                 <p style={{ margin: 0 }}>
                   Enable the Approvefy app embed in Step 1, then click{" "}
@@ -682,10 +689,10 @@ export default function Index() {
                   <Button
                     onClick={() => submitRegistrationSetup("create-registration-template")}
                     loading={registrationBusyIntent === "create-registration-template"}
-                    variant={registrationPageTemplateExists ? "secondary" : "primary"}
-                    disabled={registrationPageTemplateExists}
+                    variant={registrationThemeTemplateFileExists ? "secondary" : "primary"}
+                    disabled={registrationThemeTemplateFileExists}
                   >
-                    {registrationPageTemplateExists ? "Template created" : "Create template"}
+                    {registrationThemeTemplateFileExists ? "Template created" : "Create template"}
                   </Button>
                   {registrationPageStorefrontUrl && registrationPagePublished ? (
                     <Button url={registrationPageStorefrontUrl} variant="secondary" external>
@@ -718,7 +725,7 @@ export default function Index() {
                       onClick={() => submitRegistrationSetup("add-registration-form")}
                       loading={registrationBusyIntent === "add-registration-form"}
                       variant="primary"
-                      disabled={!registrationPageTemplateExists}
+                      disabled={!registrationThemeTemplateFileExists}
                     >
                       Add form to page
                     </Button>
