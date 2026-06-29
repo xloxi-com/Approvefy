@@ -26,12 +26,8 @@ import {
   SettingsIcon,
 } from "@shopify/polaris-icons";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
-import { REGISTRATION_PAGE_TITLE } from "../lib/registration-page.constants";
 import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
 import { openThemeEditorUrl } from "../lib/open-theme-editor.client";
-
-/** Vercel: Create template action can exceed the default 10s function limit. */
-export const config = { maxDuration: 60 };
 
 export async function loader(args: LoaderFunctionArgs) {
   const { loader: homeLoader } = await import("../lib/home-route.server");
@@ -212,10 +208,8 @@ export default function Index() {
     registrationPagePath,
     registrationPageThemeEditorUrl,
     registrationPageStorefrontUrl,
-    registrationPageExists,
     registrationPagePublished,
     registrationThemeTemplateFileExists,
-    registrationStorefrontReady,
     registrationFormOnDefaultPage,
     appEmbedEnabled,
     registrationFormBlockOnPage,
@@ -258,8 +252,6 @@ export default function Index() {
     : extensionSetup.loaded
       ? extensionSetup.appEmbedEnabled
       : appEmbedEnabled;
-  const registrationPageSetupDone =
-    registrationPageExists && registrationPagePublished && registrationStorefrontReady;
   const registrationPageFormDone = themeSetupCheckAvailable
     ? registrationFormBlockOnPage
     : extensionSetup.loaded
@@ -270,7 +262,6 @@ export default function Index() {
 
   const setupTasksComplete =
     (appEmbedDone ? 1 : 0) +
-    (registrationPageSetupDone ? 1 : 0) +
     (registrationPageFormDone ? 1 : 0) +
     (formDone ? 1 : 0) +
     (settingsDone ? 1 : 0);
@@ -340,39 +331,17 @@ export default function Index() {
     );
   }, [appEmbedFetcher.state, appEmbedFetcher.data, revalidator]);
 
-  const submitRegistrationSetup = useCallback(
-    (intent: string) => {
-      setRegistrationNotice(null);
-      if (intent === "create-registration-template") {
-        setRegistrationNotice("Creating Customer Registration theme template automatically…");
-      } else if (intent === "create-registration-page") {
-        setRegistrationNotice("Creating and publishing the registration page…");
-      } else if (intent === "publish-registration-page") {
-        setRegistrationNotice("Publishing the registration page…");
-      } else if (intent === "add-registration-form") {
-        setRegistrationNotice("Adding Registration Form to the Customer Registration template…");
-      }
-      lastRegistrationResultRef.current = null;
-      registrationFetcher.submit({ intent }, { method: "post" });
-    },
-    [registrationFetcher],
-  );
+  const submitAddRegistrationForm = useCallback(() => {
+    setRegistrationNotice(null);
+    setRegistrationNotice("Adding Registration Form to the Customer Registration template…");
+    lastRegistrationResultRef.current = null;
+    registrationFetcher.submit({ intent: "add-registration-form" }, { method: "post" });
+  }, [registrationFetcher]);
 
   const registrationBusy = registrationFetcher.state !== "idle";
   const registrationBusyIntent = registrationBusy
     ? String(registrationFetcher.formData?.get("intent") ?? "")
     : null;
-
-  useEffect(() => {
-    if (registrationFetcher.state === "idle") return;
-    if (registrationBusyIntent !== "create-registration-template") return;
-    const timer = window.setTimeout(() => {
-      setRegistrationNotice(
-        "Still creating the Customer Registration theme template — this can take up to a minute on live stores.",
-      );
-    }, 12_000);
-    return () => window.clearTimeout(timer);
-  }, [registrationFetcher.state, registrationBusyIntent]);
 
   useEffect(() => {
     if (registrationFetcher.state !== "idle") return;
@@ -385,66 +354,8 @@ export default function Index() {
 
     revalidator.revalidate();
 
-    if (result.intent === "create-registration-template") {
-      const openUrl = "openUrl" in result && result.openUrl ? result.openUrl : undefined;
-
-      if (result.templateFileExists) {
-        setRegistrationNotice(
-          `${REGISTRATION_PAGE_TITLE} theme template was created automatically on your live theme. Continue to Step 3 to add the Registration Form block.`,
-        );
-        return;
-      }
-
-      if (
-        result.needsThemeEditorTemplate ||
-        result.needsManualTemplate ||
-        result.themeFileWriteAccessDenied
-      ) {
-        if (openUrl) openThemeEditorUrl(openUrl);
-        setRegistrationNotice(
-          `Shopify blocked automatic template creation. Theme editor opened — click the template dropdown → + Create template → name it "${REGISTRATION_PAGE_TITLE}" → Create template, then refresh this page.`,
-        );
-        return;
-      }
-
-      if (result.servedViaAppEmbed) {
-        setRegistrationNotice(
-          "Registration form is live via the Approvefy app embed on your page. A separate theme template is optional — enable app embed in Step 1 if you have not already.",
-        );
-        return;
-      }
-
-      if (openUrl) openThemeEditorUrl(openUrl);
-      setRegistrationNotice(
-        `Could not create the theme template automatically. Theme editor opened — use + Create template in the template dropdown, name it "${REGISTRATION_PAGE_TITLE}", then refresh this page.`,
-      );
-      return;
-    }
-
     if (!result.ok) {
       setRegistrationNotice("Could not complete registration page setup. Refresh and try again.");
-      return;
-    }
-
-    if (result.intent === "create-registration-page") {
-      if (result.pagePublished) {
-        setRegistrationNotice("Customer Registration page created and published on your storefront.");
-        return;
-      }
-      if (result.pageExists) {
-        setRegistrationNotice("Page created but is not published yet. Click Publish page.");
-        return;
-      }
-      setRegistrationNotice("Could not create the registration page. Approve content permissions and try again.");
-      return;
-    }
-
-    if (result.intent === "publish-registration-page") {
-      if (result.pagePublished) {
-        setRegistrationNotice("Registration page is now published on your storefront.");
-        return;
-      }
-      setRegistrationNotice("Could not publish the page. Create the page first, then try again.");
       return;
     }
 
@@ -575,19 +486,6 @@ export default function Index() {
 
         <Layout.Section>
           <BlockStack gap="400">
-            {!registrationPageExists && (
-              <Banner tone="warning" title="Registration page not ready">
-                Approvefy could not create the storefront registration page yet. Refresh this page — if it
-                persists, re-open the app and approve the updated permissions when prompted.
-              </Banner>
-            )}
-            {registrationPageExists && !registrationPagePublished && (
-              <Banner tone="warning" title="Registration page is not published">
-                {registrationPagePath} is hidden on your storefront. Open Settings → Store, confirm
-                &quot;Redirect header customer account icon&quot; is enabled, click Save — Approvefy will
-                publish the page automatically.
-              </Banner>
-            )}
             {registrationFormOnDefaultPage && (
               <Banner tone="warning" title="Registration Form is on the wrong page template">
                 The Registration Form block is on the <Text as="span" variant="bodyMd" fontWeight="semibold">Default page</Text>{" "}
@@ -597,23 +495,6 @@ export default function Index() {
                   Customer Registration
                 </Text>{" "}
                 ({registrationPagePath}).
-              </Banner>
-            )}
-            {registrationPageExists &&
-              !registrationThemeTemplateFileExists &&
-              !registrationStorefrontReady && (
-              <Banner tone="warning" title="Create Customer Registration template">
-                <p style={{ margin: 0 }}>
-                  Enable the Approvefy app embed in Step 1, then click{" "}
-                  <Text as="span" variant="bodyMd" fontWeight="semibold">
-                    Create template
-                  </Text>
-                  . On live stores the registration form loads automatically on{" "}
-                  <Text as="span" variant="bodyMd" fontWeight="semibold">
-                    {registrationPagePath}
-                  </Text>{" "}
-                  via the app embed — no theme editor required.
-                </p>
               </Banner>
             )}
             {appEmbedNotice ? (
@@ -686,51 +567,6 @@ export default function Index() {
             <SetupStep
               step={2}
               icon={PageIcon}
-              title="Create registration page & template"
-              description={`Create the storefront page (${registrationPagePath}) and the Customer Registration theme template (shown as "${REGISTRATION_PAGE_TITLE}" in the theme editor). The page is published automatically when you click Create page.`}
-              complete={registrationPageSetupDone}
-              optional={!registrationPageSetupDone}
-              actions={
-                <>
-                  <Button
-                    onClick={() => submitRegistrationSetup("create-registration-page")}
-                    loading={registrationBusyIntent === "create-registration-page"}
-                    variant="primary"
-                    disabled={registrationPageExists && registrationPagePublished}
-                  >
-                    {registrationPageExists && registrationPagePublished
-                      ? "Page created"
-                      : "Create page"}
-                  </Button>
-                  {registrationPageExists && !registrationPagePublished ? (
-                    <Button
-                      onClick={() => submitRegistrationSetup("publish-registration-page")}
-                      loading={registrationBusyIntent === "publish-registration-page"}
-                      variant="primary"
-                    >
-                      Publish page
-                    </Button>
-                  ) : null}
-                  <Button
-                    onClick={() => submitRegistrationSetup("create-registration-template")}
-                    loading={registrationBusyIntent === "create-registration-template"}
-                    variant={registrationThemeTemplateFileExists ? "secondary" : "primary"}
-                    disabled={registrationThemeTemplateFileExists}
-                  >
-                    {registrationThemeTemplateFileExists ? "Template created" : "Create template"}
-                  </Button>
-                  {registrationPageStorefrontUrl && registrationPagePublished ? (
-                    <Button url={registrationPageStorefrontUrl} variant="secondary" external>
-                      Preview page
-                    </Button>
-                  ) : null}
-                </>
-              }
-            />
-
-            <SetupStep
-              step={3}
-              icon={PageIcon}
               title="Add form to registration page"
               description={`Opens only the Customer Registration template (${registrationPagePath}) — never Default page. The Registration Form block is added exclusively to this page.`}
               complete={registrationPageFormDone}
@@ -747,7 +583,7 @@ export default function Index() {
                     </Button>
                   ) : (
                     <Button
-                      onClick={() => submitRegistrationSetup("add-registration-form")}
+                      onClick={submitAddRegistrationForm}
                       loading={registrationBusyIntent === "add-registration-form"}
                       variant="primary"
                       disabled={!registrationThemeTemplateFileExists}
@@ -765,7 +601,7 @@ export default function Index() {
             />
 
             <SetupStep
-              step={4}
+              step={3}
               icon={FormsIcon}
               title="Review your registration form"
               description="A default Customer B2B form is created when you install Approvefy. Open Form Builder anytime to customize fields or add more forms."
@@ -780,7 +616,7 @@ export default function Index() {
             />
 
             <SetupStep
-              step={5}
+              step={4}
               icon={SettingsIcon}
               title="Configure settings"
               description="Set languages, form appearance, and approval workflow — including SMTP, notifications, and storefront messages. Save Settings once to complete this step."

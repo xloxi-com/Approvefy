@@ -10,13 +10,9 @@ import {
   findRegistrationPage,
   registrationStorefrontUrl,
   runAddRegistrationFormSetup,
-  runCreateRegistrationPageSetup,
-  runCreateRegistrationTemplateOnlySetup,
-  runPublishRegistrationPageSetup,
   resolveThemeWriteAccessToken,
 } from "./registration-page.server";
 import { cleanRegistrationFormOffDefaultPageTemplate } from "./theme-registration-template.server";
-import { canUseThemeCliPush } from "./theme-cli-push.server";
 import {
   isRegistrationFormLiveOnStorefront,
   isRegistrationPageStorefrontReady,
@@ -181,7 +177,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const themeEditorUrl = buildAppEmbedThemeEditorUrl(shop);
   const storefrontUrl = `https://${storeHandle}.myshopify.com`;
 
-  const setupTasksTotal = 5;
+  const setupTasksTotal = 4;
 
   const analyticsPromise: Promise<Analytics | null> = getAnalytics(shop).catch(
     (err: unknown) => {
@@ -235,78 +231,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       writeFailed: embed.writeFailed,
       openUrl: buildAppEmbedThemeEditorUrl(shop),
     });
-  }
-
-  if (intent === "create-registration-page") {
-    try {
-      const setup = await runCreateRegistrationPageSetup(admin, shop);
-      return data({
-        ok: true as const,
-        intent: "create-registration-page" as const,
-        pageExists: setup.pageExists,
-        pagePublished: setup.pagePublished,
-        pageCreated: setup.pageCreated,
-        openUrl: setup.themeEditorUrl,
-      });
-    } catch (error) {
-      console.error("[Home] create-registration-page action failed:", error);
-      return data({ ok: false as const, intent: "create-registration-page" as const });
-    }
-  }
-
-  if (intent === "publish-registration-page") {
-    try {
-      const setup = await runPublishRegistrationPageSetup(admin, shop);
-      return data({
-        ok: true as const,
-        intent: "publish-registration-page" as const,
-        pageExists: setup.pageExists,
-        pagePublished: setup.pagePublished,
-      });
-    } catch (error) {
-      console.error("[Home] publish-registration-page action failed:", error);
-      return data({ ok: false as const, intent: "publish-registration-page" as const });
-    }
-  }
-
-  if (intent === "create-registration-template") {
-    try {
-      const token = await resolveThemeWriteAccessToken(shop, session.accessToken);
-      const setup = await runCreateRegistrationTemplateOnlySetup(admin, shop, token);
-      return data({
-        ok: true as const,
-        intent: "create-registration-template" as const,
-        pageExists: setup.pageExists,
-        pagePublished: setup.pagePublished,
-        templateExists: setup.templateExists,
-        templateFileExists: setup.templateFileExists,
-        servedViaAppEmbed: setup.servedViaAppEmbed,
-        templateCreated: setup.templateCreated,
-        needsManualTemplate: setup.needsManualTemplate,
-        needsThemeEditorTemplate: setup.needsThemeEditorTemplate,
-        themeFileWriteAccessDenied: setup.themeFileWriteAccessDenied,
-        themeCliAvailable: setup.themeCliAvailable,
-        blockOnTemplate: setup.blockOnTemplate,
-        openUrl: setup.themeEditorUrl,
-      });
-    } catch (error) {
-      console.error("[Home] create-registration-template action failed:", error);
-      return data({
-        ok: true as const,
-        intent: "create-registration-template" as const,
-        templateExists: false,
-        needsManualTemplate: true,
-        needsThemeEditorTemplate: true,
-        themeFileWriteAccessDenied: true,
-        themeCliAvailable: canUseThemeCliPush(),
-        servedViaAppEmbed: false,
-        templateFileExists: false,
-        openUrl: buildRegistrationPageThemeEditorUrl(shop, {
-          pageExists: true,
-          templateExists: false,
-        }),
-      });
-    }
   }
 
   if (intent === "add-registration-form") {
