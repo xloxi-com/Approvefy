@@ -389,7 +389,7 @@ export default function Index() {
 
       if (result.needsManualTemplate) {
         setRegistrationNotice(
-          `Page ready at ${registrationPagePath}. Create the Customer Registration template in the theme editor, then try again.`,
+          `Page ready at ${registrationPagePath}. In the theme editor, open the template menu → Create template → name it customer-registration, then click Save.`,
         );
         return;
       }

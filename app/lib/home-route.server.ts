@@ -257,7 +257,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return data({
         ok: false as const,
         intent: "create-registration-template" as const,
-        openUrl: buildRegistrationPagePreviewThemeEditorUrl(shop),
+        openUrl: buildRegistrationPagePreviewThemeEditorUrl(shop, { templateExists: false }),
       });
     }
   }

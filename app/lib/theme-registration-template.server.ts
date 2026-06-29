@@ -5,8 +5,7 @@ import {
   THEME_EXTENSION_HANDLE,
 } from "./theme-extension-setup-status";
 import {
-  canAttemptThemeCliPush,
-  isServerlessRuntime,
+  canUseThemeCliPush,
   pushRegistrationTemplateViaCli,
   resolveThemeCliPushTimeoutMs,
   themeNumericIdFromGid,
@@ -780,6 +779,10 @@ export type RegistrationPageThemeTemplateStatus = {
 export type EnsureRegistrationPageThemeTemplateOptions = {
   /** Skip default-page cleanup and extra file reads (faster button action). */
   quick?: boolean;
+  /** Session/offline token — Theme REST asset fallback when GraphQL upsert is blocked. */
+  accessToken?: string;
+  /** Required for Theme REST / CLI fallbacks when GraphQL themeFilesUpsert is blocked. */
+  shop?: string;
 };
 
 /**
@@ -1018,6 +1021,54 @@ export async function ensureRegistrationPageThemeTemplate(
     }
 
     if (upsert.accessDenied) {
+      const themeNumericId = themeNumericIdFromGid(themeId);
+      const accessToken = opts?.accessToken?.trim();
+      const shop = opts?.shop?.trim();
+
+      if (shop && accessToken) {
+        const rest = await putThemeAssetViaRest(
+          shop,
+          accessToken,
+          themeId,
+          REGISTRATION_PAGE_TEMPLATE_FILE,
+          templateBody,
+        );
+        if (rest.ok) {
+          const written = quick
+            ? (await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? ""
+            : (await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? "";
+          const templateExists = !!written.trim();
+          return {
+            created: templateExists,
+            templateExists,
+            blockOnTemplate:
+              templateExists && registrationFormBlockPlacement(written) === "apps",
+            themeFileWriteAccessDenied: false,
+          };
+        }
+      }
+
+      if (shop && themeNumericId && canUseThemeCliPush()) {
+        const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
+          timeoutMs: resolveThemeCliPushTimeoutMs(quick),
+          templateBody,
+        });
+        if (cli.ok) {
+          const written = quick
+            ? (await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? ""
+            : (await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE)) ?? "";
+          const templateExists = !!written.trim();
+          return {
+            created: templateExists,
+            templateExists,
+            blockOnTemplate:
+              templateExists && registrationFormBlockPlacement(written) === "apps",
+            themeFileWriteAccessDenied: false,
+          };
+        }
+        console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
+      }
+
       return { ...fallback, themeFileWriteAccessDenied: true };
     }
 
@@ -1155,6 +1206,29 @@ export async function createCustomerRegistrationPageTemplate(
     const templateBody = resolveTemplateBodyFromDefaultPage(defaultPageJson);
     const themeNumericId = themeNumericIdFromGid(themeId);
 
+    const tryCliPushRegistrationTemplate = async (
+      body?: string,
+    ): Promise<boolean> => {
+      if (!themeNumericId || !canUseThemeCliPush()) return false;
+      const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
+        timeoutMs: resolveThemeCliPushTimeoutMs(quick),
+        templateBody: body ?? buildRegistrationPageTemplateJson(),
+      });
+      if (!cli.ok) {
+        console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
+        return false;
+      }
+      const verified = await verifyRegistrationTemplateWritten(admin, themeId, quick);
+      return !!verified?.trim();
+    };
+
+    if (await tryCliPushRegistrationTemplate()) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
+      );
+      return templateCreateSuccess(themeId, false, true);
+    }
+
     const tryCopyDefaultPageTemplate = async (): Promise<boolean> => {
       const copied = await copyThemeFile(
         admin,
@@ -1196,31 +1270,11 @@ export async function createCustomerRegistrationPageTemplate(
       });
     }
 
-    const canTryCli =
-      !quick &&
-      !!themeNumericId &&
-      canAttemptThemeCliPush({
-        themeAccessPassword: isServerlessRuntime()
-          ? process.env.SHOPIFY_CLI_THEME_TOKEN
-          : accessToken,
-      });
-    if (canTryCli && themeNumericId) {
-      const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
-        timeoutMs: resolveThemeCliPushTimeoutMs(quick),
-        themeAccessPassword: isServerlessRuntime()
-          ? process.env.SHOPIFY_CLI_THEME_TOKEN
-          : accessToken,
-      });
-      if (cli.ok) {
-        const verified = await verifyRegistrationTemplateWritten(admin, themeId, quick);
-        if (verified?.trim()) {
-          console.info(
-            "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
-          );
-          return templateCreateSuccess(themeId, false, true);
-        }
-      }
-      console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
+    if (await tryCliPushRegistrationTemplate(templateBody)) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI (shell)",
+      );
+      return templateCreateSuccess(themeId, false, true);
     }
 
     if (accessToken) {
@@ -1377,7 +1431,6 @@ export async function writeRegistrationPageTemplateShell(
       if (themeNumericId) {
         const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
           timeoutMs: resolveThemeCliPushTimeoutMs(opts?.quickPoll),
-          themeAccessPassword: opts?.accessToken,
         });
         if (cli.ok) {
           const written = await pollForThemeFile(

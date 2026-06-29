@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -100,11 +101,16 @@ export function hasThemeAccessPassword(): boolean {
   return !!process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
 }
 
+/** Theme Access app password only — never pass OAuth session tokens to Shopify CLI. */
+export function resolveThemeCliPassword(): string | undefined {
+  return process.env.SHOPIFY_CLI_THEME_TOKEN?.trim() || undefined;
+}
+
 /** On Vercel, only Theme Access env password may drive CLI — never the OAuth access token. */
-export function canAttemptThemeCliPush(opts?: { themeAccessPassword?: string }): boolean {
+export function canAttemptThemeCliPush(): boolean {
   if (canUseThemeCliPush()) return true;
-  if (isServerlessRuntime()) return false;
-  return !!opts?.themeAccessPassword?.trim();
+  if (isServerlessRuntime()) return !!resolveThemeCliPassword();
+  return false;
 }
 
 export function resolveThemeCliPushTimeoutMs(quick?: boolean): number {
@@ -117,16 +123,13 @@ export function resolveThemeCliPushTimeoutMs(quick?: boolean): number {
 export async function pushRegistrationTemplateViaCli(
   shop: string,
   themeNumericId: string,
-  opts?: { timeoutMs?: number; themeAccessPassword?: string },
+  opts?: { timeoutMs?: number; templateBody?: string },
 ): Promise<{ ok: boolean; error?: string }> {
-  const envThemeToken = process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
-  const themeToken = isServerlessRuntime()
-    ? envThemeToken
-    : opts?.themeAccessPassword?.trim() || envThemeToken;
-  if (!canAttemptThemeCliPush({ themeAccessPassword: themeToken })) {
+  const themeToken = resolveThemeCliPassword();
+  if (!canAttemptThemeCliPush()) {
     return { ok: false, error: "Theme CLI push is disabled in production" };
   }
-  if (!themeToken && isServerlessRuntime()) {
+  if (isServerlessRuntime() && !themeToken) {
     return { ok: false, error: "Theme CLI push requires SHOPIFY_CLI_THEME_TOKEN on Vercel" };
   }
   if (!themeNumericId?.trim()) {
@@ -146,6 +149,20 @@ export async function pushRegistrationTemplateViaCli(
   const storeHost = `${store}.myshopify.com`;
   const timeoutMs = opts?.timeoutMs ?? CLI_PUSH_TIMEOUT_MS;
 
+  let themePath = REGISTRATION_THEME_PATH;
+  let tempDir: string | null = null;
+  if (opts?.templateBody?.trim()) {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "approvefy-theme-"));
+    const templatesDir = path.join(tempDir, "templates");
+    fs.mkdirSync(templatesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(templatesDir, "page.customer-registration.json"),
+      opts.templateBody,
+      "utf8",
+    );
+    themePath = tempDir;
+  }
+
   return new Promise((resolve) => {
     let settled = false;
 
@@ -153,6 +170,13 @@ export async function pushRegistrationTemplateViaCli(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (tempDir) {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {
+          // ignore temp cleanup errors
+        }
+      }
       resolve(result);
     };
 
@@ -168,7 +192,7 @@ export async function pushRegistrationTemplateViaCli(
       "--only",
       REGISTRATION_TEMPLATE_ONLY,
       "--path",
-      REGISTRATION_THEME_PATH,
+      themePath,
       "--force",
     ];
     if (themeToken) {

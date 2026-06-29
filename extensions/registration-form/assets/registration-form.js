@@ -1,7 +1,13 @@
 (function () {
-  /** True when Approvefy should run: register route or Registration Form theme block is (or will be) in DOM. */
+  /** True when Approvefy should run: register route, customer-registration page, or Registration Form block. */
   function hasApprovefyMountOrRegisterPage() {
     if (window.location.pathname.indexOf('/account/register') !== -1) return true;
+    var path = String(window.location.pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
+    var localeMatch = path.toLowerCase().match(/^(\/[a-z]{2}(?:-[a-z]{2})?)(\/.*|$)/);
+    if (localeMatch && localeMatch[1] && localeMatch[1].length <= 6) {
+      path = localeMatch[2] && localeMatch[2].length > 0 ? localeMatch[2] : '/';
+    }
+    if (/\/pages\/customer-registration\/?$/i.test(path)) return true;
     return !!document.querySelector('[data-approvefy-registration-block]');
   }
 
