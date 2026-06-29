@@ -59,7 +59,8 @@ import "../styles/layout.css";
 
 const DEFAULT_CRISP_WEBSITE_ID = "37838a46-8fb5-457f-8976-f8ebfca547b1";
 
-
+/** Vercel serverless: theme template creation and install setup can exceed the default 10s limit. */
+export const config = { maxDuration: 60 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
 
