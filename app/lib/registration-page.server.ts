@@ -709,13 +709,13 @@ export async function runCreateRegistrationTemplateOnlySetup(
     const token = accessToken ?? (await resolveThemeWriteAccessToken(shop));
     const write = await createCustomerRegistrationPageTemplate(admin, shop, {
       accessToken: token,
-      quick: true,
+      quick: false,
     });
-    templateExists = write.templateExists;
     templateCreated = write.savedViaApi || write.savedViaCli;
     themeFileWriteAccessDenied = write.themeFileWriteAccessDenied;
+
     verified = await readRegistrationPageTemplateOnMainTheme(admin);
-    templateExists = templateExists || !!verified.raw?.trim();
+    templateExists = !!verified.raw?.trim();
   }
 
   if (templateExists && page) {
@@ -732,7 +732,10 @@ export async function runCreateRegistrationTemplateOnlySetup(
 
   const themeSetup = await getThemeSetupStatus(admin);
   const pagePublished = page?.isPublished === true;
-  const templateFileExists = templateExists;
+  // Always trust live theme file read — API write helpers can report success before the file is visible.
+  verified = await readRegistrationPageTemplateOnMainTheme(admin);
+  const templateFileExists = !!verified.raw?.trim();
+  templateExists = templateFileExists;
   const servedViaAppEmbed =
     !templateFileExists &&
     canServeRegistrationPageViaAppEmbed({

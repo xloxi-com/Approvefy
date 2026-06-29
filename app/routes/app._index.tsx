@@ -26,7 +26,7 @@ import {
   SettingsIcon,
 } from "@shopify/polaris-icons";
 import { APP_DISPLAY_NAME, APP_URL } from "../lib/app-constants";
-import { REGISTRATION_PAGE_TITLE, REGISTRATION_PAGE_HANDLE } from "../lib/registration-page.constants";
+import { REGISTRATION_PAGE_TITLE } from "../lib/registration-page.constants";
 import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
 import { openThemeEditorUrl } from "../lib/open-theme-editor.client";
 
@@ -341,10 +341,7 @@ export default function Index() {
     (intent: string) => {
       setRegistrationNotice(null);
       if (intent === "create-registration-template") {
-        if (registrationPageThemeEditorUrl) {
-          openThemeEditorUrl(registrationPageThemeEditorUrl);
-        }
-        setRegistrationNotice("Creating Customer Registration theme template…");
+        setRegistrationNotice("Creating Customer Registration theme template automatically…");
       } else if (intent === "create-registration-page") {
         setRegistrationNotice("Creating and publishing the registration page…");
       } else if (intent === "publish-registration-page") {
@@ -355,7 +352,7 @@ export default function Index() {
       lastRegistrationResultRef.current = null;
       registrationFetcher.submit({ intent }, { method: "post" });
     },
-    [registrationFetcher, registrationPageThemeEditorUrl],
+    [registrationFetcher],
   );
 
   const registrationBusy = registrationFetcher.state !== "idle";
@@ -368,7 +365,7 @@ export default function Index() {
     if (registrationBusyIntent !== "create-registration-template") return;
     const timer = window.setTimeout(() => {
       setRegistrationNotice(
-        `Taking longer than expected. Theme editor should be open — click the template dropdown → + Create template → name it "${REGISTRATION_PAGE_HANDLE}" → Save, then refresh this page.`,
+        "Still creating the Customer Registration theme template — this can take up to a minute on live stores.",
       );
     }, 12_000);
     return () => window.clearTimeout(timer);
@@ -389,9 +386,8 @@ export default function Index() {
       const openUrl = "openUrl" in result && result.openUrl ? result.openUrl : undefined;
 
       if (result.templateFileExists) {
-        if (openUrl) openThemeEditorUrl(openUrl);
         setRegistrationNotice(
-          `${REGISTRATION_PAGE_TITLE} theme template is ready on your current theme. Continue to Step 3 if you want the form block in the theme editor.`,
+          `${REGISTRATION_PAGE_TITLE} theme template was created automatically on your live theme. Continue to Step 3 to add the Registration Form block.`,
         );
         return;
       }
@@ -401,8 +397,9 @@ export default function Index() {
         result.needsManualTemplate ||
         result.themeFileWriteAccessDenied
       ) {
+        if (openUrl) openThemeEditorUrl(openUrl);
         setRegistrationNotice(
-          `Shopify blocked automatic template creation on live stores. In the theme editor (already open), click the template dropdown → + Create template → name it "${REGISTRATION_PAGE_HANDLE}" → Save, then refresh this page.`,
+          `Shopify blocked automatic template creation. Theme editor opened — click the template dropdown → + Create template → name it "${REGISTRATION_PAGE_TITLE}" → Create template, then refresh this page.`,
         );
         return;
       }
@@ -414,8 +411,9 @@ export default function Index() {
         return;
       }
 
+      if (openUrl) openThemeEditorUrl(openUrl);
       setRegistrationNotice(
-        "Could not create the Customer Registration theme template automatically. In the theme editor, use + Create template in the template dropdown, name it customer-registration, then Save.",
+        `Could not create the theme template automatically. Theme editor opened — use + Create template in the template dropdown, name it "${REGISTRATION_PAGE_TITLE}", then refresh this page.`,
       );
       return;
     }

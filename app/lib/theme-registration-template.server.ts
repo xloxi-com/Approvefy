@@ -6,8 +6,6 @@ import {
 } from "./theme-extension-setup-status";
 import {
   canAttemptThemeCliPush,
-  canUseThemeCliPush,
-  hasThemeAccessPassword,
   isServerlessRuntime,
   pushRegistrationTemplateViaCli,
   resolveThemeCliPushTimeoutMs,
@@ -547,7 +545,8 @@ async function pollForThemeFile(
 }
 
 function quickThemeFilePoll(): ThemeFilePollOptions {
-  return { attempts: 2, delayMs: 200 };
+  // Theme copy/upsert jobs can take a few seconds on live stores — short polls caused false failures.
+  return { attempts: 12, delayMs: 450 };
 }
 
 async function upsertDedicatedRegistrationTemplateShell(
@@ -1149,36 +1148,39 @@ export async function createCustomerRegistrationPageTemplate(
     const templateBody = resolveTemplateBodyFromDefaultPage(defaultPageJson);
     const themeNumericId = themeNumericIdFromGid(themeId);
 
-    // Live Vercel: skip CLI/REST/shell — Shopify blocks theme file APIs for App Store apps.
-    if (quick && isServerlessRuntime() && !hasThemeAccessPassword()) {
+    const tryCopyDefaultPageTemplate = async (): Promise<boolean> => {
       const copied = await copyThemeFile(
         admin,
         themeId,
         "templates/page.json",
         REGISTRATION_PAGE_TEMPLATE_FILE,
       );
-      if (copied) {
+      if (!copied) return false;
+      const written = await verifyRegistrationTemplateWritten(admin, themeId, quick);
+      return !!written?.trim();
+    };
+
+    if (await tryCopyDefaultPageTemplate()) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json created via themeFilesCopy",
+      );
+      return templateCreateSuccess(themeId, true, false);
+    }
+
+    const upsert = await upsertThemeFileByFilename(
+      admin,
+      themeId,
+      REGISTRATION_PAGE_TEMPLATE_FILE,
+      templateBody,
+    );
+    if (upsert.ok) {
+      const written = await verifyRegistrationTemplateWritten(admin, themeId, quick);
+      if (written?.trim()) {
+        console.info(
+          "[ThemeRegistrationTemplate] page.customer-registration.json created via themeFilesUpsert",
+        );
         return templateCreateSuccess(themeId, true, false);
       }
-
-      const upsert = await upsertThemeFileByFilename(
-        admin,
-        themeId,
-        REGISTRATION_PAGE_TEMPLATE_FILE,
-        templateBody,
-      );
-      if (upsert.ok) {
-        const written = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
-        if (written?.trim()) {
-          return templateCreateSuccess(themeId, true, false);
-        }
-      }
-
-      return {
-        ...empty,
-        themeId,
-        themeFileWriteAccessDenied: true,
-      };
     }
 
     if (!quick) {
@@ -1213,19 +1215,6 @@ export async function createCustomerRegistrationPageTemplate(
       console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
     }
 
-    const copied = await copyThemeFile(
-      admin,
-      themeId,
-      "templates/page.json",
-      REGISTRATION_PAGE_TEMPLATE_FILE,
-    );
-    if (copied) {
-      console.info(
-        "[ThemeRegistrationTemplate] page.customer-registration.json created via themeFilesCopy",
-      );
-      return templateCreateSuccess(themeId, true, false);
-    }
-
     if (accessToken) {
       const rest = await putThemeAssetViaRest(
         shop,
@@ -1235,10 +1224,13 @@ export async function createCustomerRegistrationPageTemplate(
         templateBody,
       );
       if (rest.ok) {
-        console.info(
-          "[ThemeRegistrationTemplate] page.customer-registration.json created via Theme REST API",
-        );
-        return templateCreateSuccess(themeId, true, false);
+        const written = await verifyRegistrationTemplateWritten(admin, themeId, quick);
+        if (written?.trim()) {
+          console.info(
+            "[ThemeRegistrationTemplate] page.customer-registration.json created via Theme REST API",
+          );
+          return templateCreateSuccess(themeId, true, false);
+        }
       }
       if (rest.accessDenied) {
         console.warn(
@@ -1283,7 +1275,8 @@ export async function createCustomerRegistrationPageTemplate(
     return {
       ...empty,
       themeId,
-      themeFileWriteAccessDenied: shellResult.themeFileWriteAccessDenied,
+      themeFileWriteAccessDenied:
+        upsert.accessDenied || shellResult.themeFileWriteAccessDenied,
     };
   } catch (error) {
     console.warn(
