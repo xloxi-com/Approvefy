@@ -33,6 +33,18 @@ shopify.app.customer-b2b.toml
 shopify.web.toml
 shopify.cmd
 extensions
+theme
+
+# Dev-only scripts (postinstall uses prisma-generate-safe.cjs — keep scripts/)
+scripts/dev.cjs
+scripts/dev-localhost.cjs
+scripts/shopify-app-dev.cjs
+scripts/shopify-config-link.cjs
+scripts/shopify-proxy.cjs
+scripts/shopify-cli-client-args.cjs
+scripts/shopify-env-from-dotfile.cjs
+scripts/print-vercel-env-vars.cjs
+scripts/diag-theme-template.mjs
 
 # Local Supabase / build artefacts
 supabase

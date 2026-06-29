@@ -2,7 +2,8 @@
 const { execSync } = require("node:child_process");
 
 try {
-  execSync("npx prisma generate", { stdio: ["ignore", "pipe", "pipe"] });
+  const stdio = process.env.VERCEL === "1" ? "inherit" : ["ignore", "pipe", "pipe"];
+  execSync("npx prisma generate", { stdio });
 } catch (error) {
   const stdout = error && error.stdout ? String(error.stdout) : "";
   const stderr = error && error.stderr ? String(error.stderr) : "";

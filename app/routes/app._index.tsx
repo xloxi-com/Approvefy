@@ -30,6 +30,9 @@ import { REGISTRATION_PAGE_TITLE } from "../lib/registration-page.constants";
 import { parseThemeExtensionSetupStatus } from "../lib/theme-extension-setup-status";
 import { openThemeEditorUrl } from "../lib/open-theme-editor.client";
 
+/** Vercel: Create template action can exceed the default 10s function limit. */
+export const config = { maxDuration: 60 };
+
 export async function loader(args: LoaderFunctionArgs) {
   const { loader: homeLoader } = await import("../lib/home-route.server");
   return homeLoader(args);

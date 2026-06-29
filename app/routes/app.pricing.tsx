@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { redirect, useFetcher, useLoaderData, useNavigate, useRevalidator, useSearchParams } from "react-router";
 import {
   Badge,
@@ -34,6 +34,7 @@ import {
   readStoredEmbedHost,
   SHOPIFY_EMBED_HOST_STORAGE_KEY,
 } from "../lib/shopify-embed-navigation";
+import { billingSubscribeAction } from "../lib/billing-subscribe.server";
 
 type BillingSubscribeResponse =
   | { ok: true; confirmationUrl: string }
@@ -64,6 +65,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return { billingReturned, embeddedHost, subscribedPlan };
 };
+
+export const action = (args: ActionFunctionArgs) => billingSubscribeAction(args);
 
 function CompareCell({ included }: { included: boolean }) {
   return (
@@ -259,10 +262,7 @@ export default function PricingPage() {
                               setBillingSubmittingTier(tier.id);
                               fetcher.submit(
                                 { plan: tier.id, host: resolvedEmbedHost },
-                                {
-                                  method: "POST",
-                                  action: "/app/billing/subscribe",
-                                },
+                                { method: "POST" },
                               );
                             }}
                           >

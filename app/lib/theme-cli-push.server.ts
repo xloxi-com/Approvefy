@@ -15,8 +15,8 @@ export function canUseThemeCliPush(): boolean {
 
   const themeToken = process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
 
-  // Serverless (Vercel): only Theme Access token can drive CLI — never spawn CLI without it.
-  if (isServerlessRuntime()) return !!themeToken;
+  // Serverless (Vercel): theme API fallbacks only — @shopify/cli is not installed on deploy.
+  if (isServerlessRuntime()) return false;
 
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "true") return true;
   if (themeToken) return true;
