@@ -10,23 +10,26 @@ export function isServerlessRuntime(): boolean {
   return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 }
 
-/** Shopify CLI theme push — works in local dev when `shopify` CLI is installed and authenticated. */
-export function canUseThemeCliPush(): boolean {
+/** Theme Access app password only — never pass OAuth session tokens to Shopify CLI. */
+export function resolveThemeCliPassword(): string | undefined {
+  return process.env.SHOPIFY_CLI_THEME_TOKEN?.trim() || undefined;
+}
+
+/** Whether CLI theme push can run for this shop (local dev auth, env token, or stored Theme Access password). */
+export function canUseThemeCliPush(opts?: { themeAccessPassword?: string | null }): boolean {
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "false") return false;
 
-  const themeToken = process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
+  const themeToken = opts?.themeAccessPassword?.trim() || resolveThemeCliPassword();
+  const hasCliBin = !!resolveShopifyCliBin();
 
-  // Serverless (Vercel): theme API fallbacks only — @shopify/cli is not installed on deploy.
-  if (isServerlessRuntime()) return false;
+  if (isServerlessRuntime()) {
+    return !!(themeToken && hasCliBin);
+  }
 
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "true") return true;
   if (themeToken) return true;
-
-  // `shopify app dev` (see .env SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT).
   if (process.env.SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT?.trim()) return true;
-
-  // Local machine with Shopify CLI installed — works even when SHOPIFY_APP_URL points at production.
-  if (resolveShopifyCliBin()) return true;
+  if (hasCliBin) return true;
 
   const appUrl = (process.env.SHOPIFY_APP_URL || process.env.HOST || "").toLowerCase();
   return (
@@ -40,8 +43,8 @@ export function canUseThemeCliPush(): boolean {
 
 const CLI_PUSH_TIMEOUT_MS = 60_000;
 const CLI_PUSH_QUICK_TIMEOUT_MS = 45_000;
-/** Vercel serverless — stay under function timeout while attempting theme push. */
-const CLI_PUSH_SERVERLESS_TIMEOUT_MS = 8_000;
+/** Vercel serverless — allow enough time for theme push when Theme Access password is set. */
+const CLI_PUSH_SERVERLESS_TIMEOUT_MS = 55_000;
 
 export { CLI_PUSH_TIMEOUT_MS, CLI_PUSH_QUICK_TIMEOUT_MS, CLI_PUSH_SERVERLESS_TIMEOUT_MS };
 
@@ -101,16 +104,19 @@ export function hasThemeAccessPassword(): boolean {
   return !!process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
 }
 
-/** Theme Access app password only — never pass OAuth session tokens to Shopify CLI. */
-export function resolveThemeCliPassword(): string | undefined {
-  return process.env.SHOPIFY_CLI_THEME_TOKEN?.trim() || undefined;
+/** On Vercel, only Theme Access env password may drive CLI — never the OAuth access token. */
+export function canAttemptThemeCliPush(opts?: { themeAccessPassword?: string | null }): boolean {
+  return canUseThemeCliPush(opts);
 }
 
-/** On Vercel, only Theme Access env password may drive CLI — never the OAuth access token. */
-export function canAttemptThemeCliPush(): boolean {
-  if (canUseThemeCliPush()) return true;
-  if (isServerlessRuntime()) return !!resolveThemeCliPassword();
-  return false;
+/** Local button clicks use quick mode; Vercel/production always waits for theme write jobs. */
+export function resolveThemeWriteQuickMode(requestQuick?: boolean): boolean {
+  if (isServerlessRuntime()) return false;
+  return requestQuick === true;
+}
+
+export function shouldSkipThemeWriteJobWait(requestQuick?: boolean): boolean {
+  return resolveThemeWriteQuickMode(requestQuick);
 }
 
 export function resolveThemeCliPushTimeoutMs(quick?: boolean): number {
@@ -123,10 +129,10 @@ export function resolveThemeCliPushTimeoutMs(quick?: boolean): number {
 export async function pushRegistrationTemplateViaCli(
   shop: string,
   themeNumericId: string,
-  opts?: { timeoutMs?: number; templateBody?: string },
+  opts?: { timeoutMs?: number; templateBody?: string; themeAccessPassword?: string },
 ): Promise<{ ok: boolean; error?: string }> {
-  const themeToken = resolveThemeCliPassword();
-  if (!canAttemptThemeCliPush()) {
+  const themeToken = opts?.themeAccessPassword?.trim() || resolveThemeCliPassword();
+  if (!canAttemptThemeCliPush({ themeAccessPassword: themeToken })) {
     return { ok: false, error: "Theme CLI push is disabled in production" };
   }
   if (isServerlessRuntime() && !themeToken) {

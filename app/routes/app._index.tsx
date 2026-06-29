@@ -389,7 +389,7 @@ export default function Index() {
 
       if (result.needsManualTemplate) {
         setRegistrationNotice(
-          `Page ready at ${registrationPagePath}. In the theme editor, open the template menu → Create template → name it customer-registration, then click Save.`,
+          `Page ready at ${registrationPagePath}. Theme editor opened — click the template menu → Create template → name it customer-registration → Save. (Public apps need Shopify Theme API exemption for fully automatic setup.)`,
         );
         return;
       }

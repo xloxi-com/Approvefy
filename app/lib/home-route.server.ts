@@ -13,6 +13,7 @@ import {
   runAddRegistrationFormSetup,
   runCreateRegistrationTemplateSetup,
   resolveThemeWriteAccessToken,
+  syncRegistrationPageTemplateSuffix,
 } from "./registration-page.server";
 import { cleanRegistrationFormOffDefaultPageTemplate } from "./theme-registration-template.server";
 import {
@@ -112,15 +113,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       const needsSuffixSync =
         templateFileExists &&
         existingPage?.templateSuffix?.toLowerCase() !== REGISTRATION_PAGE_HANDLE;
+
+      if (needsSuffixSync && pageExists) {
+        try {
+          await syncRegistrationPageTemplateSuffix(admin);
+          existingPage = await findRegistrationPage(admin);
+        } catch (error) {
+          console.warn("[Home] syncRegistrationPageTemplateSuffix failed:", error);
+        }
+      }
+
+      const suffixSynced =
+        !templateFileExists ||
+        existingPage?.templateSuffix?.toLowerCase() === REGISTRATION_PAGE_HANDLE;
       const setupAlreadyComplete =
         pageExists &&
         pagePublished &&
         templateFileExists &&
         blockOnTemplate &&
-        !needsSuffixSync;
+        suffixSynced;
       const needsRegistrationPageEnsure =
         !setupAlreadyComplete &&
-        (!pageExists || !storefrontReadyInitial || needsSuffixSync);
+        (!pageExists || !storefrontReadyInitial || !suffixSynced);
 
       if (needsRegistrationPageEnsure) {
         try {
