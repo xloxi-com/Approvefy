@@ -548,7 +548,9 @@ async function pollForThemeFile(
 }
 
 function quickThemeFilePoll(): ThemeFilePollOptions {
-  // Theme copy/upsert jobs can take a few seconds on live stores — short polls caused false failures.
+  if (isServerlessRuntime()) {
+    return { attempts: 4, delayMs: 350 };
+  }
   return { attempts: 12, delayMs: 450 };
 }
 
@@ -1284,17 +1286,22 @@ export async function createCustomerRegistrationPageTemplate(
     if (serverless) {
       const graphqlResult = await runGraphqlThenCli();
       if (graphqlResult) return graphqlResult;
-    } else {
-      if (await tryCliPushRegistrationTemplate()) {
+      return {
+        ...empty,
+        themeId,
+        themeFileWriteAccessDenied: upsertAccessDenied,
+      };
+    }
+
+    if (await tryCliPushRegistrationTemplate()) {
         console.info(
           "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
         );
         return templateCreateSuccess(themeId, false, true);
-      }
-
-      const graphqlResult = await runGraphqlThenCli();
-      if (graphqlResult) return graphqlResult;
     }
+
+    const graphqlResult = await runGraphqlThenCli();
+    if (graphqlResult) return graphqlResult;
 
     if (!quick) {
       void removeRegistrationFormFromDefaultPageTemplate(admin, themeId).catch((err) => {

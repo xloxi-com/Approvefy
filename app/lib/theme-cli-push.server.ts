@@ -23,7 +23,8 @@ export function canUseThemeCliPush(opts?: { themeAccessPassword?: string | null 
   const hasCliBin = !!resolveShopifyCliBin();
 
   if (isServerlessRuntime()) {
-    return !!(themeToken && hasCliBin);
+    // Vercel: GraphQL-only (no bundled CLI). Keeps setup + deploy fast (<30s).
+    return false;
   }
 
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "true") return true;
@@ -43,8 +44,8 @@ export function canUseThemeCliPush(opts?: { themeAccessPassword?: string | null 
 
 const CLI_PUSH_TIMEOUT_MS = 60_000;
 const CLI_PUSH_QUICK_TIMEOUT_MS = 45_000;
-/** Vercel serverless — allow enough time for theme push when Theme Access password is set. */
-const CLI_PUSH_SERVERLESS_TIMEOUT_MS = 55_000;
+/** Unused on Vercel — CLI push disabled in serverless for fast responses. */
+const CLI_PUSH_SERVERLESS_TIMEOUT_MS = 25_000;
 
 export { CLI_PUSH_TIMEOUT_MS, CLI_PUSH_QUICK_TIMEOUT_MS, CLI_PUSH_SERVERLESS_TIMEOUT_MS };
 
@@ -109,9 +110,8 @@ export function canAttemptThemeCliPush(opts?: { themeAccessPassword?: string | n
   return canUseThemeCliPush(opts);
 }
 
-/** Local button clicks use quick mode; Vercel/production always waits for theme write jobs. */
+/** Merchant clicks use quick mode everywhere; Vercel caps total work under maxDuration. */
 export function resolveThemeWriteQuickMode(requestQuick?: boolean): boolean {
-  if (isServerlessRuntime()) return false;
   return requestQuick === true;
 }
 
