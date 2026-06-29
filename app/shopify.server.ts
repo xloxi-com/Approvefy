@@ -45,7 +45,15 @@ const shopify = shopifyApp({
   },
   hooks: {
     afterAuth: async ({ session, admin }) => {
-      await runAppInstallSetup(admin, session.shop, session.accessToken, session.scope);
+      // Never block OAuth on Vercel — install setup can take 30s+ (theme API / CLI). Runs again from app layout loader.
+      void runAppInstallSetup(
+        admin,
+        session.shop,
+        session.accessToken,
+        session.scope,
+      ).catch((error) => {
+        console.error("[afterAuth] install setup failed:", error);
+      });
     },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN

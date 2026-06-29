@@ -5,16 +5,21 @@ import { spawn } from "node:child_process";
 const REGISTRATION_TEMPLATE_ONLY = "templates/page.customer-registration.json";
 const REGISTRATION_THEME_PATH = path.join(process.cwd(), "theme", "approvefy-registration");
 
+export function isServerlessRuntime(): boolean {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+}
+
 /** Shopify CLI theme push — works in local dev when `shopify` CLI is installed and authenticated. */
 export function canUseThemeCliPush(): boolean {
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "false") return false;
+
+  const themeToken = process.env.SHOPIFY_CLI_THEME_TOKEN?.trim();
+
+  // Serverless (Vercel): only Theme Access token can drive CLI — never spawn CLI without it.
+  if (isServerlessRuntime()) return !!themeToken;
+
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "true") return true;
-
-  // Theme Access password (CI/CD) — works on Vercel for automated theme push.
-  if (process.env.SHOPIFY_CLI_THEME_TOKEN?.trim()) return true;
-
-  // Serverless cannot spawn Shopify CLI without a theme access token.
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) return false;
+  if (themeToken) return true;
 
   // `shopify app dev` (see .env SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT).
   if (process.env.SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT?.trim()) return true;

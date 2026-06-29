@@ -467,7 +467,20 @@ export async function ensureRegistrationStorefrontPage(
     console.warn("[RegistrationPage] ensureRegistrationStorefrontPage failed:", error);
   }
 
-  const themeStatus = await getThemeSetupStatus(admin);
+  let themeStatus: Awaited<ReturnType<typeof getThemeSetupStatus>> = {
+    appEmbedEnabled: false,
+    registrationFormBlockOnPage: false,
+    registrationFormOnDefaultPage: false,
+    registrationPageTemplateExists: false,
+    mainThemeId: null,
+    themeCheckAvailable: false,
+  };
+  try {
+    themeStatus = await getThemeSetupStatus(admin);
+  } catch (error) {
+    console.warn("[RegistrationPage] getThemeSetupStatus failed:", error);
+  }
+
   const templateFileOnTheme = templateExists;
   const storefrontReady = isRegistrationPageStorefrontReady({
     pageExists,
