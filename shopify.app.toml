@@ -2,7 +2,7 @@
 
 client_id = "d915bdc3b1b08393f68636970989c5e8"
 name = "Approvefy"
-application_url = "https://approvefy.vercel.app/app"
+application_url = "https://approvefy.vercel.app/app/pricing"
 embedded = true
 
 [build]

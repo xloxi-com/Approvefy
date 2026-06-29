@@ -8,6 +8,8 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 import { runAppInstallSetup } from "./lib/app-install.server";
 import { resolveAppOAuthScopes } from "./lib/app-scopes.server";
+import { invalidateAppSubscriptionCache } from "./lib/app-subscription.server";
+import { invalidateMerchantPlanCache } from "./lib/merchant-plan.server";
 
 /** Canonical app URL; must match Partners `application_url` / redirect URLs for OAuth. */
 function resolveAppUrl(): string {
@@ -45,6 +47,8 @@ const shopify = shopifyApp({
   },
   hooks: {
     afterAuth: async ({ session, admin }) => {
+      invalidateAppSubscriptionCache(session.shop);
+      invalidateMerchantPlanCache(session.shop);
       // Never block OAuth on Vercel — install setup can take 30s+ (theme API / CLI). Runs again from app layout loader.
       void runAppInstallSetup(
         admin,

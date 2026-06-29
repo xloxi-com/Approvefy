@@ -2,7 +2,6 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 
 import {
   Outlet,
-  redirect,
   useLoaderData,
   useRouteError,
   useSearchParams,
@@ -14,19 +13,14 @@ import { AppProvider as PolarisAppProvider, Frame } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
 
 import {
-  invalidateAppSubscriptionCache,
-  isBillingExemptAppPath,
-  shopHasActiveAppSubscription,
-} from "../lib/app-subscription.server";
-import { syncMerchantPlanFromActiveSubscription } from "../lib/sync-merchant-plan-from-billing.server";
-import { invalidateMerchantPlanCache } from "../lib/merchant-plan.server";
-
+  enforceAppBillingGate,
+  resolveHasActiveAppSubscription,
+} from "../lib/app-billing-gate.server";
+import { runAppInstallSetup } from "../lib/app-install.server";
 import {
   mergeEmbedParamsForAppPath,
-  mergeEmbedParamsForServerPath,
 } from "../lib/shopify-embed-navigation";
 import { authenticate } from "../shopify.server";
-import { runAppInstallSetup } from "../lib/app-install.server";
 
 import { AppErrorPage } from "../components/AppErrorPage";
 import { CrispChatWidget } from "../components/CrispChatWidget";
@@ -41,35 +35,13 @@ const CrispChatWidgetMemo = memo(CrispChatWidget);
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  const url = new URL(request.url);
-  const pathname = url.pathname;
-  const billingCallback = url.searchParams.get("billing") === "callback";
 
-  /** Only hit Shopify on billing return — otherwise rely on warmed LRU caches (180s TTL). */
-  let subscribedPlan: Awaited<ReturnType<typeof syncMerchantPlanFromActiveSubscription>> = null;
-  if (billingCallback) {
-    invalidateAppSubscriptionCache(session.shop);
-    invalidateMerchantPlanCache(session.shop);
-    subscribedPlan = await syncMerchantPlanFromActiveSubscription(admin, session.shop);
-  }
-
-  const hasActiveSubscription =
-    subscribedPlan != null ||
-    (await shopHasActiveAppSubscription(admin, session.shop));
-
-  /** After plan approval, land on Home (not Pricing). */
-  if (billingCallback && hasActiveSubscription) {
-    throw redirect(mergeEmbedParamsForServerPath("/app", url.searchParams));
-  }
-
-  if (!isBillingExemptAppPath(pathname) && !hasActiveSubscription) {
-    /** Allow Home while Shopify activates the charge (return URL includes billing=callback). */
-    const awaitingBillingActivation = billingCallback && pathname === "/app";
-    if (!awaitingBillingActivation) {
-      const pricingPath = mergeEmbedParamsForServerPath("/app/pricing", url.searchParams);
-      throw redirect(pricingPath);
-    }
-  }
+  const hasActiveSubscription = await resolveHasActiveAppSubscription(
+    request,
+    admin,
+    session.shop,
+  );
+  enforceAppBillingGate(request, hasActiveSubscription);
 
   void runAppInstallSetup(admin, session.shop, session.accessToken, session.scope);
 
@@ -83,7 +55,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-/** Skip layout revalidation on child-route navigations — billing state is LRU-cached server-side. */
+/** Revalidate layout on in-app navigations so billing gate + nav stay accurate (Shopify reads are LRU-cached). */
 export function shouldRevalidate({
   currentUrl,
   nextUrl,
@@ -102,12 +74,8 @@ export function shouldRevalidate({
   ) {
     return true;
   }
-  if (
-    currentUrl.pathname.startsWith("/app") &&
-    nextUrl.pathname.startsWith("/app") &&
-    currentUrl.pathname !== nextUrl.pathname
-  ) {
-    return false;
+  if (currentUrl.pathname.startsWith("/app") && nextUrl.pathname.startsWith("/app")) {
+    return true;
   }
   return defaultShouldRevalidate;
 }

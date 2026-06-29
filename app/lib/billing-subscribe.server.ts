@@ -91,7 +91,7 @@ export async function billingSubscribeAction({ request }: ActionFunctionArgs) {
     shop,
     host,
   });
-  const returnUrl = `${appUrl}/app?${returnParams.toString()}`;
+  const returnUrl = `${appUrl}/app/pricing?${returnParams.toString()}`;
 
   const test = await shouldUseTestBilling(admin);
   const trialDays = trialDaysFromCopy();

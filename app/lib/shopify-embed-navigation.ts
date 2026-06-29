@@ -5,6 +5,9 @@
 
 export const SHOPIFY_EMBED_HOST_STORAGE_KEY = "approvefy_shopify_embed_host";
 
+/** First screen after install / OAuth — merchants must pick a plan before using the app. */
+export const APP_EMBED_ENTRY_PATH = "/app/pricing";
+
 /** Root `/` must not render the public landing page when Shopify opens the embedded app. */
 export function isEmbeddedShopifyAdminEntry(request: Request, url: URL): boolean {
     if (url.searchParams.get("shop")?.trim()) return true;
@@ -44,6 +47,20 @@ export function mergeEmbedParamsForServerPath(
     const next = new URLSearchParams();
     searchParams.forEach((value, key) => {
         if (!APP_NAV_SEARCH_PARAM_DROP.has(key)) next.append(key, value);
+    });
+    const qs = next.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+}
+
+/** Like mergeEmbedParamsForServerPath but keeps `billing=callback` (Pricing activation flow). */
+export function mergeEmbedParamsPreservingBilling(
+    pathname: string,
+    searchParams: URLSearchParams,
+): string {
+    const next = new URLSearchParams();
+    searchParams.forEach((value, key) => {
+        if (key === "formId") return;
+        next.append(key, value);
     });
     const qs = next.toString();
     return qs ? `${pathname}?${qs}` : pathname;

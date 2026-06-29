@@ -27,12 +27,20 @@ import {
 } from "./onboarding-status.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
 import { getCachedAppSettings } from "./cached-settings.server";
+import {
+  enforceAppBillingGate,
+  resolveHasActiveAppSubscription,
+} from "./app-billing-gate.server";
 
 type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
+
+  const hasActiveSubscription = await resolveHasActiveAppSubscription(request, admin, shop);
+  enforceAppBillingGate(request, hasActiveSubscription);
+
   const url = new URL(request.url);
   const billingPending = url.searchParams.get("billing") === "callback";
 

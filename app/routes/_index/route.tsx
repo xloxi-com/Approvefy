@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { redirect, useLoaderData } from "react-router";
 
 import {
+  APP_EMBED_ENTRY_PATH,
   isEmbeddedShopifyAdminEntry,
   redirectSearchParamsForAppEntry,
 } from "../../lib/shopify-embed-navigation";
@@ -14,7 +15,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   if (isEmbeddedShopifyAdminEntry(request, url)) {
     const qs = redirectSearchParamsForAppEntry(url.searchParams);
-    throw redirect(qs ? `/app?${qs}` : "/app");
+    throw redirect(qs ? `${APP_EMBED_ENTRY_PATH}?${qs}` : APP_EMBED_ENTRY_PATH);
   }
 
   return { showForm: Boolean(login) };
