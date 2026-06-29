@@ -1,9 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "react-router",
+  "installCommand": "npm ci --prefer-offline --no-audit --no-fund --progress=false --ignore-scripts",
   "buildCommand": "npm run vercel-build",
-  "installCommand": "npm ci --prefer-offline --no-audit --no-fund --progress=false",
   "regions": ["sin1"],
+  "build": {
+    "env": {
+      "PRISMA_HIDE_UPDATE_MESSAGE": "1",
+      "PRISMA_GENERATE_SKIP_AUTOINSTALL": "1",
+      "PRISMA_CLI_BINARY_TARGETS": "rhel-openssl-3.0.x"
+    }
+  },
   "headers": [
     {
       "source": "/assets/(.*)",

@@ -57,6 +57,8 @@ export default defineConfig({
     target: "es2022",
     cssMinify: true,
     cssCodeSplit: true,
+    sourcemap: false,
+    reportCompressedSize: false,
     modulePreload: { polyfill: true },
     rollupOptions: {
       output: {
