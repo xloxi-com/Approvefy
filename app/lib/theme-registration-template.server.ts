@@ -1,9 +1,13 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
   REGISTRATION_FORM_BLOCK_HANDLE,
   THEME_EXTENSION_HANDLE,
 } from "./theme-extension-setup-status";
 import {
   canUseThemeCliPush,
+  CLI_PUSH_QUICK_TIMEOUT_MS,
+  CLI_PUSH_TIMEOUT_MS,
   pushRegistrationTemplateViaCli,
   themeNumericIdFromGid,
 } from "./theme-cli-push.server";
@@ -20,6 +24,23 @@ type AdminGraphqlClient = {
 
 const REGISTRATION_PAGE_TEMPLATE = `page.${REGISTRATION_PAGE_HANDLE}`;
 const REGISTRATION_PAGE_TEMPLATE_FILE = `templates/${REGISTRATION_PAGE_TEMPLATE}.json`;
+
+function readBundledRegistrationPageTemplate(): string | null {
+  try {
+    const filePath = path.join(
+      process.cwd(),
+      "theme",
+      "approvefy-registration",
+      "templates",
+      "page.customer-registration.json",
+    );
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf8").trim();
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
 
 function stripJsonComments(raw: string): string {
   return raw.replace(/\/\*[\s\S]*?\*\//g, "").trim();
@@ -494,21 +515,37 @@ async function copyThemeFile(
   return (payload?.copiedThemeFiles ?? []).some((f) => f.filename === dstFilename);
 }
 
+type ThemeFilePollOptions = {
+  attempts?: number;
+  delayMs?: number;
+};
+
 async function pollForThemeFile(
   admin: AdminGraphqlClient,
   themeId: string,
   filename: string,
-  attempts = 6,
+  attemptsOrOpts: number | ThemeFilePollOptions = 6,
   delayMs = 700,
 ): Promise<string | null> {
-  for (let i = 0; i < attempts; i++) {
+  const opts =
+    typeof attemptsOrOpts === "number"
+      ? { attempts: attemptsOrOpts, delayMs }
+      : attemptsOrOpts;
+  const maxAttempts = opts.attempts ?? 6;
+  const waitMs = opts.delayMs ?? 700;
+
+  for (let i = 0; i < maxAttempts; i++) {
     const raw = await readThemeFile(admin, themeId, filename);
     if (raw?.trim()) return raw;
-    if (i < attempts - 1) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (i < maxAttempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
   return null;
+}
+
+function quickThemeFilePoll(): ThemeFilePollOptions {
+  return { attempts: 2, delayMs: 200 };
 }
 
 async function upsertDedicatedRegistrationTemplateShell(
@@ -1024,19 +1061,65 @@ export type WriteRegistrationPageTemplateShellOptions = {
   quickPoll?: boolean;
 };
 
-/** Create templates/page.customer-registration.json — copy, API upsert, REST, then CLI fallback. */
-export async function createCustomerRegistrationPageTemplate(
-  admin: AdminGraphqlClient,
-  shop: string,
-  opts?: { accessToken?: string },
-): Promise<{
+export type CreateCustomerRegistrationPageTemplateOptions = {
+  accessToken?: string;
+  /** Merchant button click — mirrors theme editor "Create template" with minimal latency. */
+  quick?: boolean;
+};
+
+type CreateCustomerRegistrationPageTemplateResult = {
   templateExists: boolean;
   themeId: string | null;
   savedViaApi: boolean;
   savedViaCli: boolean;
   themeFileWriteAccessDenied: boolean;
-}> {
-  const empty = {
+};
+
+function templateCreateSuccess(
+  themeId: string,
+  savedViaApi: boolean,
+  savedViaCli: boolean,
+): CreateCustomerRegistrationPageTemplateResult {
+  return {
+    templateExists: true,
+    themeId,
+    savedViaApi,
+    savedViaCli,
+    themeFileWriteAccessDenied: false,
+  };
+}
+
+function resolveTemplateBodyFromDefaultPage(pageJson: string | null): string {
+  const bundledBody =
+    readBundledRegistrationPageTemplate() ?? buildRegistrationPageTemplateShellJson();
+  const stripped = pageJson?.trim() ? stripRegistrationFormBlocksFromTemplate(pageJson) : null;
+  return stripped ?? pageJson?.trim() ?? bundledBody;
+}
+
+async function verifyRegistrationTemplateWritten(
+  admin: AdminGraphqlClient,
+  themeId: string,
+  quick: boolean,
+): Promise<string | null> {
+  return pollForThemeFile(
+    admin,
+    themeId,
+    REGISTRATION_PAGE_TEMPLATE_FILE,
+    quick ? quickThemeFilePoll() : { attempts: 6, delayMs: 500 },
+  );
+}
+
+/**
+ * Create templates/page.customer-registration.json — same outcome as theme editor
+ * Default page → Create template → "Customer Registration".
+ * Fast path: themeFilesCopy → Theme REST → CLI → GraphQL upsert.
+ */
+export async function createCustomerRegistrationPageTemplate(
+  admin: AdminGraphqlClient,
+  shop: string,
+  opts?: CreateCustomerRegistrationPageTemplateOptions,
+): Promise<CreateCustomerRegistrationPageTemplateResult> {
+  const empty: CreateCustomerRegistrationPageTemplateResult = {
     templateExists: false,
     themeId: null,
     savedViaApi: false,
@@ -1045,98 +1128,113 @@ export async function createCustomerRegistrationPageTemplate(
   };
 
   try {
+    const quick = opts?.quick === true;
+    const accessToken = opts?.accessToken?.trim();
+
     const themeId = await getMainThemeId(admin);
     if (!themeId) return empty;
 
-    const existing = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
+    const [existing, defaultPageJson] = await Promise.all([
+      readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE),
+      readThemeFile(admin, themeId, "templates/page.json"),
+    ]);
     if (existing?.trim()) {
-      return {
-        templateExists: true,
-        themeId,
-        savedViaApi: false,
-        savedViaCli: false,
-        themeFileWriteAccessDenied: false,
-      };
+      return templateCreateSuccess(themeId, false, false);
     }
 
-    await removeRegistrationFormFromDefaultPageTemplate(admin, themeId);
-
-    const created = await ensureDedicatedRegistrationTemplateFile(admin, themeId);
-    if (created?.trim()) {
-      console.info(
-        "[ThemeRegistrationTemplate] page.customer-registration.json created via theme API",
-      );
-      return {
-        templateExists: true,
-        themeId,
-        savedViaApi: true,
-        savedViaCli: false,
-        themeFileWriteAccessDenied: false,
-      };
-    }
-
+    const templateBody = resolveTemplateBodyFromDefaultPage(defaultPageJson);
     const themeNumericId = themeNumericIdFromGid(themeId);
-    if (canUseThemeCliPush() && themeNumericId) {
-      const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId);
-      if (cli.ok) {
-        const written = await pollForThemeFile(
-          admin,
-          themeId,
-          REGISTRATION_PAGE_TEMPLATE_FILE,
-          6,
-          500,
-        );
-        if (written?.trim()) {
-          console.info(
-            "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
-          );
-          return {
-            templateExists: true,
-            themeId,
-            savedViaApi: false,
-            savedViaCli: true,
-            themeFileWriteAccessDenied: false,
-          };
-        }
-      } else if (cli.error) {
-        console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error);
-      }
+
+    if (!quick) {
+      void removeRegistrationFormFromDefaultPageTemplate(admin, themeId).catch((err) => {
+        console.warn("[ThemeRegistrationTemplate] default page cleanup failed:", err);
+      });
     }
 
-    const pageJson = await readThemeFile(admin, themeId, "templates/page.json");
-    const stripped = pageJson?.trim()
-      ? stripRegistrationFormBlocksFromTemplate(pageJson)
-      : null;
-    const shellBody =
-      stripped ?? pageJson?.trim() ?? buildRegistrationPageTemplateShellJson();
+    if (canUseThemeCliPush() && themeNumericId) {
+      const cli = await pushRegistrationTemplateViaCli(shop, themeNumericId, {
+        timeoutMs: quick ? CLI_PUSH_QUICK_TIMEOUT_MS : CLI_PUSH_TIMEOUT_MS,
+      });
+      if (cli.ok) {
+        console.info(
+          "[ThemeRegistrationTemplate] page.customer-registration.json pushed via Shopify CLI",
+        );
+        return templateCreateSuccess(themeId, false, true);
+      }
+      console.warn("[ThemeRegistrationTemplate] CLI theme push failed:", cli.error ?? "unknown");
+    }
 
-    const accessToken = opts?.accessToken?.trim();
+    const copied = await copyThemeFile(
+      admin,
+      themeId,
+      "templates/page.json",
+      REGISTRATION_PAGE_TEMPLATE_FILE,
+    );
+    if (copied) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json created via themeFilesCopy",
+      );
+      return templateCreateSuccess(themeId, true, false);
+    }
+
     if (accessToken) {
       const rest = await putThemeAssetViaRest(
         shop,
         accessToken,
         themeId,
         REGISTRATION_PAGE_TEMPLATE_FILE,
-        shellBody,
+        templateBody,
       );
       if (rest.ok) {
-        const written = await pollForThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE, 4, 500);
-        if (written?.trim()) {
-          console.info(
-            "[ThemeRegistrationTemplate] page.customer-registration.json created via Theme REST API",
-          );
-          return {
-            templateExists: true,
-            themeId,
-            savedViaApi: true,
-            savedViaCli: false,
-            themeFileWriteAccessDenied: false,
-          };
-        }
+        console.info(
+          "[ThemeRegistrationTemplate] page.customer-registration.json created via Theme REST API",
+        );
+        return templateCreateSuccess(themeId, true, false);
+      }
+      if (rest.accessDenied) {
+        console.warn(
+          "[ThemeRegistrationTemplate] Theme REST asset write denied — trying GraphQL fallbacks",
+        );
+      } else if (rest.error) {
+        console.warn("[ThemeRegistrationTemplate] Theme REST asset write failed:", rest.error);
       }
     }
 
-    return writeRegistrationPageTemplateShell(admin, shop);
+    const created = await ensureDedicatedRegistrationTemplateFile(admin, themeId);
+    if (created?.trim()) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json created via theme API",
+      );
+      return templateCreateSuccess(themeId, true, false);
+    }
+
+    const shellResult = await writeRegistrationPageTemplateShell(admin, shop, {
+      skipCliPush: true,
+      quickPoll: quick,
+    });
+    if (shellResult.templateExists) {
+      return {
+        templateExists: true,
+        themeId: shellResult.themeId,
+        savedViaApi: shellResult.savedViaApi,
+        savedViaCli: shellResult.savedViaCli,
+        themeFileWriteAccessDenied: shellResult.themeFileWriteAccessDenied,
+      };
+    }
+
+    const finalCheck = await verifyRegistrationTemplateWritten(admin, themeId, quick);
+    if (finalCheck?.trim()) {
+      console.info(
+        "[ThemeRegistrationTemplate] page.customer-registration.json verified after write attempts",
+      );
+      return templateCreateSuccess(themeId, true, false);
+    }
+
+    return {
+      ...empty,
+      themeId,
+      themeFileWriteAccessDenied: shellResult.themeFileWriteAccessDenied,
+    };
   } catch (error) {
     console.warn(
       "[ThemeRegistrationTemplate] createCustomerRegistrationPageTemplate failed:",

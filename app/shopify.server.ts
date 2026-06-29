@@ -7,6 +7,7 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 import { runAppInstallSetup } from "./lib/app-install.server";
+import { resolveAppOAuthScopes } from "./lib/app-scopes.server";
 
 /** Canonical app URL; must match Partners `application_url` / redirect URLs for OAuth. */
 function resolveAppUrl(): string {
@@ -34,7 +35,7 @@ const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.October25,
-  scopes: process.env.SCOPES?.split(","),
+  scopes: resolveAppOAuthScopes(),
   appUrl: resolveAppUrl(),
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
@@ -44,7 +45,7 @@ const shopify = shopifyApp({
   },
   hooks: {
     afterAuth: async ({ session, admin }) => {
-      await runAppInstallSetup(admin, session.shop);
+      await runAppInstallSetup(admin, session.shop, session.accessToken, session.scope);
     },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN

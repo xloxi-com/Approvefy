@@ -97,7 +97,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  void runAppInstallSetup(admin, session.shop);
+  void runAppInstallSetup(admin, session.shop, session.accessToken, session.scope);
 
 
 

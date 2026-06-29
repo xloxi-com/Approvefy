@@ -1,0 +1,312 @@
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { data } from "react-router";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+import { getAnalytics } from "../models/registration-analytics.server";
+import { REGISTRATION_PAGE_HANDLE, REGISTRATION_PAGE_PATH } from "./registration-page.constants";
+import {
+  buildRegistrationPageThemeEditorUrl,
+  ensureRegistrationStorefrontPage,
+  findRegistrationPage,
+  registrationStorefrontUrl,
+  runAddRegistrationFormSetup,
+  runCreateRegistrationPageSetup,
+  runCreateRegistrationTemplateOnlySetup,
+  runPublishRegistrationPageSetup,
+  resolveThemeWriteAccessToken,
+} from "./registration-page.server";
+import { cleanRegistrationFormOffDefaultPageTemplate } from "./theme-registration-template.server";
+import { canUseThemeCliPush } from "./theme-cli-push.server";
+import { getThemeSetupStatus } from "./theme-setup-status.server";
+import { buildAppEmbedThemeEditorUrl, ensureAppEmbedEnabled } from "./theme-app-embed.server";
+import {
+  ensureOnboardingFormReviewedWhenFormsExist,
+  isOnboardingFormReviewed,
+  isOnboardingSettingsSaved,
+} from "./onboarding-status.server";
+import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
+
+type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session.shop;
+  const url = new URL(request.url);
+  const billingPending = url.searchParams.get("billing") === "callback";
+
+  let formsCount = 0;
+  let formReviewed = false;
+  let settingsSaved = false;
+  let dbUnavailable = false;
+  let registrationPageThemeEditorUrl = "";
+  let registrationPageStorefrontUrl = "";
+  let registrationPageCreated = false;
+  let registrationPageExists = false;
+  let registrationPagePublished = false;
+  let registrationPageTemplateExists = false;
+  let registrationFormOnDefaultPage = false;
+  let appEmbedEnabled = false;
+  let registrationFormBlockOnPage = false;
+  let themeSetupCheckAvailable = false;
+  let registrationNeedsManualTemplate = false;
+
+  const t0 = performance.now();
+
+  let appSettingsRow: { customerApprovalSettings: unknown } | null = null;
+  try {
+    const [formCount, settingsRow] = await Promise.all([
+      prisma.formConfig.count({ where: { shop } }),
+      prisma.appSettings.findUnique({
+        where: { shop },
+        select: { customerApprovalSettings: true },
+      }),
+    ]);
+    formsCount = formCount;
+    appSettingsRow = settingsRow;
+    if (formCount > 0) {
+      void ensureOnboardingFormReviewedWhenFormsExist(shop).catch((err) => {
+        console.warn("[Home] ensureOnboardingFormReviewedWhenFormsExist failed:", err);
+      });
+    }
+  } catch (error) {
+    dbUnavailable = true;
+    console.error("[Home] Database query failed:", error);
+  }
+
+  let themeSetup = {
+    appEmbedEnabled: false,
+    registrationFormBlockOnPage: false,
+    registrationFormOnDefaultPage: false,
+    registrationPageTemplateExists: false,
+    mainThemeId: null as string | null,
+    themeCheckAvailable: false,
+  };
+  let existingPage: Awaited<ReturnType<typeof findRegistrationPage>> = null;
+  try {
+    [themeSetup, existingPage] = await Promise.all([
+      getThemeSetupStatus(admin),
+      findRegistrationPage(admin),
+    ]);
+  } catch (error) {
+    console.warn("[Home] Theme/page setup check failed:", error);
+  }
+
+  if (!dbUnavailable) {
+    const approvalSettings = parseCustomerApprovalSettings(appSettingsRow?.customerApprovalSettings);
+    formReviewed = isOnboardingFormReviewed(approvalSettings) || formsCount > 0;
+    settingsSaved = isOnboardingSettingsSaved(approvalSettings);
+
+    let pageExists = !!existingPage;
+    let pagePublished = existingPage?.isPublished === true;
+    let templateExists = themeSetup.registrationPageTemplateExists;
+    let blockOnTemplate = themeSetup.registrationFormBlockOnPage;
+
+    if (themeSetup.themeCheckAvailable) {
+      const needsRegistrationPageEnsure =
+        !pageExists ||
+        !templateExists ||
+        existingPage?.templateSuffix?.toLowerCase() !== REGISTRATION_PAGE_HANDLE;
+
+      if (needsRegistrationPageEnsure) {
+        try {
+          const ensured = await ensureRegistrationStorefrontPage(admin, shop);
+          pageExists = ensured.pageExists;
+          pagePublished = ensured.pagePublished;
+          templateExists = ensured.templateExists;
+          blockOnTemplate = ensured.blockOnTemplate;
+          registrationPageCreated = ensured.created;
+          registrationNeedsManualTemplate = ensured.needsManualTemplate;
+          existingPage = pageExists ? await findRegistrationPage(admin) : null;
+        } catch (error) {
+          console.warn("[Home] ensureRegistrationStorefrontPage failed:", error);
+        }
+      }
+
+      void cleanRegistrationFormOffDefaultPageTemplate(admin).catch((err) => {
+        console.warn("[Home] cleanRegistrationFormOffDefaultPageTemplate failed:", err);
+      });
+    }
+
+    registrationPageThemeEditorUrl = buildRegistrationPageThemeEditorUrl(shop, {
+      pageExists,
+      templateExists,
+      blockOnTemplate,
+      themeGid: themeSetup.mainThemeId,
+    });
+    registrationPageStorefrontUrl = registrationStorefrontUrl(shop);
+    registrationPageExists = pageExists;
+    registrationPagePublished = pagePublished;
+    registrationPageTemplateExists = templateExists;
+    registrationFormOnDefaultPage = themeSetup.registrationFormOnDefaultPage;
+    appEmbedEnabled = themeSetup.appEmbedEnabled;
+    registrationFormBlockOnPage = blockOnTemplate;
+    themeSetupCheckAvailable = themeSetup.themeCheckAvailable;
+
+    if (!themeSetup.appEmbedEnabled && themeSetup.themeCheckAvailable) {
+      void ensureAppEmbedEnabled(admin).catch((err) => {
+        console.warn("[Home] ensureAppEmbedEnabled background failed:", err);
+      });
+    }
+  }
+  const dbMs = Math.round(performance.now() - t0);
+
+  const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
+  const themeEditorUrl = buildAppEmbedThemeEditorUrl(shop);
+  const storefrontUrl = `https://${storeHandle}.myshopify.com`;
+
+  const setupTasksTotal = 5;
+
+  const analyticsPromise: Promise<Analytics | null> = getAnalytics(shop).catch(
+    (err: unknown) => {
+      console.warn("[Home] analytics fetch failed:", err);
+      return null;
+    },
+  );
+
+  return data(
+    {
+      themeEditorUrl,
+      storefrontUrl,
+      formsCount,
+      formReviewed,
+      settingsSaved,
+      dbUnavailable,
+      setupTasksTotal,
+      analytics: analyticsPromise,
+      billingPending,
+      registrationPagePath: REGISTRATION_PAGE_PATH,
+      registrationPageThemeEditorUrl,
+      registrationPageStorefrontUrl,
+      registrationPageCreated,
+      registrationPageExists,
+      registrationPagePublished,
+      registrationPageTemplateExists,
+      registrationFormOnDefaultPage,
+      appEmbedEnabled,
+      registrationFormBlockOnPage,
+      themeSetupCheckAvailable,
+      registrationNeedsManualTemplate,
+    },
+    { headers: { "Server-Timing": `db;dur=${dbMs}` } },
+  );
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session, admin } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+  const shop = session.shop;
+
+  if (intent === "enable-app-embed") {
+    const embed = await ensureAppEmbedEnabled(admin);
+    return data({
+      ok: true as const,
+      intent: "enable-app-embed" as const,
+      savedViaApi: embed.enabled && !embed.writeFailed,
+      writeFailed: embed.writeFailed,
+      openUrl: buildAppEmbedThemeEditorUrl(shop),
+    });
+  }
+
+  if (intent === "create-registration-page") {
+    try {
+      const setup = await runCreateRegistrationPageSetup(admin, shop);
+      return data({
+        ok: true as const,
+        intent: "create-registration-page" as const,
+        pageExists: setup.pageExists,
+        pagePublished: setup.pagePublished,
+        pageCreated: setup.pageCreated,
+        openUrl: setup.themeEditorUrl,
+      });
+    } catch (error) {
+      console.error("[Home] create-registration-page action failed:", error);
+      return data({ ok: false as const, intent: "create-registration-page" as const });
+    }
+  }
+
+  if (intent === "publish-registration-page") {
+    try {
+      const setup = await runPublishRegistrationPageSetup(admin, shop);
+      return data({
+        ok: true as const,
+        intent: "publish-registration-page" as const,
+        pageExists: setup.pageExists,
+        pagePublished: setup.pagePublished,
+      });
+    } catch (error) {
+      console.error("[Home] publish-registration-page action failed:", error);
+      return data({ ok: false as const, intent: "publish-registration-page" as const });
+    }
+  }
+
+  if (intent === "create-registration-template") {
+    try {
+      const token = await resolveThemeWriteAccessToken(shop, session.accessToken);
+      const setup = await runCreateRegistrationTemplateOnlySetup(admin, shop, token);
+      return data({
+        ok: true as const,
+        intent: "create-registration-template" as const,
+        pageExists: setup.pageExists,
+        pagePublished: setup.pagePublished,
+        templateExists: setup.templateExists,
+        templateCreated: setup.templateCreated,
+        needsManualTemplate: setup.needsManualTemplate,
+        themeFileWriteAccessDenied: setup.themeFileWriteAccessDenied,
+        themeCliAvailable: setup.themeCliAvailable,
+        blockOnTemplate: setup.blockOnTemplate,
+        openUrl: setup.themeEditorUrl,
+      });
+    } catch (error) {
+      console.error("[Home] create-registration-template action failed:", error);
+      return data({
+        ok: true as const,
+        intent: "create-registration-template" as const,
+        templateExists: false,
+        needsManualTemplate: true,
+        themeFileWriteAccessDenied: true,
+        themeCliAvailable: canUseThemeCliPush(),
+        openUrl: buildRegistrationPageThemeEditorUrl(shop, {
+          pageExists: true,
+          templateExists: false,
+        }),
+      });
+    }
+  }
+
+  if (intent === "add-registration-form") {
+    try {
+      const token = await resolveThemeWriteAccessToken(shop, session.accessToken);
+      const setup = await runAddRegistrationFormSetup(admin, shop, token);
+      return data({
+        ok: true as const,
+        intent: "add-registration-form" as const,
+        openUrl:
+          setup.themeEditorUrl ||
+          buildRegistrationPageThemeEditorUrl(shop, {
+            pageExists: setup.pageExists,
+            templateExists: setup.templateExists,
+            blockOnTemplate: setup.blockOnTemplate,
+          }),
+        blockOnTemplate: setup.blockOnTemplate,
+        templateExists: setup.templateExists,
+        templateWriteFailed: setup.templateWriteFailed,
+        needsManualTemplate: setup.needsManualTemplate,
+        pageExists: setup.pageExists,
+        needsEditorSave: setup.needsEditorSave,
+      });
+    } catch (error) {
+      console.error("[Home] add-registration-form action failed:", error);
+      return data({
+        ok: false as const,
+        intent: "add-registration-form" as const,
+        openUrl: buildRegistrationPageThemeEditorUrl(shop, {
+          pageExists: true,
+          templateExists: false,
+        }),
+      });
+    }
+  }
+
+  return data({ ok: false as const });
+};

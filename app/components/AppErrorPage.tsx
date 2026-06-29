@@ -1,4 +1,5 @@
 import {
+  AppProvider as PolarisAppProvider,
   BlockStack,
   Button,
   Card,
@@ -6,6 +7,7 @@ import {
   Page,
   Text,
 } from "@shopify/polaris";
+import translations from "@shopify/polaris/locales/en.json";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { APP_DISPLAY_NAME } from "../lib/app-constants";
@@ -34,36 +36,38 @@ export function AppErrorPage({
     details.status > 0 ? String(details.status) : details.kind === "network" ? "!" : "Error";
 
   return (
-    <div className="app-error-page">
-      <Page title={pageTitle} fullWidth>
-        <div className="app-error-page-wrap">
-          <Card padding="600">
-            <BlockStack gap="500" inlineAlign="center">
-              <div className="app-error-page-code" aria-hidden="true">
-                {statusLabel}
-              </div>
+    <PolarisAppProvider i18n={translations}>
+      <div className="app-error-page">
+        <Page title={pageTitle} fullWidth>
+          <div className="app-error-page-wrap">
+            <Card padding="600">
+              <BlockStack gap="500" inlineAlign="center">
+                <div className="app-error-page-code" aria-hidden="true">
+                  {statusLabel}
+                </div>
 
-              <BlockStack gap="200" inlineAlign="center">
-                <Text as="h1" variant="headingLg" alignment="center">
-                  {details.title}
-                </Text>
-                <Text as="p" variant="bodyMd" tone="subdued" alignment="center">
-                  {details.message}
-                </Text>
+                <BlockStack gap="200" inlineAlign="center">
+                  <Text as="h1" variant="headingLg" alignment="center">
+                    {details.title}
+                  </Text>
+                  <Text as="p" variant="bodyMd" tone="subdued" alignment="center">
+                    {details.message}
+                  </Text>
+                </BlockStack>
+
+                <InlineStack gap="300" align="center">
+                  <Button variant="primary" onClick={() => navigate(homeHref)}>
+                    Go to Home
+                  </Button>
+                  {details.showRetry ? (
+                    <Button onClick={() => window.location.reload()}>Try again</Button>
+                  ) : null}
+                </InlineStack>
               </BlockStack>
-
-              <InlineStack gap="300" align="center">
-                <Button variant="primary" onClick={() => navigate(homeHref)}>
-                  Go to Home
-                </Button>
-                {details.showRetry ? (
-                  <Button onClick={() => window.location.reload()}>Try again</Button>
-                ) : null}
-              </InlineStack>
-            </BlockStack>
-          </Card>
-        </div>
-      </Page>
-    </div>
+            </Card>
+          </div>
+        </Page>
+      </div>
+    </PolarisAppProvider>
   );
 }

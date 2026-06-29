@@ -1,14 +1,23 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 
 const REGISTRATION_TEMPLATE_ONLY = "templates/page.customer-registration.json";
 const REGISTRATION_THEME_PATH = path.join(process.cwd(), "theme", "approvefy-registration");
 
-/** Shopify CLI theme push (Partners login) — works in local dev when `shopify app dev` is authenticated. */
+/** Shopify CLI theme push — works in local dev when `shopify` CLI is installed and authenticated. */
 export function canUseThemeCliPush(): boolean {
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "false") return false;
   if (process.env.APPROVEFY_THEME_CLI_PUSH === "true") return true;
+
+  // Serverless cannot spawn Shopify CLI.
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) return false;
+
+  // `shopify app dev` (see .env SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT).
+  if (process.env.SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT?.trim()) return true;
+
+  // Local machine with Shopify CLI installed — works even when SHOPIFY_APP_URL points at production.
+  if (resolveShopifyCliBin()) return true;
 
   const appUrl = (process.env.SHOPIFY_APP_URL || process.env.HOST || "").toLowerCase();
   return (
@@ -20,7 +29,10 @@ export function canUseThemeCliPush(): boolean {
   );
 }
 
-const CLI_PUSH_TIMEOUT_MS = 45_000;
+const CLI_PUSH_TIMEOUT_MS = 60_000;
+const CLI_PUSH_QUICK_TIMEOUT_MS = 45_000;
+
+export { CLI_PUSH_TIMEOUT_MS, CLI_PUSH_QUICK_TIMEOUT_MS };
 
 /** Resolve @shopify/cli/bin/run.js — spawn via Node (Windows-safe; raw `shopify` / npm often hang). */
 export function resolveShopifyCliBin(): string | null {
@@ -50,6 +62,30 @@ export function resolveShopifyCliBin(): string | null {
   return null;
 }
 
+/** Resolve how to invoke Shopify CLI for theme push (global CLI → local @shopify/cli — never project shopify.cmd shim). */
+export function resolveShopifyThemePushCommand(): {
+  executable: string;
+  baseArgs: string[];
+  useShell: boolean;
+} {
+  const cliBin = resolveShopifyCliBin();
+  if (cliBin) {
+    return { executable: process.execPath, baseArgs: [cliBin], useShell: false };
+  }
+
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA?.trim();
+    if (appData) {
+      const globalShopifyCmd = path.join(appData, "npm", "shopify.cmd");
+      if (fs.existsSync(globalShopifyCmd)) {
+        return { executable: globalShopifyCmd, baseArgs: [], useShell: true };
+      }
+    }
+  }
+
+  return { executable: "shopify", baseArgs: [], useShell: true };
+}
+
 export async function pushRegistrationTemplateViaCli(
   shop: string,
   themeNumericId: string,
@@ -63,7 +99,8 @@ export async function pushRegistrationTemplateViaCli(
   }
 
   const cliBin = resolveShopifyCliBin();
-  if (!cliBin) {
+  const invoker = resolveShopifyThemePushCommand();
+  if (!invoker.useShell && !cliBin) {
     return {
       ok: false,
       error: "Shopify CLI not found — install @shopify/cli globally or set APPROVEFY_SHOPIFY_CLI_BIN",
@@ -85,8 +122,8 @@ export async function pushRegistrationTemplateViaCli(
       resolve(result);
     };
 
-    const args = [
-      cliBin,
+    const pushArgs = [
+      ...invoker.baseArgs,
       "theme",
       "push",
       "--store",
@@ -101,9 +138,10 @@ export async function pushRegistrationTemplateViaCli(
       "--force",
     ];
 
-    const child = spawn(process.execPath, args, {
+    const child = spawn(invoker.executable, pushArgs, {
       cwd: process.cwd(),
       windowsHide: true,
+      shell: invoker.useShell,
       env: {
         ...process.env,
         CI: "1",
