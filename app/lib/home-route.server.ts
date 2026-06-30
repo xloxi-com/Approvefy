@@ -30,12 +30,24 @@ import { getCachedAppSettings } from "./cached-settings.server";
 
 type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
 
+const EMPTY_THEME_SETUP = {
+  appEmbedEnabled: false,
+  registrationFormBlockOnPage: false,
+  registrationFormOnDefaultPage: false,
+  registrationPageTemplateExists: false,
+  mainThemeId: null as string | null,
+  themeCheckAvailable: false,
+};
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
   const url = new URL(request.url);
   const billingPending = url.searchParams.get("billing") === "callback";
+  const registrationPageCreated = false;
+
+  const t0 = performance.now();
 
   let formsCount = 0;
   let formReviewed = false;
@@ -43,7 +55,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let dbUnavailable = false;
   let registrationPageThemeEditorUrl = "";
   let registrationPageStorefrontUrl = "";
-  let registrationPageCreated = false;
   let registrationPageExists = false;
   let registrationPagePublished = false;
   let registrationPageTemplateExists = false;
@@ -55,14 +66,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let themeSetupCheckAvailable = false;
   let registrationNeedsManualTemplate = false;
 
-  const t0 = performance.now();
-
   let appSettingsRow: { customerApprovalSettings: unknown } | null = null;
-  try {
-    const [formCount, settingsRow] = await Promise.all([
+  let themeSetup = EMPTY_THEME_SETUP;
+  let existingPage: Awaited<ReturnType<typeof findRegistrationPage>> = null;
+
+  const [dbBundle, themeBundle, pageBundle] = await Promise.allSettled([
+    Promise.all([
       prisma.formConfig.count({ where: { shop } }),
       getCachedAppSettings(shop),
-    ]);
+    ]),
+    getThemeSetupStatus(admin, shop),
+    findRegistrationPage(admin, shop),
+  ]);
+
+  if (dbBundle.status === "fulfilled") {
+    const [formCount, settingsRow] = dbBundle.value;
     formsCount = formCount;
     appSettingsRow = settingsRow;
     if (formCount > 0) {
@@ -70,27 +88,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         console.warn("[Home] ensureOnboardingFormReviewedWhenFormsExist failed:", err);
       });
     }
-  } catch (error) {
+  } else {
     dbUnavailable = true;
-    console.error("[Home] Database query failed:", error);
+    console.error("[Home] Database query failed:", dbBundle.reason);
   }
 
-  let themeSetup = {
-    appEmbedEnabled: false,
-    registrationFormBlockOnPage: false,
-    registrationFormOnDefaultPage: false,
-    registrationPageTemplateExists: false,
-    mainThemeId: null as string | null,
-    themeCheckAvailable: false,
-  };
-  let existingPage: Awaited<ReturnType<typeof findRegistrationPage>> = null;
-  try {
-    [themeSetup, existingPage] = await Promise.all([
-      getThemeSetupStatus(admin, shop),
-      findRegistrationPage(admin, shop),
-    ]);
-  } catch (error) {
-    console.warn("[Home] Theme/page setup check failed:", error);
+  if (themeBundle.status === "fulfilled") {
+    themeSetup = themeBundle.value;
+  } else {
+    console.warn("[Home] Theme setup check failed:", themeBundle.reason);
+  }
+
+  if (pageBundle.status === "fulfilled") {
+    existingPage = pageBundle.value;
+  } else {
+    console.warn("[Home] Registration page lookup failed:", pageBundle.reason);
   }
 
   if (!dbUnavailable) {
@@ -98,18 +110,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     formReviewed = isOnboardingFormReviewed(approvalSettings) || formsCount > 0;
     settingsSaved = isOnboardingSettingsSaved(approvalSettings);
 
-    let pageExists = !!existingPage;
-    let pagePublished = existingPage?.isPublished === true;
-    let templateFileExists = themeSetup.registrationPageTemplateExists;
-    let blockOnTemplate = themeSetup.registrationFormBlockOnPage;
+    const pageExists = !!existingPage;
+    const pagePublished = existingPage?.isPublished === true;
+    const templateFileExists = themeSetup.registrationPageTemplateExists;
+    const blockOnTemplate = themeSetup.registrationFormBlockOnPage;
+
+    registrationStorefrontReady = isRegistrationPageStorefrontReady({
+      pageExists,
+      pagePublished,
+      templateFileExists,
+      appEmbedEnabled: themeSetup.appEmbedEnabled,
+    });
 
     if (themeSetup.themeCheckAvailable) {
-      const storefrontReadyInitial = isRegistrationPageStorefrontReady({
-        pageExists,
-        pagePublished,
-        templateFileExists,
-        appEmbedEnabled: themeSetup.appEmbedEnabled,
-      });
       const needsSuffixSync =
         templateFileExists &&
         existingPage?.templateSuffix?.toLowerCase() !== REGISTRATION_PAGE_HANDLE;
@@ -121,7 +134,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         !needsSuffixSync;
       const needsRegistrationPageEnsure =
         !setupAlreadyComplete &&
-        (!pageExists || !storefrontReadyInitial || needsSuffixSync);
+        (!pageExists || !registrationStorefrontReady || needsSuffixSync);
 
       if (needsRegistrationPageEnsure) {
         void ensureRegistrationStorefrontPage(admin, shop).catch((error) => {
@@ -144,12 +157,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     registrationPageExists = pageExists;
     registrationPagePublished = pagePublished;
     registrationThemeTemplateFileExists = templateFileExists;
-    registrationStorefrontReady = isRegistrationPageStorefrontReady({
-      pageExists,
-      pagePublished,
-      templateFileExists,
-      appEmbedEnabled: themeSetup.appEmbedEnabled,
-    });
     registrationPageTemplateExists = registrationThemeTemplateFileExists;
     registrationFormOnDefaultPage = themeSetup.registrationFormOnDefaultPage;
     appEmbedEnabled = themeSetup.appEmbedEnabled;
