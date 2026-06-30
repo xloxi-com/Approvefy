@@ -23,6 +23,7 @@ window.__REGISTRATION_FORM_CONFIG__ = {
   contactPageUrl: {% if pages.contact != blank and pages.contact.url != blank %}{{ pages.contact.url | json }}{% else %}{{ routes.root_url | append: 'pages/contact' | json }}{% endif %},
   registrationPagePath: {% assign approvefy_reg_page = pages['customer-registration'] %}{% if approvefy_reg_page != blank and approvefy_reg_page.url != blank %}{{ approvefy_reg_page.url | json }}{% else %}{{ '/pages/customer-registration' | json }}{% endif %}
 };
+window.__approvefySignInRedirectEnabled = true;
 (function () {
   var cfg = window.__REGISTRATION_FORM_CONFIG__;
   if (!cfg || !cfg.shop) return;
@@ -225,10 +226,11 @@ window.__REGISTRATION_FORM_CONFIG__ = {
   function isHeaderAccountTarget(el) {
     if (!el || !el.closest) return false;
     if (el.closest('.approvefy-auth-tabs')) return false;
-    var headerSel =
-      'header, sticky-header, .header, #shopify-section-header, [id*="header"], .header__icons, shopify-account';
-    if (!el.closest(headerSel)) return false;
+    if (el.nodeType === 1 && String(el.nodeName || '').toLowerCase() === 'shopify-account') return true;
     if (el.closest('shopify-account')) return true;
+    var headerSel =
+      'header, header-component, sticky-header, .header, #shopify-section-header, [id*="header"], .header__icons, shopify-account';
+    if (!el.closest(headerSel)) return false;
     var link = el.closest('a[href]');
     if (!link) return false;
     var href = (link.getAttribute('href') || link.href || '').toLowerCase();
@@ -257,5 +259,7 @@ window.__REGISTRATION_FORM_CONFIG__ = {
   }
   document.addEventListener('click', onAccountIcon, true);
   document.addEventListener('pointerdown', onAccountIcon, true);
+  document.addEventListener('mousedown', onAccountIcon, true);
+  document.addEventListener('touchstart', onAccountIcon, true);
 })();
 </script>

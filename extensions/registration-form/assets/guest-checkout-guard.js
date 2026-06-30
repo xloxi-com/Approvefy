@@ -78,6 +78,7 @@
       window.__approvefySignInRedirectEnabled = true;
     }
     writeGuardConfigCache(data);
+    startShopifyAccountDrawerWatcher();
     return guardConfig;
   }
 
@@ -343,6 +344,7 @@
     return !!el.closest(
       [
         'header',
+        'header-component',
         'sticky-header',
         '.header',
         '.shopify-section-header',
@@ -353,13 +355,38 @@
         '[id^="shopify-section"][id*="header"]',
         '.site-header',
         '#header',
+        '.header__icons',
         '[class*="header__icons"]',
+        'shopify-account',
       ].join(', ')
     );
   }
 
+  function isShopifyAccountElement(el) {
+    return !!(el && el.nodeType === 1 && String(el.nodeName || '').toLowerCase() === 'shopify-account');
+  }
+
   function isShopifyAccountComponent(el) {
-    return !!(el && el.closest && el.closest('shopify-account'));
+    return isShopifyAccountElement(el) || !!(el && el.closest && el.closest('shopify-account'));
+  }
+
+  function findShopifyAccountIntentInPath(event) {
+    var nodes = composedPathNodes(event);
+    var i;
+    var node;
+    for (i = 0; i < nodes.length; i++) {
+      node = nodes[i];
+      if (!node || node.nodeType !== 1) {
+        continue;
+      }
+      if (isInsideApprovefyAuthTabs(node)) {
+        return null;
+      }
+      if (isShopifyAccountElement(node)) {
+        return { kind: 'account-icon', href: '' };
+      }
+    }
+    return null;
   }
 
   function headerAccountIconSelectors() {
@@ -444,6 +471,10 @@
   }
 
   function findHeaderAccountIconClick(event) {
+    var shopifyIntent = findShopifyAccountIntentInPath(event);
+    if (shopifyIntent) {
+      return shopifyIntent;
+    }
     var nodes = composedPathNodes(event);
     var i;
     var node;
@@ -486,12 +517,29 @@
       window.location.href = intent.href;
       return;
     }
-    if (intent.kind === 'account-icon') {
-      var accountEl = document.querySelector('header shopify-account, .header shopify-account, shop-header shopify-account, shopify-account');
-      if (accountEl && typeof accountEl.click === 'function') {
-        accountEl.click();
-      }
+    // Never programmatically click <shopify-account> — it opens the Shop sign-in drawer.
+  }
+
+  function shouldInterceptHeaderAccountIcon(intent) {
+    if (!intent) {
+      return false;
     }
+    if (cfg.customerLoggedIn) {
+      return false;
+    }
+    if (intent.kind === 'account-icon') {
+      return signInRedirectEnabledInSettings();
+    }
+    return shouldRedirectSignInLinks();
+  }
+
+  function redirectHeaderAccountIcon(e) {
+    e.preventDefault();
+    if (typeof e.stopImmediatePropagation === 'function') {
+      e.stopImmediatePropagation();
+    }
+    e.stopPropagation();
+    goToSignInRedirect(signInRedirectDestination());
   }
 
   function handleHeaderAccountIconClick(e) {
@@ -502,16 +550,14 @@
     if (!intent) {
       return;
     }
-    if (shouldRedirectSignInLinks()) {
-      e.preventDefault();
-      if (typeof e.stopImmediatePropagation === 'function') {
-        e.stopImmediatePropagation();
-      }
-      e.stopPropagation();
-      goToSignInRedirect(signInRedirectDestination());
+    if (shouldInterceptHeaderAccountIcon(intent)) {
+      redirectHeaderAccountIcon(e);
       return;
     }
     if (guardConfig !== null) {
+      return;
+    }
+    if (intent.kind !== 'account-icon') {
       return;
     }
     e.preventDefault();
@@ -520,11 +566,13 @@
     }
     e.stopPropagation();
     guardReady.then(function () {
-      if (shouldRedirectSignInLinks()) {
+      if (shouldInterceptHeaderAccountIcon(intent)) {
         goToSignInRedirect(signInRedirectDestination());
         return;
       }
-      replayNativeAccountIconNavigation(intent);
+      if (intent.href) {
+        replayNativeAccountIconNavigation(intent);
+      }
     });
   }
 
@@ -539,9 +587,75 @@
     if (!intent) {
       return;
     }
-    if (intent.kind === 'account-icon' || shouldRedirectSignInLinks()) {
-      handleHeaderAccountIconClick(e);
+    if (shouldInterceptHeaderAccountIcon(intent)) {
+      redirectHeaderAccountIcon(e);
     }
+  }
+
+  var SHOPIFY_ACCOUNT_DRAWER_STYLE_ID = 'approvefy-block-shopify-account-drawer';
+
+  function installShopifyAccountDrawerBlocker() {
+    if (!shouldRedirectSignInLinks()) {
+      var existing = document.getElementById(SHOPIFY_ACCOUNT_DRAWER_STYLE_ID);
+      if (existing && existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+      }
+      return;
+    }
+    if (document.getElementById(SHOPIFY_ACCOUNT_DRAWER_STYLE_ID)) {
+      return;
+    }
+    var style = document.createElement('style');
+    style.id = SHOPIFY_ACCOUNT_DRAWER_STYLE_ID;
+    style.textContent =
+      'shopify-account-modal,shopify-account-dialog,shopify-account-popover,[data-shopify-account-modal],dialog.shopify-account,[class*="account-popover"],[id*="account-popover"]{display:none!important;visibility:hidden!important;pointer-events:none!important}';
+    document.head.appendChild(style);
+  }
+
+  function dismissShopifyAccountDrawers() {
+    if (!shouldRedirectSignInLinks()) {
+      return;
+    }
+    var selectors =
+      'dialog[open],shopify-account-modal,shopify-account-dialog,shopify-account-popover,[data-shopify-account-modal],[class*="account-popover"],[id*="account-popover"]';
+    var nodes = document.querySelectorAll(selectors);
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (!node) {
+        continue;
+      }
+      if (typeof node.close === 'function') {
+        try {
+          node.close();
+        } catch (closeErr) {
+          void closeErr;
+        }
+      }
+      node.removeAttribute('open');
+      node.setAttribute('aria-hidden', 'true');
+      node.style.display = 'none';
+    }
+  }
+
+  function startShopifyAccountDrawerWatcher() {
+    if (window.__approvefyShopifyAccountDrawerWatcher) {
+      return;
+    }
+    window.__approvefyShopifyAccountDrawerWatcher = true;
+    installShopifyAccountDrawerBlocker();
+    dismissShopifyAccountDrawers();
+    if (typeof MutationObserver !== 'function') {
+      return;
+    }
+    var observer = new MutationObserver(function () {
+      if (!shouldRedirectSignInLinks()) {
+        return;
+      }
+      installShopifyAccountDrawerBlocker();
+      dismissShopifyAccountDrawers();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
   }
 
   function shouldRedirectGuest() {
@@ -1222,6 +1336,7 @@
 
   function runInitialGuardTasks() {
     runGuardIdle(function () {
+      startShopifyAccountDrawerWatcher();
       maybeRedirectGuestFromAccountEntry();
       maybeRedirectUnapprovedFromAccount();
       maybeLeaveDisabledRegistrationPage();
