@@ -6,7 +6,22 @@
         "padding_top": 28,
         "padding_bottom": 28
       }
+    },
+    "approvefy_apps": {
+      "type": "apps",
+      "blocks": {
+        "approvefy_registration_form": {
+          "type": "shopify://apps/approvefy/blocks/registration-form",
+          "settings": {
+            "heading": "Customer Registration",
+            "description": "Please complete the registration form below to apply for a customer account.",
+            "form_id": ""
+          }
+        }
+      },
+      "block_order": ["approvefy_registration_form"],
+      "settings": {}
     }
   },
-  "order": ["main"]
+  "order": ["main", "approvefy_apps"]
 }

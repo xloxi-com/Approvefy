@@ -20,6 +20,7 @@ import {
 import { REGISTRATION_FORM_BLOCK_HANDLE } from "./theme-extension-setup-status";
 import {
   REGISTRATION_PAGE_HANDLE,
+  REGISTRATION_PAGE_INTRO,
   REGISTRATION_PAGE_PATH,
   REGISTRATION_PAGE_TITLE,
 } from "./registration-page.constants";
@@ -244,7 +245,7 @@ export async function createCustomerRegistrationPageViaAdminApi(
           handle: REGISTRATION_PAGE_HANDLE,
           ...pagePublishInput(isPublished),
           ...(useDedicatedTemplate ? { templateSuffix: REGISTRATION_PAGE_HANDLE } : {}),
-          body: "<p>Please complete the registration form below to apply for a customer account.</p>",
+          body: `<p>${REGISTRATION_PAGE_INTRO}</p>`,
         },
       },
     },
@@ -500,15 +501,24 @@ export async function ensureRegistrationStorefrontPage(
       if (templateExists) {
         const verified = await readRegistrationPageTemplateOnMainTheme(admin);
         blockOnTemplate = verified.blockOnTemplate;
-      } else if (!write.themeFileWriteAccessDenied) {
+      }
+      if (!blockOnTemplate && !write.themeFileWriteAccessDenied) {
         const templateResult = await ensureRegistrationPageThemeTemplate(admin, {
-          quick: true,
+          quick: opts?.installSetup === true,
           shop,
           accessToken: themeToken,
         });
-        templateExists = templateResult.templateExists;
+        templateExists = templateResult.templateExists || templateExists;
         blockOnTemplate = templateResult.blockOnTemplate;
       }
+    } else {
+      const templateResult = await ensureRegistrationPageThemeTemplate(admin, {
+        quick: opts?.installSetup === true,
+        shop,
+        accessToken: themeToken,
+      });
+      templateExists = templateResult.templateExists || templateExists;
+      blockOnTemplate = templateResult.blockOnTemplate || blockOnTemplate;
     }
 
     const pageWithEmbed = await createCustomerRegistrationPageWithAppEmbed(admin, shop);

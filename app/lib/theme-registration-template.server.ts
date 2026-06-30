@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  REGISTRATION_PAGE_HANDLE,
+  REGISTRATION_PAGE_INTRO,
+  REGISTRATION_PAGE_TITLE,
+} from "./registration-page.constants";
+import {
   REGISTRATION_FORM_BLOCK_HANDLE,
   THEME_EXTENSION_HANDLE,
 } from "./theme-extension-setup-status";
@@ -11,8 +16,6 @@ import {
   themeNumericIdFromGid,
 } from "./theme-cli-push.server";
 import { putThemeAssetViaRest } from "./theme-rest-asset.server";
-
-const REGISTRATION_PAGE_HANDLE = "customer-registration";
 
 type AdminGraphqlClient = {
   graphql: (
@@ -73,6 +76,33 @@ function registrationFormBlockType(): string {
 
 const REGISTRATION_FORM_BLOCK_ID = "approvefy_registration_form";
 export const REGISTRATION_APPS_SECTION_ID = "approvefy_apps";
+
+/** Page title + intro (main-page) must render above the Registration Form apps block. */
+function ensureMainPageBeforeAppsSection(parsed: {
+  sections?: Record<string, { type?: string }>;
+  order?: string[];
+}): boolean {
+  const sections = parsed.sections;
+  if (!sections) return false;
+
+  const sectionKeys = Object.keys(sections);
+  const order = Array.isArray(parsed.order) ? [...parsed.order] : sectionKeys;
+  const mainKey =
+    order.find((key) => sections[key]?.type === "main-page" || key === "main") ??
+    sectionKeys.find((key) => sections[key]?.type === "main-page" || key === "main");
+  const appsKey =
+    order.find((key) => sections[key]?.type === "apps") ??
+    sectionKeys.find((key) => sections[key]?.type === "apps");
+  if (!mainKey || !appsKey) return false;
+
+  const mainIdx = order.indexOf(mainKey);
+  const appsIdx = order.indexOf(appsKey);
+  if (mainIdx >= 0 && appsIdx >= 0 && mainIdx < appsIdx) return false;
+
+  const rest = order.filter((key) => key !== mainKey && key !== appsKey);
+  parsed.order = [mainKey, appsKey, ...rest];
+  return true;
+}
 
 function removeRegistrationFormBlocksFromSections(
   sections: Record<
@@ -156,6 +186,7 @@ function ensureAppsSectionWithRegistrationForm(
   appsSection.block_order = blockOrder;
 
   removeRegistrationFormBlocksFromSections(sections, appsSectionKey);
+  ensureMainPageBeforeAppsSection(parsed);
   return JSON.stringify(parsed, null, 2);
 }
 
@@ -166,8 +197,8 @@ function registrationFormBlockPayload(): {
   return {
     type: registrationFormBlockType(),
     settings: {
-      heading: "Create Account",
-      description: "Please fill out the information below to create your account.",
+      heading: REGISTRATION_PAGE_TITLE,
+      description: REGISTRATION_PAGE_INTRO,
       form_id: "",
     },
   };
@@ -786,8 +817,7 @@ export type EnsureRegistrationPageThemeTemplateOptions = {
 };
 
 /**
- * Ensures page.customer-registration exists with Page section only (no Apps block),
- * so the theme editor deep link auto-adds Apps → Registration Form.
+ * Ensures page.customer-registration.json includes Apps → Registration Form (auto app block).
  */
 export async function prepareCustomerRegistrationPageForAppsDeepLink(
   admin: AdminGraphqlClient,
@@ -805,65 +835,13 @@ export async function prepareCustomerRegistrationPageForAppsDeepLink(
     themeFileWriteAccessDenied: false,
   };
   try {
-    const quick = opts?.quick === true;
-    const pollAttempts = quick ? 2 : 6;
-    const pollDelayMs = quick ? 350 : 700;
-    const themeId = await getMainThemeId(admin);
-    if (!themeId) return empty;
-
-    await removeRegistrationFormFromDefaultPageTemplate(admin, themeId);
-
-    let existing = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
-    if (existing?.trim() && registrationFormBlockPlacement(existing) === "apps") {
-      return {
-        templateExists: true,
-        themeId,
-        blockOnTemplate: true,
-        themeFileWriteAccessDenied: false,
-      };
-    }
-
-    if (!existing?.trim()) {
-      const created = await ensureDedicatedRegistrationTemplateFile(admin, themeId);
-      if (created?.trim()) {
-        existing = created;
-      }
-    }
-
-    const shellBody = buildMainOnlyRegistrationTemplateShell(existing);
-    const upsert = await upsertThemeFileByFilename(
-      admin,
-      themeId,
-      REGISTRATION_PAGE_TEMPLATE_FILE,
-      shellBody,
-      { skipJobWait: quick },
-    );
-
-    if (!upsert.ok) {
-      const stillThere = await readThemeFile(admin, themeId, REGISTRATION_PAGE_TEMPLATE_FILE);
-      return {
-        templateExists: !!stillThere?.trim(),
-        themeId,
-        blockOnTemplate:
-          !!stillThere?.trim() && registrationFormBlockPlacement(stillThere) === "apps",
-        themeFileWriteAccessDenied: upsert.accessDenied,
-      };
-    }
-
-    const written =
-      (await pollForThemeFile(
-        admin,
-        themeId,
-        REGISTRATION_PAGE_TEMPLATE_FILE,
-        pollAttempts,
-        pollDelayMs,
-      )) ?? existing;
-    const templateExists = !!written?.trim();
+    const result = await ensureRegistrationPageThemeTemplate(admin, { quick: opts?.quick === true });
+    const verified = await readRegistrationPageTemplateOnMainTheme(admin);
     return {
-      templateExists,
-      themeId,
-      blockOnTemplate: templateExists && registrationFormBlockPlacement(written!) === "apps",
-      themeFileWriteAccessDenied: false,
+      templateExists: result.templateExists || !!verified.raw?.trim(),
+      themeId: verified.themeId,
+      blockOnTemplate: result.blockOnTemplate || verified.blockOnTemplate,
+      themeFileWriteAccessDenied: result.themeFileWriteAccessDenied,
     };
   } catch (error) {
     console.warn(
@@ -906,8 +884,6 @@ export async function installRegistrationFormOnCustomerRegistrationTemplate(
 
   try {
     await cleanRegistrationFormOffDefaultPageTemplate(admin);
-
-    await prepareCustomerRegistrationPageForAppsDeepLink(admin);
 
     let result = await ensureRegistrationPageThemeTemplate(admin);
     if (result.templateExists && !result.blockOnTemplate) {
@@ -963,6 +939,18 @@ export async function ensureRegistrationPageThemeTemplate(
     if (existing?.trim()) {
       const placement = registrationFormBlockPlacement(existing);
       if (placement === "apps") {
+        try {
+          const parsed = JSON.parse(stripJsonComments(existing)) as {
+            sections?: Record<string, { type?: string }>;
+            order?: string[];
+          };
+          if (ensureMainPageBeforeAppsSection(parsed)) {
+            const reordered = JSON.stringify(parsed, null, 2);
+            await upsertThemeTemplateFile(admin, themeId, reordered, { skipJobWait: quick });
+          }
+        } catch {
+          /* ignore reorder parse errors */
+        }
         return {
           created: false,
           templateExists: true,
@@ -1151,10 +1139,16 @@ function templateCreateSuccess(
 }
 
 function resolveTemplateBodyFromDefaultPage(pageJson: string | null): string {
-  const bundledBody =
-    readBundledRegistrationPageTemplate() ?? buildRegistrationPageTemplateShellJson();
-  const stripped = pageJson?.trim() ? stripRegistrationFormBlocksFromTemplate(pageJson) : null;
-  return stripped ?? pageJson?.trim() ?? bundledBody;
+  if (pageJson?.trim()) {
+    const merged = mergeRegistrationFormBlockIntoTemplate(pageJson);
+    if (merged) return merged;
+  }
+  const bundled = readBundledRegistrationPageTemplate();
+  if (bundled?.trim()) {
+    const mergedBundled = mergeRegistrationFormBlockIntoTemplate(bundled);
+    if (mergedBundled) return mergedBundled;
+  }
+  return buildRegistrationPageTemplateJson();
 }
 
 async function verifyRegistrationTemplateWritten(

@@ -1,14 +1,28 @@
 (function () {
-  /** True when Approvefy should run: register route, customer-registration page, or Registration Form block. */
-  function hasApprovefyMountOrRegisterPage() {
-    if (window.location.pathname.indexOf('/account/register') !== -1) return true;
+  /** True when Approvefy should run: register route, Registration Form block, or theme editor on registration page. */
+  function isShopifyDesignModeEarly() {
+    try {
+      return !!(typeof window !== 'undefined' && window.Shopify && window.Shopify.designMode);
+    } catch (eDesignEarly) {
+      void eDesignEarly;
+      return false;
+    }
+  }
+
+  function isCustomerRegistrationPathEarly() {
     var path = String(window.location.pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
     var localeMatch = path.toLowerCase().match(/^(\/[a-z]{2}(?:-[a-z]{2})?)(\/.*|$)/);
     if (localeMatch && localeMatch[1] && localeMatch[1].length <= 6) {
       path = localeMatch[2] && localeMatch[2].length > 0 ? localeMatch[2] : '/';
     }
-    if (/\/pages\/customer-registration\/?$/i.test(path)) return true;
-    return !!document.querySelector('[data-approvefy-registration-block]');
+    return /\/pages\/customer-registration\/?$/i.test(path);
+  }
+
+  function hasApprovefyMountOrRegisterPage() {
+    if (window.location.pathname.indexOf('/account/register') !== -1) return true;
+    if (document.querySelector('[data-approvefy-registration-block]')) return true;
+    if (isShopifyDesignModeEarly() && isCustomerRegistrationPathEarly()) return true;
+    return false;
   }
 
   function bootApprovefyRegistrationRuntime() {
@@ -2024,6 +2038,11 @@
     // We have a configured form: enable our custom experience.
     document.body.classList.add('custom-registration-enabled');
 
+    /** Registration page: form only inside the auto-added Registration Form app block — not in Page section. */
+    if (onDedicatedRegistrationPage && !isInline && !isShopifyDesignMode()) {
+      return;
+    }
+
     function getLoggedInPendingSessionKey() {
       var id = cfg.shopifyLoggedInCustomerId;
       var suf = id != null && String(id) !== '' ? String(id) : '0';
@@ -2085,6 +2104,21 @@
     var customD = isInline && inlineRoot && inlineRoot.getAttribute('data-description');
     var cfgHeading = config && typeof config.storefrontHeading === 'string' ? String(config.storefrontHeading).trim() : '';
     var cfgDesc = config && typeof config.storefrontDescription === 'string' ? String(config.storefrontDescription).trim() : '';
+    function isCustomerRegistrationPagePath() {
+      try {
+        var path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+        if (/\/pages\/customer-registration$/i.test(path)) return true;
+        var regPath = cfg && cfg.registrationPagePath;
+        if (typeof regPath === 'string' && regPath.trim()) {
+          var norm = regPath.trim().replace(/\/+$/, '') || '/';
+          if (path === norm || path.endsWith(norm)) return true;
+        }
+      } catch (ePath) {
+        void ePath;
+      }
+      return false;
+    }
+    var skipFormHeader = isInline && isCustomerRegistrationPagePath();
     var h2Text = customH
       ? escapeHtml(customH)
       : (cfgHeading ? escapeHtml(cfgHeading) : escapeHtml(t('createYourAccount')));
@@ -2318,8 +2352,8 @@
     const formHTML = `
       <div id="custom-registration-container">
         ${authTabsHtml}
-        <h2>${h2Text}</h2>
-        <p class="form-description">${descText}</p>
+        ${skipFormHeader ? '' : `<h2>${h2Text}</h2>
+        <p class="form-description">${descText}</p>`}
         <form id="custom-registration-form" novalidate>
           ${formFieldsHTML}
           ${stepNavHTML}
