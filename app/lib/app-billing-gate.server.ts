@@ -32,7 +32,12 @@ export async function resolveHasActiveAppSubscription(
   if (billingCallback || onPricingPage) {
     invalidateAppSubscriptionCache(shop);
     invalidateMerchantPlanCache(shop);
-    const plan = await syncMerchantPlanFromActiveSubscription(admin, shop);
+    let plan = await syncMerchantPlanFromActiveSubscription(admin, shop);
+    if (plan == null && billingCallback) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      invalidateAppSubscriptionCache(shop);
+      plan = await syncMerchantPlanFromActiveSubscription(admin, shop);
+    }
     if (plan != null) return true;
   }
 
@@ -56,6 +61,9 @@ export function enforceAppBillingGate(
     }
     return;
   }
+
+  /** Shopify returns here after charge approval — stay on Home while subscription activates. */
+  if (billingCallback && pathname === "/app") return;
 
   if (isBillingExemptAppPath(pathname)) return;
 
