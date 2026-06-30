@@ -6,11 +6,12 @@ import {
   cleanRegistrationFormOffDefaultPageTemplate,
   createCustomerRegistrationPageTemplate,
   ensureRegistrationPageThemeTemplate,
+  installRegistrationFormOnCustomerRegistrationTemplate,
   readRegistrationPageTemplateOnMainTheme,
   REGISTRATION_PAGE_TEMPLATE,
 } from "./theme-registration-template.server";
 import { buildAppEmbedThemeEditorUrl, ensureAppEmbedEnabled } from "./theme-app-embed.server";
-import { canUseThemeCliPush } from "./theme-cli-push.server";
+import { canUseThemeCliPush, isServerlessRuntime } from "./theme-cli-push.server";
 import { getThemeSetupStatus, invalidateThemeSetupStatusCache } from "./theme-setup-status.server";
 import {
   canServeRegistrationPageViaAppEmbed,
@@ -487,6 +488,7 @@ export async function ensureRegistrationStorefrontPage(
     const redirectEnabled = await isRegistrationPageRedirectEnabled(shop);
     const shouldPublish = redirectEnabled;
     const themeToken = await resolveThemeWriteAccessToken(shop, opts?.accessToken);
+    const themeQuick = opts?.installSetup === true && !isServerlessRuntime();
 
     const verifiedInitial = await readRegistrationPageTemplateOnMainTheme(admin);
     templateExists = !!verifiedInitial.raw?.trim();
@@ -495,7 +497,7 @@ export async function ensureRegistrationStorefrontPage(
     if (!templateExists) {
       const write = await createCustomerRegistrationPageTemplate(admin, shop, {
         accessToken: themeToken,
-        quick: opts?.installSetup === true,
+        quick: themeQuick,
       });
       templateExists = write.templateExists;
       if (templateExists) {
@@ -504,7 +506,7 @@ export async function ensureRegistrationStorefrontPage(
       }
       if (!blockOnTemplate && !write.themeFileWriteAccessDenied) {
         const templateResult = await ensureRegistrationPageThemeTemplate(admin, {
-          quick: opts?.installSetup === true,
+          quick: themeQuick,
           shop,
           accessToken: themeToken,
         });
@@ -513,7 +515,7 @@ export async function ensureRegistrationStorefrontPage(
       }
     } else {
       const templateResult = await ensureRegistrationPageThemeTemplate(admin, {
-        quick: opts?.installSetup === true,
+        quick: themeQuick,
         shop,
         accessToken: themeToken,
       });
@@ -704,7 +706,7 @@ export async function runAddRegistrationFormSetup(
 
     if (templateExists && !blockOnTemplate) {
       const templateResult = await ensureRegistrationPageThemeTemplate(admin, {
-        quick: true,
+        quick: false,
         shop,
         accessToken,
       });
@@ -953,37 +955,35 @@ export async function runCreateRegistrationTemplateSetup(
   try {
     await syncRegistrationPageRedirectSettings(shop);
 
+    const install = await installRegistrationFormOnCustomerRegistrationTemplate(admin, {
+      shop,
+      accessToken,
+      quick: false,
+    });
+
     let themeState = await readRegistrationPageTemplateOnMainTheme(admin);
-    let templateExists = !!themeState.raw?.trim();
-    let blockOnTemplate = themeState.blockOnTemplate;
-    let savedViaApi = false;
-    let formSavedViaApi = false;
+    let templateExists = install.templateExists || !!themeState.raw?.trim();
+    let blockOnTemplate = install.blockOnTemplate || themeState.blockOnTemplate;
+    let savedViaApi = install.savedViaApi;
+    let formSavedViaApi = install.blockOnTemplate;
     let themeFileWriteAccessDenied = false;
 
-    if (!templateExists || !blockOnTemplate) {
-      const templateWrite = await createCustomerRegistrationPageTemplate(admin, shop, {
-        quick: true,
+    if (!blockOnTemplate) {
+      await createCustomerRegistrationPageTemplate(admin, shop, {
+        quick: false,
         accessToken,
       });
-      templateExists = templateWrite.templateExists || templateExists;
-      savedViaApi = templateWrite.savedViaApi || templateWrite.savedViaCli;
-      themeFileWriteAccessDenied = templateWrite.themeFileWriteAccessDenied;
+      const themeResult = await ensureRegistrationPageThemeTemplate(admin, {
+        quick: false,
+        shop,
+        accessToken,
+      });
       themeState = await readRegistrationPageTemplateOnMainTheme(admin);
-      templateExists = templateExists || !!themeState.raw?.trim();
-      blockOnTemplate = blockOnTemplate || themeState.blockOnTemplate;
-
-      if (templateExists && !blockOnTemplate) {
-        const themeResult = await ensureRegistrationPageThemeTemplate(admin, {
-          quick: true,
-          shop,
-          accessToken,
-        });
-        blockOnTemplate = themeResult.blockOnTemplate || blockOnTemplate;
-        savedViaApi = savedViaApi || themeResult.created || themeResult.blockOnTemplate;
-        formSavedViaApi = themeResult.blockOnTemplate || formSavedViaApi;
-        themeFileWriteAccessDenied =
-          themeFileWriteAccessDenied && themeResult.themeFileWriteAccessDenied;
-      }
+      templateExists = themeResult.templateExists || !!themeState.raw?.trim();
+      blockOnTemplate = themeResult.blockOnTemplate || themeState.blockOnTemplate;
+      savedViaApi = savedViaApi || themeResult.created || themeResult.blockOnTemplate;
+      formSavedViaApi = blockOnTemplate;
+      themeFileWriteAccessDenied = themeResult.themeFileWriteAccessDenied;
     }
 
     let page = await findRegistrationPage(admin);
