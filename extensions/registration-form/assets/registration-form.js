@@ -1868,6 +1868,16 @@
       if (isRegistrationFormDirty()) return;
     }
 
+    /** Page title first, Registration Form app block below — never inject into Page section. */
+    if (onDedicatedRegistrationPage && !inlineRoot) {
+      var staleInjected = document.getElementById('custom-registration-container');
+      if (staleInjected && staleInjected.parentNode) {
+        staleInjected.parentNode.removeChild(staleInjected);
+      }
+      document.body.classList.remove('custom-registration-enabled');
+      return;
+    }
+
     // Find the main content area and the existing Shopify registration form
     const mainContent = document.querySelector('#MainContent') || document.querySelector('main') || document.body;
     const existingRegisterForm = mainContent.querySelector('form[action*="/account"]');
@@ -2037,11 +2047,6 @@
 
     // We have a configured form: enable our custom experience.
     document.body.classList.add('custom-registration-enabled');
-
-    /** Registration page: form only inside the auto-added Registration Form app block — not in Page section. */
-    if (onDedicatedRegistrationPage && !isInline && !isShopifyDesignMode()) {
-      return;
-    }
 
     function getLoggedInPendingSessionKey() {
       var id = cfg.shopifyLoggedInCustomerId;
