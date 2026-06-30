@@ -17,7 +17,10 @@ import {
 import { CheckIcon, XIcon } from "@shopify/polaris-icons";
 
 import { authenticate } from "../shopify.server";
-import { syncMerchantPlanFromActiveSubscription } from "../lib/sync-merchant-plan-from-billing.server";
+import {
+  syncMerchantPlanAfterBillingApproval,
+  syncMerchantPlanFromActiveSubscription,
+} from "../lib/sync-merchant-plan-from-billing.server";
 import {
   type PricingTierId,
   PRICING_COMPARE_ROWS,
@@ -27,7 +30,6 @@ import {
   PRICING_TRIAL_CTA_NOTE,
   PRICING_TIERS,
 } from "../lib/pricing-tiers";
-import { invalidateAppSubscriptionCache } from "../lib/app-subscription.server";
 import {
   APP_EMBED_ENTRY_PATH,
   clearBillingReturnPending,
@@ -53,14 +55,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   /** Set after Shopify sends the merchant back from the charge approval page. */
   const billingReturned = billingFlow === "callback";
 
-  if (billingReturned) {
-    invalidateAppSubscriptionCache(shop);
-  }
-
   /** Resolved from Shopify active subscription (Basic / Standard / Premium), or null if none. */
-  const subscribedPlan = await syncMerchantPlanFromActiveSubscription(admin, shop);
+  const subscribedPlan = billingReturned
+    ? await syncMerchantPlanAfterBillingApproval(admin, shop)
+    : await syncMerchantPlanFromActiveSubscription(admin, shop);
 
-  /** Legacy return URLs still hit /app/pricing — send merchants to Home once subscribed. */
+  /** Billing return (including legacy /app/pricing URLs) — go straight to Home when active. */
   if (billingReturned && subscribedPlan != null) {
     throw redirect(mergeEmbedParamsForServerPath(APP_EMBED_ENTRY_PATH, url.searchParams));
   }

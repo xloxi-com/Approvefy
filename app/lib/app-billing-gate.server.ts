@@ -8,7 +8,10 @@ import {
   type AdminGraphql,
 } from "./app-subscription.server";
 import { invalidateMerchantPlanCache } from "./merchant-plan.server";
-import { syncMerchantPlanFromActiveSubscription } from "./sync-merchant-plan-from-billing.server";
+import {
+  syncMerchantPlanAfterBillingApproval,
+  syncMerchantPlanFromActiveSubscription,
+} from "./sync-merchant-plan-from-billing.server";
 import {
   APP_EMBED_ENTRY_PATH,
   APP_PRICING_PATH,
@@ -30,16 +33,16 @@ export async function resolveHasActiveAppSubscription(
   const onPricingPage = pathname === APP_PRICING_PATH;
   const appColdOpen = url.searchParams.has("appLoadId");
 
-  /** Fresh Shopify read on install open, Pricing, or billing return — avoids stale cached subscription. */
-  if (billingCallback || onPricingPage || appColdOpen) {
+  if (billingCallback) {
+    const plan = await syncMerchantPlanAfterBillingApproval(admin, shop);
+    return plan != null;
+  }
+
+  /** Fresh Shopify read on install open or Pricing — avoids stale cached subscription. */
+  if (onPricingPage || appColdOpen) {
     invalidateAppSubscriptionCache(shop);
     invalidateMerchantPlanCache(shop);
-    let plan = await syncMerchantPlanFromActiveSubscription(admin, shop);
-    if (plan == null && billingCallback) {
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      invalidateAppSubscriptionCache(shop);
-      plan = await syncMerchantPlanFromActiveSubscription(admin, shop);
-    }
+    const plan = await syncMerchantPlanFromActiveSubscription(admin, shop);
     if (plan != null) return true;
     return false;
   }

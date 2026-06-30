@@ -6,6 +6,7 @@ import {
   SUBSCRIPTION_DISPLAY_NAMES,
   trialDaysFromCopy,
 } from "./billing-plans";
+import { APP_EMBED_ENTRY_PATH } from "./shopify-embed-navigation";
 
 function resolvePublicAppUrl(request: Request): string {
   const explicit = process.env.SHOPIFY_APP_URL?.trim() || process.env.HOST?.trim();
@@ -91,7 +92,7 @@ export async function billingSubscribeAction({ request }: ActionFunctionArgs) {
     shop,
     host,
   });
-  const returnUrl = `${appUrl}/app/pricing?${returnParams.toString()}`;
+  const returnUrl = `${appUrl}${APP_EMBED_ENTRY_PATH}?${returnParams.toString()}`;
 
   const test = await shouldUseTestBilling(admin);
   const trialDays = trialDaysFromCopy();
