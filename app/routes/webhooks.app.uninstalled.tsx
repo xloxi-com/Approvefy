@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { invalidateAppInstallSetupCache } from "../lib/app-install.server";
 import { invalidateAppSubscriptionCache } from "../lib/app-subscription.server";
 import { invalidateMerchantPlanCache } from "../lib/merchant-plan.server";
 
@@ -11,6 +12,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   invalidateAppSubscriptionCache(shop);
   invalidateMerchantPlanCache(shop);
+  invalidateAppInstallSetupCache(shop);
 
   // Webhook requests can trigger multiple times and after an app has already been uninstalled.
   // If this webhook already ran, the session may have been deleted previously.

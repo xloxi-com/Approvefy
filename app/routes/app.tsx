@@ -55,7 +55,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-/** Revalidate layout on in-app navigations so billing gate + nav stay accurate (Shopify reads are LRU-cached). */
+/** Revalidate layout only when billing state may have changed (subscription reads are LRU-cached). */
 export function shouldRevalidate({
   currentUrl,
   nextUrl,
@@ -74,9 +74,10 @@ export function shouldRevalidate({
   ) {
     return true;
   }
-  if (currentUrl.pathname.startsWith("/app") && nextUrl.pathname.startsWith("/app")) {
-    return true;
-  }
+  const normalize = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
+  const from = normalize(currentUrl.pathname);
+  const to = normalize(nextUrl.pathname);
+  if (from === "/app/pricing" || to === "/app/pricing") return true;
   return defaultShouldRevalidate;
 }
 

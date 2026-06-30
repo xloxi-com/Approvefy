@@ -108,13 +108,12 @@ export const loader = async ({ request }: LoaderFunctionArgs): Promise<FormConfi
     const { session } = await authenticate.admin(request);
     const shop = session.shop;
 
-    await ensureDefaultCustomerB2BForm(shop);
-
     const storeHandle = shop.replace(/\.myshopify\.com$/i, "");
     const themeEditorUrl = `https://admin.shopify.com/store/${storeHandle}/themes/current/editor?template=customers/register&context=apps`;
     const [merchantPlan, formCount] = await Promise.all([
         getMerchantPlanForShop(shop),
         prisma.formConfig.count({ where: { shop } }),
+        ensureDefaultCustomerB2BForm(shop),
     ]);
 
     return {

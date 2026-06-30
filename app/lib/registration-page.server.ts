@@ -11,7 +11,7 @@ import {
 } from "./theme-registration-template.server";
 import { buildAppEmbedThemeEditorUrl, ensureAppEmbedEnabled } from "./theme-app-embed.server";
 import { canUseThemeCliPush } from "./theme-cli-push.server";
-import { getThemeSetupStatus } from "./theme-setup-status.server";
+import { getThemeSetupStatus, invalidateThemeSetupStatusCache } from "./theme-setup-status.server";
 import {
   canServeRegistrationPageViaAppEmbed,
   isRegistrationFormLiveOnStorefront,
@@ -23,6 +23,7 @@ import {
   REGISTRATION_PAGE_PATH,
   REGISTRATION_PAGE_TITLE,
 } from "./registration-page.constants";
+import { CACHE_TTL, getCache, invalidateCache, setCache, shopKey } from "./cache.server";
 
 export { REGISTRATION_PAGE_HANDLE, REGISTRATION_PAGE_PATH, REGISTRATION_PAGE_TITLE };
 
@@ -119,14 +120,40 @@ export function registrationStorefrontUrl(shop: string): string {
   return `https://${handle}.myshopify.com${REGISTRATION_PAGE_PATH}`;
 }
 
-export async function findRegistrationPage(
-  admin: AdminGraphqlClient,
-): Promise<{
+export type RegistrationPageSummary = {
   id: string;
   handle: string;
   isPublished: boolean;
   templateSuffix: string | null;
-} | null> {
+};
+
+export function invalidateRegistrationPageCache(shop: string): void {
+  const key = (shop || "").trim().toLowerCase();
+  if (!key) return;
+  invalidateCache(shopKey(key, "registrationPage"));
+  invalidateThemeSetupStatusCache(key);
+}
+
+export async function findRegistrationPage(
+  admin: AdminGraphqlClient,
+  shop?: string,
+): Promise<RegistrationPageSummary | null> {
+  const shopKeyNorm = (shop || "").trim().toLowerCase();
+  if (shopKeyNorm) {
+    const cached = getCache<RegistrationPageSummary | null>(shopKey(shopKeyNorm, "registrationPage"));
+    if (cached !== undefined) return cached;
+  }
+
+  const page = await queryRegistrationPageByHandle(admin);
+  if (shopKeyNorm) {
+    setCache(shopKey(shopKeyNorm, "registrationPage"), page, CACHE_TTL.registrationPage);
+  }
+  return page;
+}
+
+async function queryRegistrationPageByHandle(
+  admin: AdminGraphqlClient,
+): Promise<RegistrationPageSummary | null> {
   const res = await admin.graphql(
     `#graphql
     query RegistrationPageByHandle($query: String!) {
@@ -513,7 +540,7 @@ export async function ensureRegistrationStorefrontPage(
     themeCheckAvailable: false,
   };
   try {
-    themeStatus = await getThemeSetupStatus(admin);
+    themeStatus = await getThemeSetupStatus(admin, shop);
   } catch (error) {
     console.warn("[RegistrationPage] getThemeSetupStatus failed:", error);
   }
@@ -537,6 +564,8 @@ export async function ensureRegistrationStorefrontPage(
     templateExists: templateFileOnTheme,
     blockOnTemplate,
   });
+
+  invalidateRegistrationPageCache(shop);
 
   return {
     pagePath: REGISTRATION_PAGE_PATH,

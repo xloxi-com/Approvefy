@@ -27,19 +27,12 @@ import {
 } from "./onboarding-status.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
 import { getCachedAppSettings } from "./cached-settings.server";
-import {
-  enforceAppBillingGate,
-  resolveHasActiveAppSubscription,
-} from "./app-billing-gate.server";
 
 type Analytics = Awaited<ReturnType<typeof getAnalytics>>;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
-
-  const hasActiveSubscription = await resolveHasActiveAppSubscription(request, admin, shop);
-  enforceAppBillingGate(request, hasActiveSubscription);
 
   const url = new URL(request.url);
   const billingPending = url.searchParams.get("billing") === "callback";
@@ -93,8 +86,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let existingPage: Awaited<ReturnType<typeof findRegistrationPage>> = null;
   try {
     [themeSetup, existingPage] = await Promise.all([
-      getThemeSetupStatus(admin),
-      findRegistrationPage(admin),
+      getThemeSetupStatus(admin, shop),
+      findRegistrationPage(admin, shop),
     ]);
   } catch (error) {
     console.warn("[Home] Theme/page setup check failed:", error);
@@ -131,18 +124,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         (!pageExists || !storefrontReadyInitial || needsSuffixSync);
 
       if (needsRegistrationPageEnsure) {
-        try {
-          const ensured = await ensureRegistrationStorefrontPage(admin, shop);
-          pageExists = ensured.pageExists;
-          pagePublished = ensured.pagePublished;
-          templateFileExists = ensured.templateFileExists;
-          blockOnTemplate = ensured.blockOnTemplate;
-          registrationPageCreated = ensured.created;
-          registrationNeedsManualTemplate = ensured.needsManualTemplate;
-          existingPage = pageExists ? await findRegistrationPage(admin) : null;
-        } catch (error) {
-          console.warn("[Home] ensureRegistrationStorefrontPage failed:", error);
-        }
+        void ensureRegistrationStorefrontPage(admin, shop).catch((error) => {
+          console.warn("[Home] ensureRegistrationStorefrontPage background failed:", error);
+        });
       }
 
       void cleanRegistrationFormOffDefaultPageTemplate(admin).catch((err) => {

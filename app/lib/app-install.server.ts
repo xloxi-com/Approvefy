@@ -1,7 +1,11 @@
 import { ensureDefaultCustomerB2BForm } from "./default-form-config.server";
-import { ensureRegistrationStorefrontPage } from "./registration-page.server";
+import {
+  ensureRegistrationStorefrontPage,
+  invalidateRegistrationPageCache,
+} from "./registration-page.server";
 import { ensureOnboardingFormReviewedWhenFormsExist } from "./onboarding-status.server";
 import { sessionHasWriteThemesScope } from "./app-scopes.server";
+import { CACHE_TTL, getCache, invalidateCache, setCache, shopKey } from "./cache.server";
 
 type AdminGraphqlClient = {
   graphql: (
@@ -34,6 +38,13 @@ export async function runAppInstallSetup(
   await task;
 }
 
+export function invalidateAppInstallSetupCache(shop: string): void {
+  const key = (shop || "").trim().toLowerCase();
+  if (!key) return;
+  invalidateRegistrationPageCache(key);
+  invalidateCache(shopKey(key, "installSetupDone"));
+}
+
 async function runAppInstallSetupOnce(
   admin: AdminGraphqlClient,
   shop: string,
@@ -41,6 +52,9 @@ async function runAppInstallSetupOnce(
   grantedScope?: string | null,
 ): Promise<void> {
   if (!shop) return;
+
+  const shopKeyNorm = shop.trim().toLowerCase();
+  if (getCache<boolean>(shopKey(shopKeyNorm, "installSetupDone"))) return;
 
   const hasWriteThemes = sessionHasWriteThemesScope(grantedScope);
   if (!hasWriteThemes) {
@@ -68,6 +82,7 @@ async function runAppInstallSetupOnce(
       templateWriteFailed: page.templateWriteFailed,
       pagePath: page.pagePath,
     });
+    setCache(shopKey(shopKeyNorm, "installSetupDone"), true, CACHE_TTL.installSetupDone);
   } catch (error) {
     console.error("[AppInstall] Storefront setup failed:", error);
   }

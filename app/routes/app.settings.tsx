@@ -457,10 +457,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 getCachedAppSettings(shop),
                 getSmtpSettings(shop),
                 getEmailTemplatesBySlugs(shop, ["rejection", "approval"]),
-                ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
-                    console.warn("[Settings] ensureRegistrationStorefrontPage failed:", err);
-                    return null;
-                }),
             ]);
             settings = settingsResult;
             smtp = smtpResult;
@@ -468,6 +464,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             approvalTemplate = emailTemplatesBySlug.get("approval") ?? null;
             merchantPlan = resolveMerchantPlan(settingsResult?.merchantPlan ?? undefined);
             smtpSettings = smtp;
+            void ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
+                console.warn("[Settings] ensureRegistrationStorefrontPage failed:", err);
+            });
             if (cachedShopMeta) {
                 shopMetaPromise = Promise.resolve({
                     storeName: cachedShopMeta.storeName,

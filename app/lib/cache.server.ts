@@ -22,6 +22,12 @@ export const CACHE_TTL = {
   merchantPlan: 120_000,
   /** Shopify active subscription gate */
   billingStatus: 180_000,
+  /** Published theme embed + registration template probe */
+  themeSetupStatus: 90_000,
+  /** Online Store registration page by handle */
+  registrationPage: 90_000,
+  /** Skip re-running full install setup when already completed recently */
+  installSetupDone: 15 * 60_000,
 } as const;
 
 export function shopKey(shop: string, resource: string): string {

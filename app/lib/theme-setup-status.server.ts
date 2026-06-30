@@ -4,6 +4,7 @@ import {
   blockTypeMatchesApprovefyBlock,
   REGISTRATION_FORM_BLOCK_HANDLE,
 } from "./theme-extension-setup-status";
+import { CACHE_TTL, getCache, invalidateCache, setCache, shopKey } from "./cache.server";
 
 type AdminGraphqlClient = {
   graphql: (
@@ -159,11 +160,34 @@ function readThemeFiles(fileNodes: ThemeFileNode[]) {
   return { settingsData, dedicatedPageTemplate, defaultPageTemplate };
 }
 
+export function invalidateThemeSetupStatusCache(shop: string): void {
+  const key = (shop || "").trim().toLowerCase();
+  if (!key) return;
+  invalidateCache(shopKey(key, "themeSetupStatus"));
+}
+
 /**
  * Reads the published (MAIN) theme only — draft/dev themes must not mark onboarding complete.
  * Requires read_themes. Prefer merging with shopify.app.extensions() on the client when embedded.
  */
-export async function getThemeSetupStatus(admin: AdminGraphqlClient): Promise<ThemeSetupStatus> {
+export async function getThemeSetupStatus(
+  admin: AdminGraphqlClient,
+  shop?: string,
+): Promise<ThemeSetupStatus> {
+  const shopKeyNorm = (shop || "").trim().toLowerCase();
+  if (shopKeyNorm) {
+    const cached = getCache<ThemeSetupStatus>(shopKey(shopKeyNorm, "themeSetupStatus"));
+    if (cached) return cached;
+  }
+
+  const status = await fetchThemeSetupStatus(admin);
+  if (shopKeyNorm) {
+    setCache(shopKey(shopKeyNorm, "themeSetupStatus"), status, CACHE_TTL.themeSetupStatus);
+  }
+  return status;
+}
+
+async function fetchThemeSetupStatus(admin: AdminGraphqlClient): Promise<ThemeSetupStatus> {
   const fallback: ThemeSetupStatus = {
     appEmbedEnabled: false,
     registrationFormBlockOnPage: false,
