@@ -5,8 +5,38 @@
 
 export const SHOPIFY_EMBED_HOST_STORAGE_KEY = "approvefy_shopify_embed_host";
 
+/** Set before Shopify billing confirmation; cleared after redirect to Home. */
+export const BILLING_RETURN_PENDING_STORAGE_KEY = "approvefy_billing_return_pending";
+
 /** First screen after install / OAuth — merchants must pick a plan before using the app. */
 export const APP_EMBED_ENTRY_PATH = "/app/pricing";
+
+export function markBillingReturnPending(): void {
+    if (typeof window === "undefined") return;
+    try {
+        sessionStorage.setItem(BILLING_RETURN_PENDING_STORAGE_KEY, "1");
+    } catch {
+        /* ignore */
+    }
+}
+
+export function readBillingReturnPending(): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+        return sessionStorage.getItem(BILLING_RETURN_PENDING_STORAGE_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
+export function clearBillingReturnPending(): void {
+    if (typeof window === "undefined") return;
+    try {
+        sessionStorage.removeItem(BILLING_RETURN_PENDING_STORAGE_KEY);
+    } catch {
+        /* ignore */
+    }
+}
 
 /** Root `/` must not render the public landing page when Shopify opens the embedded app. */
 export function isEmbeddedShopifyAdminEntry(request: Request, url: URL): boolean {

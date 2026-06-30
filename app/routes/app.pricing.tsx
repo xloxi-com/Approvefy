@@ -29,8 +29,11 @@ import {
 } from "../lib/pricing-tiers";
 import { invalidateAppSubscriptionCache } from "../lib/app-subscription.server";
 import {
+  clearBillingReturnPending,
+  markBillingReturnPending,
   mergeEmbedParamsForAppPath,
   mergeEmbedParamsForServerPath,
+  readBillingReturnPending,
   readStoredEmbedHost,
   SHOPIFY_EMBED_HOST_STORAGE_KEY,
 } from "../lib/shopify-embed-navigation";
@@ -133,14 +136,20 @@ export default function PricingPage() {
   }, [fetcher.state, fetcher.data, billingSubmittingTier]);
 
   useEffect(() => {
-    if (!billingReturned) return;
-    if (subscribedPlan != null) {
-      revalidator.revalidate();
-      navigate(mergeEmbedParamsForAppPath("/app", searchParams), { replace: true });
+    if (subscribedPlan == null) {
+      if (billingReturned || readBillingReturnPending()) {
+        const timer = window.setTimeout(() => revalidator.revalidate(), 1500);
+        return () => window.clearTimeout(timer);
+      }
       return;
     }
-    const timer = window.setTimeout(() => revalidator.revalidate(), 1500);
-    return () => window.clearTimeout(timer);
+
+    const shouldRedirectHome = billingReturned || readBillingReturnPending();
+    if (!shouldRedirectHome) return;
+
+    clearBillingReturnPending();
+    revalidator.revalidate();
+    navigate(mergeEmbedParamsForAppPath("/app", searchParams), { replace: true });
   }, [billingReturned, subscribedPlan, navigate, searchParams, revalidator]);
 
   const billingError =
@@ -259,6 +268,7 @@ export default function PricingPage() {
                             }
                             onClick={() => {
                               if (isCurrentPlan || !resolvedEmbedHost) return;
+                              markBillingReturnPending();
                               setBillingSubmittingTier(tier.id);
                               fetcher.submit(
                                 { plan: tier.id, host: resolvedEmbedHost },

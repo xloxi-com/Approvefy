@@ -24,9 +24,12 @@ export async function resolveHasActiveAppSubscription(
   if (isBillingGateSkipped()) return true;
 
   const url = new URL(request.url);
+  const pathname = url.pathname.replace(/\/+$/, "") || "/";
   const billingCallback = url.searchParams.get("billing") === "callback";
+  const onPricingPage = pathname === APP_EMBED_ENTRY_PATH;
 
-  if (billingCallback) {
+  /** Fresh Shopify read on Pricing / billing return — avoids stale cached `false` after subscribe. */
+  if (billingCallback || onPricingPage) {
     invalidateAppSubscriptionCache(shop);
     invalidateMerchantPlanCache(shop);
     const plan = await syncMerchantPlanFromActiveSubscription(admin, shop);

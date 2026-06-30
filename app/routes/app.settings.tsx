@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useId, lazy, Suspense, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import type { Prisma } from "@prisma/client";
 import { Await, useLoaderData, useSubmit, useNavigation, useActionData, useNavigate, useLocation } from "react-router";
 import {
     Page,
@@ -71,6 +70,7 @@ import { invalidateCache, shopKey } from "../lib/cache.server";
 import { getCachedAppSettings } from "../lib/cached-settings.server";
 import { ensureRegistrationStorefrontPage, syncRegistrationPageStorefrontVisibility } from "../lib/registration-page.server";
 import { withOnboardingSettingsSaved } from "../lib/onboarding-status.server";
+import { toDbJson } from "../lib/prisma-json.server";
 import {
     BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
     getSettingsStoreUiStrings,
@@ -993,38 +993,41 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     try {
-        // Theme/appearance (including reset-to-defaults) persist only when user clicks Save; no other path writes these.
-        type AppSettingsUpsertUpdate = Parameters<typeof prisma.appSettings.upsert>[0]["update"];
-        type AppSettingsUpsertCreate = Parameters<typeof prisma.appSettings.upsert>[0]["create"];
+        const customerApprovalJson = toDbJson(
+            withOnboardingSettingsSaved(settingsToPersist as unknown as Record<string, unknown>),
+        );
 
-        const updatePayload = {
+        const updatePayload: {
+            defaultLanguage: string;
+            languageOptions: ReturnType<typeof toDbJson>;
+            updatedAt: Date;
+            customCss: string;
+            themeSettings: ReturnType<typeof toDbJson>;
+            formTranslations?: ReturnType<typeof toDbJson>;
+            customerApprovalSettings?: ReturnType<typeof toDbJson>;
+        } = {
             defaultLanguage: safeDefaultLanguage,
-            languageOptions: languageOptions as unknown as Prisma.InputJsonValue,
+            languageOptions: toDbJson(languageOptions),
             updatedAt: new Date(),
             customCss,
-            themeSettings: themeSettings as unknown as Prisma.InputJsonValue,
-        } as AppSettingsUpsertUpdate;
+            themeSettings: toDbJson(themeSettings),
+        };
         if (formTranslations && typeof formTranslations === "object" && !Array.isArray(formTranslations)) {
-            updatePayload.formTranslations = formTranslations;
+            updatePayload.formTranslations = toDbJson(formTranslations);
         }
-        // Store full customerApprovalSettings (subject, body, preset id) so loader can show last-saved template after reload
-        updatePayload.customerApprovalSettings = withOnboardingSettingsSaved(
-            settingsToPersist as unknown as Record<string, unknown>,
-        ) as unknown as Prisma.InputJsonValue;
+        updatePayload.customerApprovalSettings = customerApprovalJson;
         await prisma.appSettings.upsert({
             where: { shop },
             update: updatePayload,
             create: {
                 shop,
                 defaultLanguage: safeDefaultLanguage,
-                languageOptions: languageOptions as unknown as Prisma.InputJsonValue,
-                formTranslations: formTranslations ?? undefined,
+                languageOptions: toDbJson(languageOptions),
+                formTranslations: formTranslations ? toDbJson(formTranslations) : undefined,
                 customCss,
-                themeSettings: themeSettings as unknown as Prisma.InputJsonValue,
-                customerApprovalSettings: withOnboardingSettingsSaved(
-                    settingsToPersist as unknown as Record<string, unknown>,
-                ) as unknown as Prisma.InputJsonValue,
-            } as AppSettingsUpsertCreate,
+                themeSettings: toDbJson(themeSettings),
+                customerApprovalSettings: customerApprovalJson,
+            },
         });
         invalidateCustomerApprovalModeCache(shop);
         invalidateCache(shopKey(shop, "appSettings"));
