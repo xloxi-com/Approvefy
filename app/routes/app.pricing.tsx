@@ -29,12 +29,14 @@ import {
 } from "../lib/pricing-tiers";
 import { invalidateAppSubscriptionCache } from "../lib/app-subscription.server";
 import {
+  APP_EMBED_ENTRY_PATH,
   clearBillingReturnPending,
   markBillingReturnPending,
   mergeEmbedParamsForAppPath,
   mergeEmbedParamsForServerPath,
   readBillingReturnPending,
   readStoredEmbedHost,
+  redirectSearchParamsForAppEntry,
   SHOPIFY_EMBED_HOST_STORAGE_KEY,
 } from "../lib/shopify-embed-navigation";
 import { billingSubscribeAction } from "../lib/billing-subscribe.server";
@@ -60,7 +62,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   /** Legacy return URLs still hit /app/pricing — send merchants to Home once subscribed. */
   if (billingReturned && subscribedPlan != null) {
-    throw redirect(mergeEmbedParamsForServerPath("/app", url.searchParams));
+    throw redirect(mergeEmbedParamsForServerPath(APP_EMBED_ENTRY_PATH, url.searchParams));
+  }
+
+  /**
+   * Partners `application_url` used to point at Pricing — subscribed merchants cold-opening
+   * the app from Shopify admin (appLoadId) should land on Home instead.
+   */
+  if (
+    subscribedPlan != null &&
+    !billingReturned &&
+    url.searchParams.has("appLoadId")
+  ) {
+    const qs = redirectSearchParamsForAppEntry(url.searchParams);
+    throw redirect(qs ? `${APP_EMBED_ENTRY_PATH}?${qs}` : APP_EMBED_ENTRY_PATH);
   }
 
   /** Required for billing return URL; client also persists this when URL params survive navigation. */

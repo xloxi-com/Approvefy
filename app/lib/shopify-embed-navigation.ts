@@ -8,8 +8,11 @@ export const SHOPIFY_EMBED_HOST_STORAGE_KEY = "approvefy_shopify_embed_host";
 /** Set before Shopify billing confirmation; cleared after redirect to Home. */
 export const BILLING_RETURN_PENDING_STORAGE_KEY = "approvefy_billing_return_pending";
 
-/** First screen after install / OAuth — merchants must pick a plan before using the app. */
-export const APP_EMBED_ENTRY_PATH = "/app/pricing";
+/** Default embedded app entry — Home; billing gate sends unsubscribed merchants to Pricing. */
+export const APP_EMBED_ENTRY_PATH = "/app";
+
+/** Plan selection screen for merchants without an active subscription. */
+export const APP_PRICING_PATH = "/app/pricing";
 
 export function markBillingReturnPending(): void {
     if (typeof window === "undefined") return;

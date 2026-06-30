@@ -11,6 +11,7 @@ import { invalidateMerchantPlanCache } from "./merchant-plan.server";
 import { syncMerchantPlanFromActiveSubscription } from "./sync-merchant-plan-from-billing.server";
 import {
   APP_EMBED_ENTRY_PATH,
+  APP_PRICING_PATH,
   mergeEmbedParamsForServerPath,
   mergeEmbedParamsPreservingBilling,
 } from "./shopify-embed-navigation";
@@ -26,7 +27,7 @@ export async function resolveHasActiveAppSubscription(
   const url = new URL(request.url);
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
   const billingCallback = url.searchParams.get("billing") === "callback";
-  const onPricingPage = pathname === APP_EMBED_ENTRY_PATH;
+  const onPricingPage = pathname === APP_PRICING_PATH;
 
   /** Fresh Shopify read on Pricing / billing return — avoids stale cached `false` after subscribe. */
   if (billingCallback || onPricingPage) {
@@ -56,16 +57,16 @@ export function enforceAppBillingGate(
   const billingCallback = url.searchParams.get("billing") === "callback";
 
   if (hasActiveSubscription) {
-    if (billingCallback && (pathname === "/app" || pathname === APP_EMBED_ENTRY_PATH)) {
-      throw redirect(mergeEmbedParamsForServerPath("/app", url.searchParams));
+    if (billingCallback && (pathname === APP_EMBED_ENTRY_PATH || pathname === APP_PRICING_PATH)) {
+      throw redirect(mergeEmbedParamsForServerPath(APP_EMBED_ENTRY_PATH, url.searchParams));
     }
     return;
   }
 
   /** Shopify returns here after charge approval — stay on Home while subscription activates. */
-  if (billingCallback && pathname === "/app") return;
+  if (billingCallback && pathname === APP_EMBED_ENTRY_PATH) return;
 
   if (isBillingExemptAppPath(pathname)) return;
 
-  throw redirect(mergeEmbedParamsPreservingBilling(APP_EMBED_ENTRY_PATH, url.searchParams));
+  throw redirect(mergeEmbedParamsPreservingBilling(APP_PRICING_PATH, url.searchParams));
 }
