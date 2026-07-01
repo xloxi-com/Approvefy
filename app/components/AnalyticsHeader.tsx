@@ -1,51 +1,45 @@
 import { memo } from "react";
-import {
-    Grid,
-    Text,
-    BlockStack,
-} from "@shopify/polaris";
-import { SectionCard } from "./SectionCard";
+import { BlockStack, Card, InlineGrid, Text } from "@shopify/polaris";
 
 interface AnalyticsHeaderProps {
-    total: number;
-    pending: number;
-    denied: number;
+  total: number;
+  pending: number;
+  denied: number;
 }
 
+const MetricCard = memo(function MetricCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  tone?: "caution" | "critical" | "subdued";
+}) {
+  return (
+    <Card>
+      <BlockStack gap="200">
+        <Text as="p" variant="bodySm" tone="subdued">
+          {label}
+        </Text>
+        <Text as="p" variant="headingLg" tone={tone}>
+          {value}
+        </Text>
+      </BlockStack>
+    </Card>
+  );
+});
+
 export const AnalyticsHeader = memo(function AnalyticsHeader({
-    total,
-    pending,
-    denied,
+  total,
+  pending,
+  denied,
 }: AnalyticsHeaderProps) {
-    return (
-        <Grid>
-            <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 4, lg: 4, xl: 4 }}>
-                <SectionCard title="Total Customers">
-                    <BlockStack gap="200">
-                        <Text variant="headingXl" as="h2">
-                            {total}
-                        </Text>
-                    </BlockStack>
-                </SectionCard>
-            </Grid.Cell>
-            <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 4, lg: 4, xl: 4 }}>
-                <SectionCard title="Pending Approvals">
-                    <BlockStack gap="200">
-                        <Text variant="headingXl" as="h2" tone="caution">
-                            {pending}
-                        </Text>
-                    </BlockStack>
-                </SectionCard>
-            </Grid.Cell>
-            <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 4, lg: 4, xl: 4 }}>
-                <SectionCard title="Rejected Customers">
-                    <BlockStack gap="200">
-                        <Text variant="headingXl" as="h2" tone="critical">
-                            {denied}
-                        </Text>
-                    </BlockStack>
-                </SectionCard>
-            </Grid.Cell>
-        </Grid>
-    );
+  return (
+    <InlineGrid columns={{ xs: 1, sm: 2, md: 3 }} gap="400">
+      <MetricCard label="Total Customers" value={total} />
+      <MetricCard label="Pending Approvals" value={pending} tone="caution" />
+      <MetricCard label="Rejected Customers" value={denied} tone="critical" />
+    </InlineGrid>
+  );
 });

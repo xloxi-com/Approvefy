@@ -52,6 +52,22 @@ export function isEmbeddedShopifyAdminEntry(request: Request, url: URL): boolean
     return false;
 }
 
+/**
+ * True when Pricing is the app entry (legacy `application_url` / Shopify admin open),
+ * not in-app navigation from another Approvefy admin route.
+ */
+export function isLegacyPricingColdOpen(request: Request, url: URL): boolean {
+    if (url.searchParams.has("appLoadId")) return true;
+    const referer = request.headers.get("Referer")?.trim() ?? "";
+    if (!referer) return false;
+    try {
+        const refUrl = new URL(referer);
+        return refUrl.origin !== url.origin;
+    } catch {
+        return false;
+    }
+}
+
 /** Query string for `/app` entry — drops Shopify-only load correlation params. */
 export function redirectSearchParamsForAppEntry(searchParams: URLSearchParams): string {
     const params = new URLSearchParams(searchParams);

@@ -15,6 +15,7 @@ import {
 import {
   APP_EMBED_ENTRY_PATH,
   APP_PRICING_PATH,
+  isLegacyPricingColdOpen,
   mergeEmbedParamsForServerPath,
   mergeEmbedParamsPreservingBilling,
 } from "./shopify-embed-navigation";
@@ -63,6 +64,10 @@ export function enforceAppBillingGate(
 
   if (hasActiveSubscription) {
     if (billingCallback && (pathname === APP_EMBED_ENTRY_PATH || pathname === APP_PRICING_PATH)) {
+      throw redirect(mergeEmbedParamsForServerPath(APP_EMBED_ENTRY_PATH, url.searchParams));
+    }
+    /** Legacy application_url pointed at Pricing — subscribed merchants open Home instead. */
+    if (pathname === APP_PRICING_PATH && isLegacyPricingColdOpen(request, url)) {
       throw redirect(mergeEmbedParamsForServerPath(APP_EMBED_ENTRY_PATH, url.searchParams));
     }
     return;

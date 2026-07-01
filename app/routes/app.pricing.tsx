@@ -33,6 +33,7 @@ import {
 import {
   APP_EMBED_ENTRY_PATH,
   clearBillingReturnPending,
+  isLegacyPricingColdOpen,
   markBillingReturnPending,
   mergeEmbedParamsForAppPath,
   mergeEmbedParamsForServerPath,
@@ -66,14 +67,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   /**
-   * Partners `application_url` used to point at Pricing — subscribed merchants cold-opening
-   * the app from Shopify admin (appLoadId) should land on Home instead.
+   * Legacy `application_url` pointed at Pricing — subscribed merchants cold-opening
+   * the app from Shopify admin should land on Home instead.
    */
-  if (
-    subscribedPlan != null &&
-    !billingReturned &&
-    url.searchParams.has("appLoadId")
-  ) {
+  if (subscribedPlan != null && !billingReturned && isLegacyPricingColdOpen(request, url)) {
     const qs = redirectSearchParamsForAppEntry(url.searchParams);
     throw redirect(qs ? `${APP_EMBED_ENTRY_PATH}?${qs}` : APP_EMBED_ENTRY_PATH);
   }
