@@ -12,6 +12,8 @@ import {
     verifyShopifyCustomerOwnsEmail,
     findShopifyCustomerGidByEmailIfUnique,
     addPendingStatusTagToShopifyCustomer,
+    addCustomerTagsToShopifyCustomer,
+    getApprovedTags,
     getOfflineAccessTokenForShop,
     reconcilePendingRegistrationRow,
     reconcileLinkedPendingRegistrationFromShopifyTags,
@@ -25,6 +27,11 @@ import { sanitizeRegistrationRedirectForResponse } from "../lib/safe-registratio
 import { normalizeRegistrationPhone, validateStoredRegistrationPhone } from "../lib/registration-phone";
 import { shopHasActiveAppSubscription } from "../lib/app-subscription.server";
 import { getMerchantPlanForShop } from "../lib/merchant-plan.server";
+import {
+    normalizeFormCustomerTagsFromDb,
+    stashFormCustomerTagsInCustomData,
+    mergeUniqueCustomerTags,
+} from "../lib/form-customer-tags.server";
 import {
     buildTextFormatByFieldKey,
     getTextFormatErrorMessage,
@@ -181,6 +188,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const zipCode = (formData.get("zipCode") as string) || "";
         const country = (formData.get("country") as string) || "";
         const language = (formData.get("language") as string) || "";
+        const formIdRaw = formData.get("formId");
+        const formId = typeof formIdRaw === "string" ? formIdRaw.trim() : "";
 
         const MAX_FILE_SIZE = 25 * 1024 * 1024;
         const ALLOWED_MIME = ["image/jpeg", "image/png", "application/pdf"];
@@ -326,13 +335,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                   ? `Company: ${company}`
                   : undefined;
 
-        // Single composite-ordered FormConfig lookup ("default first, else oldest")
-        // halves the latency added before validation can run.
-        const formConfig = (await prisma.formConfig.findFirst({
-            where: { shop },
-            orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
-            select: { fields: true },
-        } as never)) as { fields?: unknown } | null;
+        // Resolve the submitted form (or shop default) for validation + per-form customer tags.
+        const formConfig = formId
+            ? await prisma.formConfig.findFirst({
+                  where: { id: formId, shop },
+                  select: { fields: true, customerTags: true },
+              })
+            : await prisma.formConfig.findFirst({
+                  where: { shop },
+                  orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+                  select: { fields: true, customerTags: true },
+              } as never);
+        const formCustomerTags = normalizeFormCustomerTagsFromDb(formConfig?.customerTags);
         const coreReq = getCoreFieldRequirementsFromConfig(formConfig?.fields);
         const missingRequired: string[] = [];
         if (coreReq.email && !email) missingRequired.push("email");
@@ -573,6 +587,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         if (zipCode) mergedCustomData.zipCode = zipCode;
         if (country) mergedCustomData.country = country;
         if (language) mergedCustomData.language = language;
+        stashFormCustomerTagsInCustomData(mergedCustomData, formCustomerTags);
 
         const companyTrimmed = typeof company === "string" ? company.trim() : "";
 
@@ -734,9 +749,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
 
         if (ownerForWrite && approvalMode !== "auto") {
-            // Fire-and-forget: only tag pending for manual approval shops.
+            // Fire-and-forget: pending tag + per-form tags for manual approval shops.
             void addPendingStatusTagToShopifyCustomer(admin, ownerForWrite).catch((e) => {
                 console.warn("[api.register] background tagsAdd status:pending failed:", e);
+            });
+            if (formCustomerTags.length > 0) {
+                void addCustomerTagsToShopifyCustomer(admin, ownerForWrite, formCustomerTags).catch((e) => {
+                    console.warn("[api.register] background form customer tags failed:", e);
+                });
+            }
+        } else if (ownerForWrite && approvalMode === "auto" && formCustomerTags.length > 0) {
+            void addCustomerTagsToShopifyCustomer(admin, ownerForWrite, formCustomerTags).catch((e) => {
+                console.warn("[api.register] background form customer tags failed:", e);
             });
         }
 
@@ -752,11 +776,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 );
             }
             try {
+                const approvedTags = mergeUniqueCustomerTags(
+                    await getApprovedTags(shop),
+                    formCustomerTags,
+                );
                 const approved = await approveCustomer(
                     admin!,
                     "db-" + registration.id,
                     shop,
                     shopAccessToken,
+                    { approvedTags },
                 );
                 activationUrl = approved.activationUrl;
             } catch (e) {

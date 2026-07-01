@@ -17,12 +17,14 @@ export type CachedAppSettingsRow = {
 };
 
 export type CachedFormConfigRow = {
+  id: string;
   fields: unknown;
   name: string;
   formType: string;
   showProgressBar: boolean;
   storefrontHeading: string | null;
   storefrontDescription: string | null;
+  customerTags: unknown;
   updatedAt: Date;
 };
 
@@ -39,12 +41,14 @@ const appSettingsSelect = {
 } as const;
 
 const formConfigSelect = {
+  id: true,
   fields: true,
   name: true,
   formType: true,
   showProgressBar: true,
   storefrontHeading: true,
   storefrontDescription: true,
+  customerTags: true,
   updatedAt: true,
 } as const;
 

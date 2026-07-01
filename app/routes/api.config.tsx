@@ -156,7 +156,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 ? customerShopifyIdForPending
                 : "";
         const doPendingRegistrationLookup = !!(pendingCheckDigits || customerEmailForPending);
-        const configNoStore = true;
+        const configNoStore = doPendingRegistrationLookup;
 
         const pendingRegistrationPromise =
             doPendingRegistrationLookup
@@ -197,6 +197,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
              console.warn(`App Proxy Auth failed for shop ${shop}. Proceeding with public access for config.`);
         }
         let config: {
+            id?: string;
             fields: unknown[];
             formType?: string;
             name?: string;
@@ -223,6 +224,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                   }
                   formConfigUpdatedAt = dbConfig.updatedAt.toISOString();
                   return {
+                      id: dbConfig.id,
                       fields: (dbConfig.fields ?? []) as unknown[],
                       formType: dbConfig.formType ?? "wholesale",
                       name: dbConfig.name ?? "Registration Form",

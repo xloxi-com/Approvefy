@@ -114,6 +114,8 @@ model FormConfig {
   storefrontHeading     String?
   /// Subtitle under the title. Empty = use translation default.
   storefrontDescription String?
+  /// Shopify customer tags applied when a shopper submits this form (JSON string array).
+  customerTags          Json     @default("[]")
 
   @@index([shop])
   @@index([shop, isDefault])

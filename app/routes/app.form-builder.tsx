@@ -59,6 +59,11 @@ import {
     type ThemeSettings,
 } from "../lib/theme-settings";
 import { STOREFRONT_FORM_DEFAULTS_EN } from "../lib/storefront-form-defaults";
+import {
+    formatFormCustomerTagsForInput,
+    normalizeFormCustomerTagsFromDb,
+    parseFormCustomerTagsInput,
+} from "../lib/form-customer-tags.server";
 import { ensureRegistrationStorefrontPage } from "../lib/registration-page.server";
 import { markOnboardingFormReviewed } from "../lib/onboarding-status.server";
 import {
@@ -1142,6 +1147,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     let showProgressBar = formTypeParam === "multi_step";
     let storefrontHeading = "";
     let storefrontDescription = "";
+    let customerTags = "";
     let themeSettings: ThemeSettings = THEME_DEFAULTS;
     let customCss = "";
     let appearanceTemplateId: AppearanceTemplateId = getAppearanceTemplateId(undefined);
@@ -1189,6 +1195,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 showProgressBar?: boolean;
                 storefrontHeading?: string | null;
                 storefrontDescription?: string | null;
+                customerTags?: unknown;
             };
             formId = dbForm.id;
             formUpdatedAt = dbForm.updatedAt.toISOString();
@@ -1199,6 +1206,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             showProgressBar = r.formType === "multi_step" ? r.showProgressBar !== false : false;
             storefrontHeading = typeof r.storefrontHeading === "string" ? r.storefrontHeading : "";
             storefrontDescription = typeof r.storefrontDescription === "string" ? r.storefrontDescription : "";
+            customerTags = formatFormCustomerTagsForInput(r.customerTags);
             config = { fields: (dbForm.fields ?? []) as unknown as FormField[] };
             const a = shopAppearanceFromRow(appRow);
             themeSettings = a.themeSettings;
@@ -1227,6 +1235,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 showProgressBar?: boolean;
                 storefrontHeading?: string | null;
                 storefrontDescription?: string | null;
+                customerTags?: unknown;
             };
             formId = dbForm.id;
             formUpdatedAt = dbForm.updatedAt.toISOString();
@@ -1237,6 +1246,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             showProgressBar = r.formType === "multi_step" ? r.showProgressBar !== false : false;
             storefrontHeading = typeof r.storefrontHeading === "string" ? r.storefrontHeading : "";
             storefrontDescription = typeof r.storefrontDescription === "string" ? r.storefrontDescription : "";
+            customerTags = formatFormCustomerTagsForInput(r.customerTags);
             config = { fields: (dbForm.fields ?? []) as unknown as FormField[] };
         } else {
             config = { fields: [...DEFAULT_FIELDS] };
@@ -1315,6 +1325,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         showProgressBar,
         storefrontHeading,
         storefrontDescription,
+        customerTags,
         isNew,
         merchantPlan,
     };
@@ -1473,6 +1484,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const showProgressBarRaw = formData.get("showProgressBar");
     const storefrontHeading = trimStorefrontCopy(formData.get("storefrontHeading"), 200);
     const storefrontDescription = trimStorefrontCopy(formData.get("storefrontDescription"), 2000);
+    const customerTagsJson = normalizeFormCustomerTagsFromDb(
+        parseFormCustomerTagsInput(String(formData.get("customerTags") || "")),
+    );
 
     if (!configStr || typeof configStr !== "string") {
         return { success: false, error: "Missing form configuration." };
@@ -1550,6 +1564,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     showProgressBar,
                     storefrontHeading,
                     storefrontDescription,
+                    customerTags: customerTagsJson,
                 },
             } as never);
 
@@ -1609,6 +1624,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     showProgressBar,
                     storefrontHeading,
                     storefrontDescription,
+                    customerTags: customerTagsJson,
                 },
             } as never);
             if (isDefault && admin) {
@@ -1691,6 +1707,7 @@ export default function FormBuilder() {
         showProgressBar: loaderShowProgressBar,
         storefrontHeading: loaderStorefrontHeading,
         storefrontDescription: loaderStorefrontDescription,
+        customerTags: loaderCustomerTags,
         isNew: loaderIsNew,
         themeSettings: loaderThemeSettings,
         customCss: loaderCustomCss,
@@ -1725,6 +1742,7 @@ export default function FormBuilder() {
     );
     const [storefrontHeading, setStorefrontHeading] = useState(loaderStorefrontHeading ?? "");
     const [storefrontDescription, setStorefrontDescription] = useState(loaderStorefrontDescription ?? "");
+    const [customerTags, setCustomerTags] = useState(loaderCustomerTags ?? "");
     const [themeSettings, setThemeSettings] = useState<ThemeSettings>(loaderThemeSettings);
     const [debouncedThemeSettings, setDebouncedThemeSettings] = useState<ThemeSettings>(loaderThemeSettings);
     useEffect(() => {
@@ -1788,6 +1806,7 @@ export default function FormBuilder() {
             (loaderFormType ?? "wholesale") === "multi_step" ? loaderShowProgressBar !== false : false,
         storefrontHeading: loaderStorefrontHeading ?? "",
         storefrontDescription: loaderStorefrontDescription ?? "",
+        customerTags: loaderCustomerTags ?? "",
         themeSettings: loaderThemeSettings,
         customCss: typeof loaderCustomCss === "string" ? loaderCustomCss : "",
         appearanceTemplateId: loaderAppearanceTemplateId,
@@ -1810,10 +1829,41 @@ export default function FormBuilder() {
         setSavedState((s) => ({
             ...s,
             fields: tagged.map((f) => ({ ...f })),
+            name: loaderName ?? "",
+            formType: loaderFormType ?? "wholesale",
+            isDefault: loaderIsDefault ?? false,
+            enabled: loaderEnabled !== false,
+            showProgressBar:
+                (loaderFormType ?? "wholesale") === "multi_step" ? loaderShowProgressBar !== false : false,
+            storefrontHeading: loaderStorefrontHeading ?? "",
+            storefrontDescription: loaderStorefrontDescription ?? "",
+            customerTags: loaderCustomerTags ?? "",
             formUpdatedAt: loaderFormUpdatedAt ?? null,
         }));
+        setName(loaderName ?? "");
+        setFormType(loaderFormType ?? "wholesale");
+        setIsDefault(loaderIsDefault ?? false);
+        setEnabled(loaderEnabled !== false);
+        setShowProgressBar(
+            (loaderFormType ?? "wholesale") === "multi_step" ? loaderShowProgressBar !== false : false,
+        );
+        setStorefrontHeading(loaderStorefrontHeading ?? "");
+        setStorefrontDescription(loaderStorefrontDescription ?? "");
+        setCustomerTags(loaderCustomerTags ?? "");
         // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-bootstrap field ids when switching forms; revalidate keeps the same formId
-    }, [loaderFormId, loaderFormUpdatedAt]);
+    }, [
+        loaderFormId,
+        loaderFormUpdatedAt,
+        loaderName,
+        loaderFormType,
+        loaderIsDefault,
+        loaderEnabled,
+        loaderShowProgressBar,
+        loaderStorefrontHeading,
+        loaderStorefrontDescription,
+        loaderCustomerTags,
+        initialConfig.fields,
+    ]);
     const [showToast, setShowToast] = useState(false);
     const [showErrorToast, setShowErrorToast] = useState(false);
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
@@ -1895,6 +1945,7 @@ export default function FormBuilder() {
                 showProgressBar: formType === "multi_step" ? showProgressBar : false,
                 storefrontHeading,
                 storefrontDescription,
+                customerTags,
                 themeSettings,
                 customCss,
                 appearanceTemplateId,
@@ -1912,6 +1963,7 @@ export default function FormBuilder() {
         showProgressBar,
         storefrontHeading,
         storefrontDescription,
+        customerTags,
         themeSettings,
         customCss,
         appearanceTemplateId,
@@ -2118,6 +2170,7 @@ export default function FormBuilder() {
         );
         setStorefrontHeading(savedState.storefrontHeading ?? "");
         setStorefrontDescription(savedState.storefrontDescription ?? "");
+        setCustomerTags(savedState.customerTags ?? "");
         setThemeSettings(savedState.themeSettings);
         setCustomCss(savedState.customCss ?? "");
         setAppearanceTemplateId(savedState.appearanceTemplateId);
@@ -2134,6 +2187,7 @@ export default function FormBuilder() {
         (formType === "multi_step" ? showProgressBar !== (savedState.showProgressBar !== false) : false) ||
         (storefrontHeading ?? "").trim() !== (savedState.storefrontHeading ?? "").trim() ||
         (storefrontDescription ?? "").trim() !== (savedState.storefrontDescription ?? "").trim() ||
+        (customerTags ?? "").trim() !== (savedState.customerTags ?? "").trim() ||
         JSON.stringify(themeSettings) !== JSON.stringify(savedState.themeSettings) ||
         (customCss ?? "").trim() !== (savedState.customCss ?? "").trim() ||
         appearanceTemplateId !== savedState.appearanceTemplateId;
@@ -2155,6 +2209,7 @@ export default function FormBuilder() {
             fd.set("showProgressBar", formType === "multi_step" && showProgressBar ? "true" : "false");
             fd.set("storefrontHeading", storefrontHeading);
             fd.set("storefrontDescription", storefrontDescription);
+            fd.set("customerTags", customerTags);
             fd.set(
                 "shopAppearance",
                 JSON.stringify({
@@ -2176,6 +2231,7 @@ export default function FormBuilder() {
             showProgressBar,
             storefrontHeading,
             storefrontDescription,
+            customerTags,
             themeSettings,
             customCss,
             appearanceTemplateId,
@@ -2410,6 +2466,14 @@ export default function FormBuilder() {
                                                                     multiline={3}
                                                                     maxLength={2000}
                                                                     showCharacterCount
+                                                                />
+                                                                <TextField
+                                                                    label="Customer tags"
+                                                                    value={customerTags}
+                                                                    onChange={setCustomerTags}
+                                                                    autoComplete="off"
+                                                                    placeholder="wholesale, B2B"
+                                                                    helpText="Comma-separated Shopify customer tags applied automatically when someone submits this form. Each form has its own tags."
                                                                 />
                                                                 <div className="fb-form-details-row">
                                                                     <InlineStack gap="400" blockAlign="start" wrap>

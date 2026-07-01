@@ -151,11 +151,9 @@ window.__approvefySignInRedirectEnabled = true;
     );
   }
 
-  function configCacheKeyForCustomer(resolvedLoggedInCustomerId, settingsUpdatedAt) {
-    var rev =
-      settingsUpdatedAt && String(settingsUpdatedAt).trim()
-        ? String(settingsUpdatedAt).trim()
-        : '0';
+  var CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
+
+  function configCacheKeyForCustomer(resolvedLoggedInCustomerId) {
     return (
       'customer_approval_config_v13_' +
       shop +
@@ -164,10 +162,46 @@ window.__approvefySignInRedirectEnabled = true;
       '_' +
       loc +
       '_' +
-      (resolvedLoggedInCustomerId || '0') +
-      '_' +
-      rev
+      (resolvedLoggedInCustomerId || '0')
     );
+  }
+
+  function tryReadCachedConfig(customerId) {
+    try {
+      if (!window.sessionStorage) return null;
+      var key = configCacheKeyForCustomer(customerId || '0');
+      var raw = sessionStorage.getItem(key);
+      if (!raw) {
+        var legacyPrefix = key + '_';
+        for (var ci = 0; ci < sessionStorage.length; ci++) {
+          var legacyKey = sessionStorage.key(ci);
+          if (legacyKey && legacyKey.indexOf(legacyPrefix) === 0) {
+            raw = sessionStorage.getItem(legacyKey);
+            break;
+          }
+        }
+      }
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (parsed.ts && Date.now() - parsed.ts > CONFIG_CACHE_TTL_MS) return null;
+      return parsed.data && typeof parsed.data === 'object' ? parsed.data : null;
+    } catch (eCacheRead) {
+      void eCacheRead;
+      return null;
+    }
+  }
+
+  function storeConfigCache(data, customerId) {
+    try {
+      if (!data || typeof data !== 'object' || !window.sessionStorage) return;
+      sessionStorage.setItem(
+        configCacheKeyForCustomer(customerId || '0'),
+        JSON.stringify({ ts: Date.now(), data: data })
+      );
+    } catch (eStore) {
+      void eStore;
+    }
   }
 
   function applyThemeCss(cssText) {
@@ -196,43 +230,118 @@ window.__approvefySignInRedirectEnabled = true;
       })
       .then(function (data) {
         if (data && typeof data.customCss === 'string') applyThemeCss(data.customCss);
-        try {
-          if (data && typeof data === 'object' && window.sessionStorage) {
-            var resolvedId = resolveLoggedInShopifyCustomerId();
-            var rev =
-              data.settingsUpdatedAt && String(data.settingsUpdatedAt).trim()
-                ? String(data.settingsUpdatedAt).trim()
-                : '0';
-            var cacheKey = configCacheKeyForCustomer(resolvedId, rev);
-            sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: data }));
-          }
-        } catch (eStore) {
-          void eStore;
-        }
+        var resolvedId = resolveLoggedInShopifyCustomerId();
+        storeConfigCache(data, resolvedId || '0');
         return data;
       });
+  }
+
+  function startNetworkConfig(customerId) {
+    var url = buildConfigUrl(customerId || '');
+    window.__approvefyConfigPrefetchUrl = url;
+    return fetchAndCacheConfig(url, { credentials: 'same-origin', cache: 'no-store' });
+  }
+
+  var syncCustomerId = resolveLoggedInShopifyCustomerId();
+  var knownLoggedIn =
+    cfg.customerLoggedIn === true ||
+    (syncCustomerId && String(syncCustomerId).trim() !== '');
+  var cacheCustomerKey =
+    syncCustomerId ||
+    (cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
+      ? String(cfg.shopifyLoggedInCustomerId).trim()
+      : '0');
+  var cachedConfig = tryReadCachedConfig(cacheCustomerKey);
+  if (cachedConfig && typeof cachedConfig.customCss === 'string') {
+    applyThemeCss(cachedConfig.customCss);
   }
 
   var guestConfigUrl = buildConfigUrl('');
   window.__approvefyConfigPrefetchUrl = guestConfigUrl;
   var initialConfigFetch = fetchAndCacheConfig(guestConfigUrl, {
     credentials: 'same-origin',
-    cache: 'no-store',
   });
 
-  window.__approvefyConfigPromise = waitForLoggedInCustomerId(2000, 50).then(function (resolvedLoggedInCustomerId) {
-    if (resolvedLoggedInCustomerId) {
+  if (cachedConfig) {
+    var refreshPromise;
+    if (knownLoggedIn && !syncCustomerId && !cfg.shopifyLoggedInCustomerId) {
+      refreshPromise = waitForLoggedInCustomerId(400, 25).then(function (resolvedLoggedInCustomerId) {
+        if (resolvedLoggedInCustomerId) {
+          cfg.customerLoggedIn = true;
+          cfg.shopifyLoggedInCustomerId = resolvedLoggedInCustomerId;
+          window.__REGISTRATION_FORM_CONFIG__ = cfg;
+          return startNetworkConfig(resolvedLoggedInCustomerId);
+        }
+        return initialConfigFetch;
+      });
+    } else if (knownLoggedIn && (syncCustomerId || cfg.shopifyLoggedInCustomerId)) {
+      var loggedInId = syncCustomerId || String(cfg.shopifyLoggedInCustomerId);
       cfg.customerLoggedIn = true;
-      cfg.shopifyLoggedInCustomerId = resolvedLoggedInCustomerId;
+      cfg.shopifyLoggedInCustomerId = loggedInId;
       window.__REGISTRATION_FORM_CONFIG__ = cfg;
-      var loggedInConfigUrl = buildConfigUrl(resolvedLoggedInCustomerId);
-      if (loggedInConfigUrl !== guestConfigUrl) {
-        window.__approvefyConfigPrefetchUrl = loggedInConfigUrl;
-        return fetchAndCacheConfig(loggedInConfigUrl, { credentials: 'same-origin', cache: 'no-store' });
-      }
+      refreshPromise = startNetworkConfig(loggedInId);
+    } else {
+      refreshPromise = initialConfigFetch;
     }
-    return initialConfigFetch;
-  });
+    window.__approvefyConfigPromise = Promise.resolve(cachedConfig);
+    refreshPromise
+      .then(function (fresh) {
+        window.__approvefyConfigPromise = Promise.resolve(fresh);
+      })
+      .catch(function () {});
+  } else if (knownLoggedIn) {
+    if (syncCustomerId || cfg.shopifyLoggedInCustomerId) {
+      var immediateLoggedInId = syncCustomerId || String(cfg.shopifyLoggedInCustomerId);
+      cfg.customerLoggedIn = true;
+      cfg.shopifyLoggedInCustomerId = immediateLoggedInId;
+      window.__REGISTRATION_FORM_CONFIG__ = cfg;
+      window.__approvefyConfigPromise = startNetworkConfig(immediateLoggedInId);
+    } else {
+      window.__approvefyConfigPromise = waitForLoggedInCustomerId(400, 25).then(function (resolvedLoggedInCustomerId) {
+        if (resolvedLoggedInCustomerId) {
+          cfg.customerLoggedIn = true;
+          cfg.shopifyLoggedInCustomerId = resolvedLoggedInCustomerId;
+          window.__REGISTRATION_FORM_CONFIG__ = cfg;
+          return startNetworkConfig(resolvedLoggedInCustomerId);
+        }
+        return initialConfigFetch;
+      });
+    }
+  } else {
+    window.__approvefyConfigPromise = initialConfigFetch;
+  }
+
+  {% if approvefy_load_form %}
+  (function paintCachedFormHtmlEarly() {
+    var mount = document.querySelector(
+      '[data-approvefy-registration-block] .approvefy-registration-mount'
+    );
+    if (!mount || mount.getAttribute('data-approvefy-prepainted') === '1') return;
+    try {
+      if (!window.sessionStorage) return;
+      var htmlKey =
+        'customer_approval_rendered_form_v13_' +
+        shop +
+        '_' +
+        embedFormId +
+        '_' +
+        loc +
+        '_' +
+        (cacheCustomerKey || '0');
+      var raw = sessionStorage.getItem(htmlKey);
+      if (!raw && window.localStorage) raw = localStorage.getItem(htmlKey);
+      if (!raw) return;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.html !== 'string' || !parsed.html.trim()) return;
+      if (parsed.ts && Date.now() - parsed.ts > 30 * 60 * 1000) return;
+      mount.innerHTML = parsed.html;
+      mount.setAttribute('data-approvefy-prepainted', '1');
+      document.body.classList.add('custom-registration-enabled');
+    } catch (ePaint) {
+      void ePaint;
+    }
+  })();
+  {% endif %}
 })();
 </script>
 <script>
@@ -306,6 +415,6 @@ window.__approvefySignInRedirectEnabled = true;
 {{ 'guest-checkout-guard.js' | asset_url | preload_tag: as: 'script' }}
 {% if approvefy_load_form %}
   {{ 'registration-form.js' | asset_url | preload_tag: as: 'script' }}
-  <script src="{{ 'registration-form.js' | asset_url }}" defer></script>
+  <script src="{{ 'registration-form.js' | asset_url }}" defer fetchpriority="high"></script>
 {% endif %}
 <script src="{{ 'guest-checkout-guard.js' | asset_url }}" defer></script>

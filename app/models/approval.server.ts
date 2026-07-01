@@ -16,6 +16,10 @@ import {
   readApprovalModeFromParsedSettings,
 } from "../lib/customer-approval-settings.server";
 import { CACHE_TTL, getCache, setCache, shopKey, invalidateCache } from "../lib/cache.server";
+import {
+  extractFormCustomerTagsFromCustomData,
+  mergeUniqueCustomerTags,
+} from "../lib/form-customer-tags.server";
 
 /** Must match Admin REST path version; keep aligned with `shopify.server` ApiVersion. */
 const ADMIN_REST_API_VERSION = ApiVersion.October25;
@@ -416,6 +420,35 @@ export async function addPendingStatusTagToShopifyCustomer(
     }
   } catch (e) {
     console.warn("addPendingStatusTagToShopifyCustomer:", e);
+  }
+}
+
+/** Apply arbitrary Shopify customer tags (e.g. per-form tags on registration submit). */
+export async function addCustomerTagsToShopifyCustomer(
+  admin: AdminGraphQL,
+  customerGid: string,
+  tags: string[],
+): Promise<void> {
+  const id = (customerGid || "").trim();
+  const toAdd = (tags || []).map((t) => String(t).trim()).filter(Boolean);
+  if (!id.startsWith("gid://shopify/Customer/") || toAdd.length === 0) return;
+  try {
+    const res = await admin.graphql(
+      `#graphql
+      mutation tagsAdd($id: ID!, $tags: [String!]!) {
+        tagsAdd(id: $id, tags: $tags) {
+          userErrors { field message }
+        }
+      }`,
+      { variables: { id, tags: toAdd } },
+    );
+    const data = await res.json();
+    const errs = data.data?.tagsAdd?.userErrors as Array<{ message?: string }> | undefined;
+    if (errs?.length) {
+      console.warn("tagsAdd form customer tags userErrors:", errs);
+    }
+  } catch (e) {
+    console.warn("addCustomerTagsToShopifyCustomer:", e);
   }
 }
 
@@ -1053,8 +1086,8 @@ export async function approveCustomer(
   accessToken?: string,
   opts?: ApproveCustomerOpts
 ): Promise<{ activationUrl?: string | null }> {
-  const tags = opts?.approvedTags ?? (await getApprovedTags(shopDomain || ""));
-  const tagsToApply = tags.length > 0 ? tags : ["status:approved"];
+  const baseTags = opts?.approvedTags ?? (await getApprovedTags(shopDomain || ""));
+  let tagsToApply = baseTags.length > 0 ? baseTags : ["status:approved"];
   const labelMap = opts?.customDataLabels ?? null;
   let shopifyCustomerId: string;
 
@@ -1078,6 +1111,10 @@ export async function approveCustomer(
     });
     if (!reg) {
       throw new Error("Registration not found. This customer may have been removed.");
+    }
+    const formTags = extractFormCustomerTagsFromCustomData(reg.customData);
+    if (formTags.length > 0) {
+      tagsToApply = mergeUniqueCustomerTags(tagsToApply, formTags);
     }
     if (reg.status !== "pending") {
       throw new Error(

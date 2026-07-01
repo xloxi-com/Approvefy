@@ -630,41 +630,91 @@
     'customer_approval_rendered_form_' + CACHE_SCHEMA_VERSION + '_' + shop + '_' + (embedFormId || '') + '_' + locale + '_' + loggedInCustIdForCache;
   var FORM_HTML_CACHE_TTL_MS = 30 * 60 * 1000;
 
+  function parseCachedConfigPayload(raw) {
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.ts && (Date.now() - parsed.ts) > CONFIG_CACHE_TTL_MS) return null;
+    if (!parsed.data || typeof parsed.data !== 'object') return null;
+    return parsed.data;
+  }
+
+  function readCachedConfigFromStorage(storage) {
+    if (!storage) return null;
+    try {
+      var raw = storage.getItem(CONFIG_CACHE_KEY);
+      if (raw) {
+        var direct = parseCachedConfigPayload(raw);
+        if (direct) return direct;
+      }
+      var legacyPrefix =
+        'customer_approval_config_v13_' +
+        shop +
+        '_' +
+        (embedFormId || '') +
+        '_' +
+        locale +
+        '_' +
+        loggedInCustIdForCache +
+        '_';
+      for (var i = 0; i < storage.length; i++) {
+        var key = storage.key(i);
+        if (key && key.indexOf(legacyPrefix) === 0) {
+          var legacy = parseCachedConfigPayload(storage.getItem(key));
+          if (legacy) return legacy;
+        }
+      }
+    } catch (eStorageRead) {
+      void eStorageRead;
+    }
+    return null;
+  }
+
   function readCachedConfig() {
     try {
-      var raw = null;
-      if (window.sessionStorage) {
-        raw = sessionStorage.getItem(CONFIG_CACHE_KEY);
+      var fromSession = readCachedConfigFromStorage(window.sessionStorage);
+      if (fromSession) {
+        var cas = fromSession.customerApprovalSettings;
+        if (cas && typeof cas === 'object' && cas.blockLoggedInWithoutApprovedTag === true) {
+          var storedRev = null;
+          try {
+            if (window.sessionStorage) {
+              storedRev = sessionStorage.getItem('approvefy_settings_revision_' + shop);
+            }
+          } catch (eRev) {
+            void eRev;
+          }
+          var cachedRev =
+            fromSession.settingsUpdatedAt && String(fromSession.settingsUpdatedAt).trim()
+              ? String(fromSession.settingsUpdatedAt).trim()
+              : '';
+          if (storedRev && cachedRev && storedRev !== cachedRev) {
+            return null;
+          }
+        }
+        return fromSession;
       }
-      if (!raw && window.localStorage) {
-        raw = localStorage.getItem(CONFIG_CACHE_KEY);
-      }
-      if (!raw) return null;
-      var parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return null;
-      if (parsed.ts && (Date.now() - parsed.ts) > CONFIG_CACHE_TTL_MS) return null;
-      if (!parsed.data || typeof parsed.data !== 'object') {
-        return null;
-      }
-      var cas = parsed.data.customerApprovalSettings;
-      if (cas && typeof cas === 'object' && cas.blockLoggedInWithoutApprovedTag === true) {
-        var storedRev = null;
+      var fromLocal = readCachedConfigFromStorage(window.localStorage);
+      if (!fromLocal) return null;
+      var casLocal = fromLocal.customerApprovalSettings;
+      if (casLocal && typeof casLocal === 'object' && casLocal.blockLoggedInWithoutApprovedTag === true) {
+        var storedRevLocal = null;
         try {
           if (window.sessionStorage) {
-            storedRev = sessionStorage.getItem('approvefy_settings_revision_' + shop);
+            storedRevLocal = sessionStorage.getItem('approvefy_settings_revision_' + shop);
           }
-        } catch (eRev) {
-          void eRev;
+        } catch (eRevLocal) {
+          void eRevLocal;
         }
-        var cachedRev =
-          parsed.data.settingsUpdatedAt && String(parsed.data.settingsUpdatedAt).trim()
-            ? String(parsed.data.settingsUpdatedAt).trim()
+        var cachedRevLocal =
+          fromLocal.settingsUpdatedAt && String(fromLocal.settingsUpdatedAt).trim()
+            ? String(fromLocal.settingsUpdatedAt).trim()
             : '';
-        if (storedRev && cachedRev && storedRev !== cachedRev) {
+        if (storedRevLocal && cachedRevLocal && storedRevLocal !== cachedRevLocal) {
           return null;
         }
       }
-      return parsed.data || null;
+      return fromLocal;
     } catch (e) {
       return null;
     }
@@ -761,7 +811,7 @@
       return cfg;
     });
   }
-  var seededConfig = null;
+  var seededConfig = readCachedConfig();
   var prefetchHadCustomerId =
     window.__approvefyConfigPrefetchUrl &&
     String(window.__approvefyConfigPrefetchUrl).indexOf('customerShopifyId=') !== -1;
@@ -772,10 +822,21 @@
   if (canReusePrefetch) {
     configPromise = wireConfigPromise(withConfigTimeout(window.__approvefyConfigPromise, CONFIG_FETCH_TIMEOUT_MS));
     window.__approvefyConfigPromise = configPromise;
-  } else if (seededConfig && !resolvedLoggedInCustomerId) {
+  } else if (seededConfig) {
     configPromise = wireConfigPromise(Promise.resolve(seededConfig));
     window.__approvefyConfigPrefetchUrl = configUrl;
     window.__approvefyConfigPromise = configPromise;
+    if (!canReusePrefetch) {
+      fetchConfigWithTimeout(
+        configUrl,
+        { credentials: 'same-origin' },
+        CONFIG_FETCH_TIMEOUT_MS
+      )
+        .then(function (fresh) {
+          writeCachedConfig(fresh);
+        })
+        .catch(function () {});
+    }
   } else {
     configPromise = wireConfigPromise(
       fetchConfigWithTimeout(
@@ -1951,10 +2012,39 @@
     let hasConfig = false;
     var config = null;
 
+    if (isInline && inlineRoot) {
+      var cachedFormHtml = readCachedRenderedFormHtml();
+      if (cachedFormHtml) {
+        var mountCached = inlineRoot.querySelector('.approvefy-registration-mount');
+        if (mountCached) {
+          mountCached.innerHTML = cachedFormHtml;
+          document.body.classList.add('custom-registration-enabled');
+        }
+      }
+    }
+
     if (onDedicatedRegistrationPage) {
-      try {
-        var gateConfig = await configPromise;
-        if (gateConfig && typeof gateConfig === 'object') {
+      var gateCfgCached = readCachedConfig();
+      if (
+        gateCfgCached &&
+        gateCfgCached.customerApprovalSettings &&
+        gateCfgCached.customerApprovalSettings.redirectSignInLinksToFormPage === false
+      ) {
+        clearStoredApprovalConfigCache();
+        clearStoredRenderedFormCache();
+        var homeGateCached = storefrontHomeHref();
+        if (
+          normalizeComparePathForRegistration(window.location.pathname) !==
+          normalizeComparePathForRegistration(homeGateCached)
+        ) {
+          window.location.replace(homeGateCached);
+          return;
+        }
+      }
+      configPromise
+        .then(function (gateConfig) {
+          if (initSeq !== approvefyInitSeq) return;
+          if (!gateConfig || typeof gateConfig !== 'object') return;
           writeCachedConfig(gateConfig);
           var gateCas = gateConfig.customerApprovalSettings;
           if (gateCas && gateCas.redirectSignInLinksToFormPage === false) {
@@ -1967,24 +2057,13 @@
             ) {
               window.location.replace(homeGate);
             }
-            return;
           }
-        }
-      } catch (gateErr) {
-        void gateErr;
-      }
+        })
+        .catch(function (gateErr) {
+          void gateErr;
+        });
     }
 
-    if (isInline && inlineRoot) {
-      var cachedFormHtml = readCachedRenderedFormHtml();
-      if (cachedFormHtml) {
-        var mountCached = inlineRoot.querySelector('.approvefy-registration-mount');
-        if (mountCached) {
-          mountCached.innerHTML = cachedFormHtml;
-          document.body.classList.add('custom-registration-enabled');
-        }
-      }
-    }
     try {
       // Fast path: render immediately from cache on reload.
       var cachedConfig = readCachedConfig();
@@ -3787,6 +3866,13 @@
           if (!formData.get('loggedInShopifyCustomerId')) {
             formData.set('loggedInShopifyCustomerId', cidSubmit);
           }
+        }
+
+        var submitFormId =
+          (config && config.id && String(config.id).trim()) ||
+          (typeof embedFormId === 'string' ? embedFormId.trim() : '');
+        if (submitFormId) {
+          formData.set('formId', submitFormId);
         }
 
         const shop = window.Shopify?.shop || (cfg.shop || '');

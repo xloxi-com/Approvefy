@@ -30,6 +30,7 @@ import { ensureRegistrationStorefrontPage } from "../lib/registration-page.serve
 import { ensureDefaultCustomerB2BForm } from "../lib/default-form-config.server";
 import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
 import { DEFAULT_CUSTOMER_B2B_FORM_NAME } from "../lib/default-form-config";
+import { normalizeFormCustomerTagsFromDb } from "../lib/form-customer-tags.server";
 
 export const FORM_TYPES = [
     { value: "wholesale", label: "Wholesale registration form", description: "Wholesale registration form helps streamline the registration process for companies that sell products to retailers or distributors.", displayCondition: "This form can show on all pages of the store-front." },
@@ -160,6 +161,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 fields?: unknown;
                 enabled?: boolean;
                 showProgressBar?: boolean;
+                customerTags?: unknown;
             };
             const name = (row.name ?? "Registration Form").trim();
             const copyName = name.length > 0 ? `${name} (Copy)` : "Registration Form (Copy)";
@@ -173,6 +175,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     enabled: row.enabled !== false,
                     showProgressBar:
                         (row.formType ?? "wholesale") === "multi_step" ? row.showProgressBar !== false : false,
+                    customerTags: normalizeFormCustomerTagsFromDb(row.customerTags),
                 } as never,
             });
             void ensureRegistrationStorefrontPage(admin, shop).catch((err) => {
