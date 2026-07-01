@@ -59,7 +59,7 @@
       return String(cfg.shopifyLoggedInCustomerId).trim();
     }
     try {
-      var stGlobal = typeof __st !== 'undefined' ? __st : window.__st;
+      var stGlobal = typeof window !== 'undefined' ? window.__st : undefined;
       if (stGlobal && stGlobal.cid != null && String(stGlobal.cid).trim() !== '') {
         return String(stGlobal.cid).trim();
       }
@@ -165,7 +165,6 @@
   }
 
   var guardStorefrontCustomerTags = null;
-  var guardConfigLoadedFromNetwork = false;
   /** Cached `/cart.js` probe: null = not yet checked, '' = guest, string = customer id. */
   var cartCustomerIdCached = null;
   var cartCustomerIdFetchPromise = null;
@@ -278,7 +277,6 @@
         return r.json();
       })
       .then(function (data) {
-        guardConfigLoadedFromNetwork = true;
         return applyGuardConfig(data);
       })
       .catch(function () {
@@ -314,7 +312,6 @@
     if (canUsePrefetch) {
       return window.__approvefyConfigPromise
         .then(function (data) {
-          guardConfigLoadedFromNetwork = true;
           return applyGuardConfig(data);
         })
         .catch(function () {
@@ -572,10 +569,6 @@
     } catch (e) {
       return false;
     }
-  }
-
-  function isInsideSiteHeader(el) {
-    return isInsideThemeHeader(el);
   }
 
   function isShopifyAccountElement(el) {
@@ -866,13 +859,6 @@
     return hrefLooksLikeSignInOrRegister(h);
   }
 
-  function goToSignInRedirect(dest) {
-    if (!dest || isAlreadyOnRedirectDestination(dest)) {
-      return;
-    }
-    go(dest);
-  }
-
   function findHeaderAccountIconClick(event) {
     var t = event && event.target;
     if (isHeaderLogoOrHomeNavigationTarget(t)) {
@@ -1091,11 +1077,6 @@
 
   function shouldInterceptCheckout() {
     return shouldRedirectGuest() || shouldBlockLoggedInWithoutTag();
-  }
-
-  /** Popup only when blocking logged-in customers without the approved tag (not for guest redirect). */
-  function shouldShowCheckoutBlockedModal() {
-    return shouldBlockLoggedInWithoutTag();
   }
 
   function checkoutInterceptLockActive() {
@@ -1719,8 +1700,8 @@
   document.addEventListener(
     'submit',
     function (e) {
+      var form = e.target;
       if (checkoutInterceptLockActive()) {
-        var form = e.target;
         if (form && form.nodeName === 'FORM' && submissionLeadsToCheckout(form, e.submitter || null)) {
           e.preventDefault();
           if (typeof e.stopImmediatePropagation === 'function') {
@@ -1734,7 +1715,6 @@
         window.__approvefyBypassGuestCheckoutGuard = false;
         return;
       }
-      var form = e.target;
       if (!form || form.nodeName !== 'FORM') {
         return;
       }

@@ -44,6 +44,7 @@ import { TEXT_FORMAT_OPTIONS, normalizeTextFormat, getTextFormatPlaceholder, get
 import "../styles/form-builder.css";
 import "../styles/settings.css";
 import { FormAppearancePanel } from "../components/FormAppearancePanel";
+import { AppSaveBar, useProgrammaticSaveBar } from "../components/AppSaveBar";
 import { PlanUpgradeBanner } from "../components/PlanUpgradeBanner";
 import { getAppearanceTemplateId, type AppearanceTemplateId } from "../lib/appearance-templates";
 import {
@@ -2269,27 +2270,10 @@ export default function FormBuilder() {
         return () => window.removeEventListener("beforeunload", onBeforeUnload);
     }, [hasUnsavedChanges]);
 
-    // Polaris-controlled fields do not reliably trigger the automatic data-save-bar; sync visibility explicitly.
-    useEffect(() => {
-        const shouldShow = hasUnsavedChanges && !isSaving;
-        const saveBar = typeof window !== "undefined" ? window.shopify?.saveBar : undefined;
-        if (!saveBar) return;
-        let cancelled = false;
-        const sync = () => {
-            if (cancelled) return;
-            const p = shouldShow ? saveBar.show(FORM_BUILDER_SAVE_BAR_ID) : saveBar.hide(FORM_BUILDER_SAVE_BAR_ID);
-            void p.catch(() => {});
-        };
-        sync();
-        const raf = requestAnimationFrame(sync);
-        const t = window.setTimeout(sync, 400);
-        return () => {
-            cancelled = true;
-            cancelAnimationFrame(raf);
-            window.clearTimeout(t);
-            void saveBar.hide(FORM_BUILDER_SAVE_BAR_ID).catch(() => {});
-        };
-    }, [hasUnsavedChanges, isSaving]);
+    useProgrammaticSaveBar(FORM_BUILDER_SAVE_BAR_ID, hasUnsavedChanges, isSaving, {
+        delayedSyncMs: 400,
+        hideOnUnmount: true,
+    });
 
     useEffect(() => {
         setLastSavedAtDisplay(loaderFormUpdatedAt ?? null);
@@ -2351,29 +2335,16 @@ export default function FormBuilder() {
 
     return (
         <>
-            <ui-save-bar id={FORM_BUILDER_SAVE_BAR_ID}>
-                <button
-                    type="button"
-                    {...({ variant: "primary" } as Record<string, unknown>)}
-                    onClick={() => {
-                        if (isSaving) return;
-                        formRef.current?.requestSubmit();
-                    }}
-                >
-                    Save
-                </button>
-                <button
-                    type="button"
-                    onClick={() => {
-                        if (isSaving) return;
-                        flushSync(() => {
-                            discardChanges();
-                        });
-                    }}
-                >
-                    Discard
-                </button>
-            </ui-save-bar>
+            <AppSaveBar
+                id={FORM_BUILDER_SAVE_BAR_ID}
+                isSaving={isSaving}
+                onSave={() => formRef.current?.requestSubmit()}
+                onDiscard={() => {
+                    flushSync(() => {
+                        discardChanges();
+                    });
+                }}
+            />
             <Modal
                 open={leaveStayModal !== null}
                 onClose={handleLeaveStayStay}
