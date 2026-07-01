@@ -2,6 +2,12 @@ import prisma from "../db.server";
 import { normalizeMerchantPlan } from "./merchant-plan.server";
 import { CACHE_TTL, getCache, setCache, shopKey } from "./cache.server";
 
+export {
+  STOREFRONT_REDIRECT_DEFAULTS,
+  readStorefrontRedirectBooleanSetting,
+} from "./storefront-redirect-settings";
+export type { StorefrontRedirectBooleanKey } from "./storefront-redirect-settings";
+
 /** Parse `customerApprovalSettings` from Prisma JSON (object or legacy string). */
 export function parseCustomerApprovalSettings(input: unknown): Record<string, unknown> {
   if (!input) return {};

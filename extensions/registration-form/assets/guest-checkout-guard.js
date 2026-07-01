@@ -1,7 +1,7 @@
 /**
  * Storefront checkout / Buy it now guard (app proxy config):
- * - Guests: redirect when redirectGuestsFromCheckout + redirect URL.
- * - Logged-in without approved tag: custom modal + redirect on Continue when blockLoggedInWithoutApprovedTag.
+ * - Guests: redirect when redirectGuestsFromCheckout (no popup).
+ * - Logged-in without approved tag: modal + redirect only when blockLoggedInWithoutApprovedTag.
  */
 (function () {
   'use strict';
@@ -51,6 +51,157 @@
     cfg.customerTags = [];
   }
 
+  function resolveLoggedInShopifyCustomerId() {
+    if (
+      cfg.shopifyLoggedInCustomerId != null &&
+      String(cfg.shopifyLoggedInCustomerId).trim() !== ''
+    ) {
+      return String(cfg.shopifyLoggedInCustomerId).trim();
+    }
+    try {
+      var stGlobal = typeof __st !== 'undefined' ? __st : window.__st;
+      if (stGlobal && stGlobal.cid != null && String(stGlobal.cid).trim() !== '') {
+        return String(stGlobal.cid).trim();
+      }
+    } catch (eSt) {
+      void eSt;
+    }
+    try {
+      if (window.Shopify && window.Shopify.customer && window.Shopify.customer.id != null) {
+        var shopifyCustomerId = String(window.Shopify.customer.id).trim();
+        if (shopifyCustomerId) {
+          return shopifyCustomerId;
+        }
+      }
+    } catch (eShopifyCustomer) {
+      void eShopifyCustomer;
+    }
+    try {
+      var analyticsId =
+        window.ShopifyAnalytics &&
+        window.ShopifyAnalytics.meta &&
+        window.ShopifyAnalytics.meta.page &&
+        window.ShopifyAnalytics.meta.page.customerId;
+      if (analyticsId != null && String(analyticsId).trim() !== '') {
+        return String(analyticsId).trim();
+      }
+    } catch (eAnalytics) {
+      void eAnalytics;
+    }
+    try {
+      var meta = document.querySelector(
+        'meta[name="shopify-customer-id"], meta[name="customer-id"]'
+      );
+      if (meta) {
+        var metaId = (meta.getAttribute('content') || '').trim();
+        if (metaId) {
+          return metaId;
+        }
+      }
+    } catch (eMeta) {
+      void eMeta;
+    }
+    return '';
+  }
+
+  function syncLoggedInCustomerConfig(customerId) {
+    if (!customerId) {
+      return;
+    }
+    cfg.customerLoggedIn = true;
+    cfg.shopifyLoggedInCustomerId = customerId;
+    window.__REGISTRATION_FORM_CONFIG__ = cfg;
+  }
+
+  function fetchCustomerIdFromCart() {
+    return fetch('/cart.js', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (cart) {
+        if (
+          cart &&
+          cart.customer_id != null &&
+          String(cart.customer_id).trim() !== '' &&
+          Number(cart.customer_id) > 0
+        ) {
+          var cartCustomerId = String(cart.customer_id).trim();
+          syncLoggedInCustomerConfig(cartCustomerId);
+          return cartCustomerId;
+        }
+        return '';
+      })
+      .catch(function () {
+        return '';
+      });
+  }
+
+  function resolveCustomerLoggedIn() {
+    var id = resolveLoggedInShopifyCustomerId();
+    if (id) {
+      syncLoggedInCustomerConfig(id);
+      return true;
+    }
+    if (cfg.customerLoggedIn === true && cfg.shopifyLoggedInCustomerId) {
+      return true;
+    }
+    return false;
+  }
+
+  function guardCustomerShopifyIdParam() {
+    var id = resolveLoggedInShopifyCustomerId();
+    return id ? '&customerShopifyId=' + encodeURIComponent(id) : '';
+  }
+
+  function guardCustomerEmailParam() {
+    if (
+      resolveCustomerLoggedIn() &&
+      cfg.customerEmail &&
+      String(cfg.customerEmail).trim() !== ''
+    ) {
+      return '&customerEmail=' + encodeURIComponent(String(cfg.customerEmail).trim());
+    }
+    return '';
+  }
+
+  var guardStorefrontCustomerTags = null;
+  var guardConfigLoadedFromNetwork = false;
+  /** Cached `/cart.js` probe: null = not yet checked, '' = guest, string = customer id. */
+  var cartCustomerIdCached = null;
+  var cartCustomerIdFetchPromise = null;
+
+  function blockCheckMayNeedCart() {
+    return !!(guardConfig && guardConfig.blockLoggedInWithoutApprovedTag === true);
+  }
+
+  function probeCartCustomerId() {
+    if (cartCustomerIdCached !== null) {
+      return Promise.resolve(cartCustomerIdCached);
+    }
+    if (cartCustomerIdFetchPromise) {
+      return cartCustomerIdFetchPromise;
+    }
+    cartCustomerIdFetchPromise = fetchCustomerIdFromCart()
+      .then(function (cartId) {
+        cartCustomerIdCached = cartId || '';
+        cartCustomerIdFetchPromise = null;
+        return cartCustomerIdCached;
+      })
+      .catch(function () {
+        cartCustomerIdCached = '';
+        cartCustomerIdFetchPromise = null;
+        return '';
+      });
+    return cartCustomerIdFetchPromise;
+  }
+
+  function prewarmCartCustomerProbe() {
+    if (!blockCheckMayNeedCart() || resolveCustomerLoggedIn()) {
+      return;
+    }
+    probeCartCustomerId();
+  }
+
   var guardConfig = null;
   var guardTranslations = null;
   function guardLocaleParam() {
@@ -72,93 +223,148 @@
     guardTranslations = (data && data.translations) || null;
     var cas = data && data.customerApprovalSettings;
     guardConfig = cas || null;
+    if (data && data.settingsUpdatedAt) {
+      try {
+        if (window.sessionStorage) {
+          sessionStorage.setItem(
+            'approvefy_settings_revision_' + shop,
+            String(data.settingsUpdatedAt)
+          );
+        }
+      } catch (eRev) {
+        void eRev;
+      }
+    }
+    if (data && Array.isArray(data.storefrontCustomerTags)) {
+      guardStorefrontCustomerTags = data.storefrontCustomerTags;
+      cfg.customerTags = data.storefrontCustomerTags.slice();
+      window.__REGISTRATION_FORM_CONFIG__ = cfg;
+    }
+    var resolvedId = resolveLoggedInShopifyCustomerId();
+    if (resolvedId) {
+      cfg.customerLoggedIn = true;
+      cfg.shopifyLoggedInCustomerId = resolvedId;
+      window.__REGISTRATION_FORM_CONFIG__ = cfg;
+    }
     if (guardConfig && guardConfig.redirectSignInLinksToFormPage === false) {
       window.__approvefySignInRedirectEnabled = false;
     } else {
       window.__approvefySignInRedirectEnabled = true;
     }
-    writeGuardConfigCache(data);
-    startShopifyAccountDrawerWatcher();
+    ensureShopifyAccountModalHidden();
+    prewarmCartCustomerProbe();
     return guardConfig;
   }
 
-  var GUARD_CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
-  var GUARD_CONFIG_CACHE_KEY = 'approvefy_guard_config_' + shop;
+  function buildGuardConfigUrl() {
+    return (
+      '/apps/customer-approval/config?shop=' +
+      encodeURIComponent(shop) +
+      '&locale=' +
+      encodeURIComponent(guardLocaleParam()) +
+      guardCustomerShopifyIdParam() +
+      guardCustomerEmailParam() +
+      '&guardOnly=1'
+    );
+  }
 
-  function readGuardConfigCache() {
-    try {
-      if (!window.sessionStorage) return null;
-      var raw = sessionStorage.getItem(GUARD_CONFIG_CACHE_KEY);
-      if (!raw) return null;
-      var parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return null;
-      if (parsed.ts && Date.now() - parsed.ts > GUARD_CONFIG_CACHE_TTL_MS) return null;
-      return parsed.data && typeof parsed.data === 'object' ? parsed.data : null;
-    } catch (e) {
-      return null;
+  function fetchGuardConfigFromNetwork() {
+    var fetchOpts = {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    };
+    return fetch(buildGuardConfigUrl(), fetchOpts)
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        guardConfigLoadedFromNetwork = true;
+        return applyGuardConfig(data);
+      })
+      .catch(function () {
+        guardConfig = null;
+        guardTranslations = null;
+        return null;
+      });
+  }
+
+  function guardNeedsCustomerTagsRefresh() {
+    if (!resolveCustomerLoggedIn()) {
+      return false;
     }
-  }
-
-  function writeGuardConfigCache(data) {
-    try {
-      if (!window.sessionStorage || !data || typeof data !== 'object') return;
-      sessionStorage.setItem(
-        GUARD_CONFIG_CACHE_KEY,
-        JSON.stringify({ ts: Date.now(), data: data })
-      );
-    } catch (e) {
-      void e;
+    if (Array.isArray(guardStorefrontCustomerTags)) {
+      return false;
     }
+    if (Array.isArray(cfg.customerTags) && cfg.customerTags.length > 0) {
+      return false;
+    }
+    return true;
   }
 
-  var cachedGuardConfig = readGuardConfigCache();
-  if (cachedGuardConfig) {
-    applyGuardConfig(cachedGuardConfig);
-  }
+  function ensureGuardConfigReady() {
+    var prefetchUrl = window.__approvefyConfigPrefetchUrl;
+    var prefetchHadCustomerId =
+      prefetchUrl && typeof prefetchUrl === 'string' && prefetchUrl.indexOf('customerShopifyId=') !== -1;
+    var canUsePrefetch =
+      window.__approvefyConfigPromise && typeof window.__approvefyConfigPromise.then === 'function';
+    if (canUsePrefetch && resolveLoggedInShopifyCustomerId() && prefetchUrl && !prefetchHadCustomerId) {
+      canUsePrefetch = false;
+    }
 
-  var guardReady =
-    window.__approvefyConfigPromise && typeof window.__approvefyConfigPromise.then === 'function'
-      ? window.__approvefyConfigPromise.then(applyGuardConfig).catch(function () {
-          guardConfig = null;
-          guardTranslations = null;
-          return null;
+    if (canUsePrefetch) {
+      return window.__approvefyConfigPromise
+        .then(function (data) {
+          guardConfigLoadedFromNetwork = true;
+          return applyGuardConfig(data);
         })
-      : fetch(
-          '/apps/customer-approval/config?shop=' +
-            encodeURIComponent(shop) +
-            '&locale=' +
-            encodeURIComponent(guardLocaleParam()) +
-            '&guardOnly=1'
-        )
-          .then(function (r) {
-            return r.json();
-          })
-          .then(applyGuardConfig)
-          .catch(function () {
-            guardConfig = null;
-            guardTranslations = null;
-            return null;
-          });
-
-  function redirectDestination() {
-    if (!guardConfig) {
-      return '';
+        .catch(function () {
+          return fetchGuardConfigFromNetwork();
+        });
     }
-    var u = guardConfig.guestCheckoutRedirectUrl;
-    var s = (u && String(u).trim()) || '';
-    if (!s || isUnsafeRegistrationRedirectUrl(s)) {
-      return '';
-    }
-    return s;
+    return fetchGuardConfigFromNetwork();
   }
 
-  var DEFAULT_REGISTRATION_PAGE_PATH = '/pages/customer-registration';
+  var guardReady = ensureGuardConfigReady()
+    .then(function () {
+      prewarmCartCustomerProbe();
+      if (!blockCheckMayNeedCart()) {
+        return guardConfig;
+      }
+      return ensureLoggedInCustomerIdResolved().then(function () {
+        if (guardNeedsCustomerTagsRefresh()) {
+          return fetchGuardConfigFromNetwork();
+        }
+        return guardConfig;
+      });
+    });
 
-  function signInRedirectDestination() {
-    var dest = redirectDestination();
-    if (dest) {
-      return dest;
-    }
+  function watchForLateCustomerLogin() {
+    var knownId = resolveLoggedInShopifyCustomerId();
+    var ticks = 0;
+    var maxTicks = 80;
+    var timer = window.setInterval(function () {
+      ticks += 1;
+      var id = resolveLoggedInShopifyCustomerId();
+      if (id && id !== knownId) {
+        window.clearInterval(timer);
+        guardReady = fetchGuardConfigFromNetwork();
+        return;
+      }
+      if (ticks >= maxTicks) {
+        window.clearInterval(timer);
+        if (!knownId) {
+          probeCartCustomerId().then(function (cartId) {
+            if (cartId && cartId !== knownId) {
+              guardReady = fetchGuardConfigFromNetwork();
+            }
+          });
+        }
+      }
+    }, 50);
+  }
+  watchForLateCustomerLogin();
+
+  function registrationPageFallback() {
     if (guardConfig) {
       var regPath = guardConfig.registrationPagePath;
       if (regPath && String(regPath).trim() && !isUnsafeRegistrationRedirectUrl(String(regPath).trim())) {
@@ -172,6 +378,34 @@
       }
     }
     return DEFAULT_REGISTRATION_PAGE_PATH;
+  }
+
+  function redirectDestination() {
+    if (!guardConfig) {
+      return '';
+    }
+    var u = guardConfig.guestCheckoutRedirectUrl;
+    var s = (u && String(u).trim()) || '';
+    if (s && !isUnsafeRegistrationRedirectUrl(s)) {
+      return s;
+    }
+    if (
+      guardConfig.redirectGuestsFromCheckout === true ||
+      guardConfig.blockLoggedInWithoutApprovedTag === true
+    ) {
+      return registrationPageFallback();
+    }
+    return '';
+  }
+
+  var DEFAULT_REGISTRATION_PAGE_PATH = '/pages/customer-registration';
+
+  function signInRedirectDestination() {
+    var dest = redirectDestination();
+    if (dest) {
+      return dest;
+    }
+    return registrationPageFallback();
   }
 
   function signInRedirectEnabledInSettings() {
@@ -341,25 +575,7 @@
   }
 
   function isInsideSiteHeader(el) {
-    return !!el.closest(
-      [
-        'header',
-        'header-component',
-        'sticky-header',
-        '.header',
-        '.shopify-section-header',
-        '.section-header',
-        '.header-wrapper',
-        'shop-header',
-        '#shopify-section-header',
-        '[id^="shopify-section"][id*="header"]',
-        '.site-header',
-        '#header',
-        '.header__icons',
-        '[class*="header__icons"]',
-        'shopify-account',
-      ].join(', ')
-    );
+    return isInsideThemeHeader(el);
   }
 
   function isShopifyAccountElement(el) {
@@ -370,97 +586,284 @@
     return isShopifyAccountElement(el) || !!(el && el.closest && el.closest('shopify-account'));
   }
 
-  function findShopifyAccountIntentInPath(event) {
+  function isInsideThemeHeader(el) {
+    return !!(
+      el &&
+      el.closest &&
+      el.closest(
+        [
+          'header',
+          'header-component',
+          'sticky-header',
+          '#shopify-section-header',
+          '.shopify-section-header',
+          '.header',
+          '.section-header',
+          'shop-header',
+          '.header-wrapper',
+          '.site-header',
+          '#header',
+          '[id^="shopify-section"][id*="header"]',
+          '.shopify-section-group-header-group',
+        ].join(', ')
+      )
+    );
+  }
+
+  function composedPathNodes(event) {
+    if (event.composedPath && typeof event.composedPath === 'function') {
+      return event.composedPath();
+    }
+    var out = [];
+    var n = event.target;
+    while (n) {
+      out.push(n);
+      n = n.parentNode || (n.host && n.host);
+    }
+    return out;
+  }
+
+  function findShopifyAccountHostInComposedPath(event) {
+    if (!event) {
+      return null;
+    }
     var nodes = composedPathNodes(event);
     var i;
     var node;
     for (i = 0; i < nodes.length; i++) {
       node = nodes[i];
-      if (!node || node.nodeType !== 1) {
-        continue;
-      }
-      if (isInsideApprovefyAuthTabs(node)) {
-        return null;
-      }
-      if (isShopifyAccountElement(node)) {
-        return { kind: 'account-icon', href: '' };
+      if (node && isShopifyAccountElement(node) && isInsideThemeHeader(node)) {
+        return node;
       }
     }
     return null;
   }
 
-  function headerAccountIconSelectors() {
-    return [
-      'shopify-account',
-      '.header__icon--account',
-      'a.header__icon--account',
-      '.header__icons .header__icon--account',
-      '.header__icons a[href*="account"]',
-      '.header__icons a[href*="customer_authentication"]',
-      '.header__icons a[href*="shopify.com"]',
-      '.header__icons a[href*="/account"]',
-      'a.header__icon[href*="account"]',
-      'a.header__icon[href*="customer_authentication"]',
-      'a.header__icon[href*="shopify.com"]',
-      'a.customer-account-link',
-      '#HeaderMenu-account',
-      'a[href*="/account"][class*="header"]',
-      'a[href*="/customer_authentication"][class*="header"]',
-      'a[href*="shopify.com"][class*="header"]',
-      'a[href*="shopify.com"][class*="header__icon"]',
-      '#shopify-section-header a[href*="/account"]',
-      '#shopify-section-header a[href*="/customer_authentication"]',
-      '#shopify-section-header shopify-account',
-      'header a[href="/account"]',
-      'header a[href*="/account/login"]',
-      'header a[href*="/account/register"]',
-    ].join(', ');
-  }
+  var HEADER_LOGO_HOME_SELECTORS =
+    'a[rel="home"], [data-header-logo], .header__logo, .site-header__logo, .site-logo, a.logo, .header__heading-link, .header__heading, .site-header__logo-link, a.header__logo-link, .logo-link';
 
-  function accountControlLooksLikeHeaderIcon(el) {
-    if (!el || el.nodeType !== 1) {
+  function hrefLooksLikeHomepage(href) {
+    if (!href || typeof href !== 'string') {
       return false;
     }
-    if (isShopifyAccountComponent(el)) {
-      return true;
-    }
-    var accountEl = el.closest(headerAccountIconSelectors());
-    if (!accountEl) {
+    var h = href.trim();
+    if (!h || h === '#') {
       return false;
     }
-    if (accountEl.nodeName === 'A') {
-      var h = accountEl.getAttribute('href') || accountEl.href || '';
-      if (!h || h === '#') {
-        return true;
+    if (h.indexOf('javascript:') === 0 || h.indexOf('mailto:') === 0 || h.indexOf('tel:') === 0) {
+      return false;
+    }
+    try {
+      var u = new URL(href, window.location.origin);
+      if (
+        u.hostname &&
+        u.hostname.toLowerCase() !== window.location.hostname.toLowerCase()
+      ) {
+        return false;
       }
-      return hrefLooksLikeSignInOrRegister(h);
+      var path = pathWithoutLocaleSegment(u.pathname || '/').replace(/\/+$/, '') || '/';
+      var homePath = pathWithoutLocaleSegment(storefrontHomeHref()).replace(/\/+$/, '') || '/';
+      return path === homePath;
+    } catch (eHomeHref) {
+      void eHomeHref;
+      return false;
     }
-    var parentA = accountEl.closest('a[href]');
-    if (!parentA) {
-      return true;
-    }
-    var ph = parentA.getAttribute('href') || parentA.href || '';
-    if (!ph || ph === '#') {
-      return true;
-    }
-    return hrefLooksLikeSignInOrRegister(ph);
   }
 
-  function isHeaderAccountIconElement(el) {
-    if (!el || !el.closest || el.nodeType !== 1) {
+  function isHeaderLogoOrHomeNavigationTarget(el) {
+    if (!el || !el.closest) {
+      return false;
+    }
+    if (el.closest(HEADER_LOGO_HOME_SELECTORS)) {
+      return true;
+    }
+    var link = el.closest('a[href]');
+    if (!link) {
+      return false;
+    }
+    if (link.getAttribute && link.getAttribute('rel') === 'home') {
+      return true;
+    }
+    if (link.closest(HEADER_LOGO_HOME_SELECTORS)) {
+      return true;
+    }
+    return hrefLooksLikeHomepage(link.getAttribute('href') || link.href || '');
+  }
+
+  function isBenignHeaderNavigationClick(event) {
+    var t = event && event.target;
+    if (!t || !t.closest) {
+      return false;
+    }
+    if (isInsideApprovefyAuthTabs(t)) {
+      return false;
+    }
+    if (!isInsideThemeHeader(t)) {
+      return false;
+    }
+    if (isHeaderLogoOrHomeNavigationTarget(t)) {
+      return true;
+    }
+    if (isExcludedHeaderUtilityIcon(t)) {
+      return true;
+    }
+    var link = t.closest('a[href]');
+    if (link && isExcludedHeaderUtilityIcon(link)) {
+      return true;
+    }
+    if (findShopifyAccountHostInComposedPath(event)) {
+      return false;
+    }
+    return false;
+  }
+
+  function isInsideApprovefyAuthTabs(node) {
+    return !!(node && node.closest && node.closest('.approvefy-auth-tabs'));
+  }
+
+  function isExcludedHeaderUtilityIcon(el) {
+    if (!el || !el.closest) {
+      return false;
+    }
+    return !!el.closest(
+      [
+        'a.header__icon--cart',
+        '.header__icon--cart',
+        'button.header__icon--cart',
+        'a.header__icon--search',
+        '.header__icon--search',
+        'button.header__icon--search',
+        'summary.header__icon--search',
+        '.header__icon--menu',
+        'a.header__icon--menu',
+        'button.header__icon--menu',
+        '.header__icon--hamburger',
+        'a[href="/cart"]',
+        'a[href*="/cart"]:not([href*="account"])',
+        'a[href*="/search"]:not([href*="account"])',
+        '.header__search',
+        '.header__heading-link',
+        '.header__heading',
+        '.header__menu-item',
+        '.list-menu__item',
+        '#cart-icon-bubble',
+        'cart-drawer',
+        'cart-drawer-component',
+        'cart-notification',
+        'cart-icon',
+        'cart-icon-bubble',
+        '.cart-count-bubble',
+        'a[href*="predictive-search"]',
+        '.predictive-search',
+        'search-form',
+        'predictive-search',
+        'details-modal',
+        'menu-drawer',
+        'header-drawer',
+        'header-menu',
+        'button[aria-controls*="cart"]',
+        'button[aria-controls*="Cart"]',
+        'button[aria-controls*="search"]',
+        'button[aria-controls*="Search"]',
+      ].join(', ')
+    );
+  }
+
+  function isStorefrontUiChromeClick(event) {
+    var t = event && event.target;
+    if (!t || !t.closest) {
+      return false;
+    }
+    if (isInsideApprovefyAuthTabs(t)) {
+      return false;
+    }
+    if (isBenignHeaderNavigationClick(event)) {
+      return true;
+    }
+    if (isInsideThemeHeader(t) && !isStrictHeaderAccountClickTarget(t, event)) {
+      return true;
+    }
+    return !!t.closest(
+      [
+        'cart-drawer',
+        'cart-drawer-component',
+        'cart-notification',
+        'cart-icon-bubble',
+        '#cart-icon-bubble',
+        '#CartDrawer',
+        '#CartDrawer-Overlay',
+        '.cart-drawer',
+        '.cart-items',
+        '.drawer',
+        '.search-modal',
+        'details-modal',
+        'menu-drawer',
+        'header-drawer',
+        'header-menu',
+        '.header__search',
+        'predictive-search',
+        'shopify-accelerated-checkout-cart',
+      ].join(', ')
+    );
+  }
+
+  function isStrictHeaderAccountClickTarget(el, event) {
+    if (event && isBenignHeaderNavigationClick(event)) {
+      return false;
+    }
+    if (el && isHeaderLogoOrHomeNavigationTarget(el)) {
+      return false;
+    }
+    if (event && findShopifyAccountHostInComposedPath(event)) {
+      return !cfg.customerLoggedIn;
+    }
+    if (!el || !el.closest) {
       return false;
     }
     if (isInsideApprovefyAuthTabs(el)) {
       return false;
     }
-    if (!isInsideSiteHeader(el)) {
+    if (!isInsideThemeHeader(el)) {
       return false;
     }
-    return accountControlLooksLikeHeaderIcon(el);
+    if (isExcludedHeaderUtilityIcon(el)) {
+      return false;
+    }
+    if (isShopifyAccountComponent(el)) {
+      return true;
+    }
+    if (el.closest('.header__icon--account, a.customer-account-link, #HeaderMenu-account')) {
+      return true;
+    }
+    var link = el.closest('a[href]');
+    if (link && linkLooksLikeHeaderAccountIcon(link)) {
+      return true;
+    }
+    return false;
   }
 
-  function isInsideApprovefyAuthTabs(node) {
-    return !!(node && node.closest && node.closest('.approvefy-auth-tabs'));
+  function linkLooksLikeHeaderAccountIcon(linkEl) {
+    if (!linkEl || linkEl.nodeName !== 'A') {
+      return false;
+    }
+    if (isHeaderLogoOrHomeNavigationTarget(linkEl)) {
+      return false;
+    }
+    if (isExcludedHeaderUtilityIcon(linkEl)) {
+      return false;
+    }
+    if (
+      linkEl.classList &&
+      (linkEl.classList.contains('header__icon--account') ||
+        linkEl.classList.contains('customer-account-link'))
+    ) {
+      return true;
+    }
+    var h = linkEl.getAttribute('href') || linkEl.href || '';
+    if (!h || h === '#') {
+      return false;
+    }
+    return hrefLooksLikeSignInOrRegister(h);
   }
 
   function goToSignInRedirect(dest) {
@@ -471,44 +874,21 @@
   }
 
   function findHeaderAccountIconClick(event) {
-    var shopifyIntent = findShopifyAccountIntentInPath(event);
-    if (shopifyIntent) {
-      return shopifyIntent;
-    }
-    var nodes = composedPathNodes(event);
-    var i;
-    var node;
-    for (i = 0; i < nodes.length; i++) {
-      node = nodes[i];
-      if (!node || node.nodeType !== 1) {
-        continue;
-      }
-      if (isInsideApprovefyAuthTabs(node)) {
-        return null;
-      }
-      if (isHeaderAccountIconElement(node)) {
-        if (isShopifyAccountComponent(node)) {
-          return { kind: 'account-icon', href: '' };
-        }
-        var accountA = node.closest && node.closest('a[href]');
-        return { kind: 'link', href: accountA ? accountA.getAttribute('href') || accountA.href : '' };
-      }
-    }
-    var t = event.target;
-    if (!t || !t.closest) {
+    var t = event && event.target;
+    if (isHeaderLogoOrHomeNavigationTarget(t)) {
       return null;
     }
-    if (isInsideApprovefyAuthTabs(t)) {
+    if (!isStrictHeaderAccountClickTarget(t, event)) {
       return null;
     }
-    if (isHeaderAccountIconElement(t)) {
-      if (isShopifyAccountComponent(t)) {
-        return { kind: 'account-icon', href: '' };
-      }
-      var accountLink = t.closest('a[href]');
-      return { kind: 'link', href: accountLink ? accountLink.getAttribute('href') || accountLink.href : '' };
+    if (findShopifyAccountHostInComposedPath(event) || isShopifyAccountComponent(t)) {
+      return { kind: 'account-icon', href: '' };
     }
-    return null;
+    var accountLink = t.closest('a[href]');
+    return {
+      kind: 'link',
+      href: accountLink ? accountLink.getAttribute('href') || accountLink.href : '',
+    };
   }
 
   function replayNativeAccountIconNavigation(intent) {
@@ -527,10 +907,66 @@
     if (cfg.customerLoggedIn) {
       return false;
     }
-    if (intent.kind === 'account-icon') {
-      return signInRedirectEnabledInSettings();
+    return signInRedirectEnabledInSettings();
+  }
+
+  function ensureShopifyAccountModalHidden() {
+    if (!signInRedirectEnabledInSettings() || cfg.customerLoggedIn) {
+      var existing = document.getElementById('approvefy-hide-shopify-account-ui');
+      if (existing && existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+      }
+      return;
     }
-    return shouldRedirectSignInLinks();
+    if (document.getElementById('approvefy-hide-shopify-account-ui')) {
+      return;
+    }
+    var style = document.createElement('style');
+    style.id = 'approvefy-hide-shopify-account-ui';
+    style.textContent =
+      'shopify-account-modal,shopify-account-dialog,shopify-account-popover,[data-shopify-account-modal]{display:none!important;visibility:hidden!important;pointer-events:none!important}';
+    document.head.appendChild(style);
+  }
+
+  function dismissShopifyAccountModalIfOpen() {
+    var nodes = document.querySelectorAll(
+      'shopify-account-modal, shopify-account-dialog, shopify-account-popover, [data-shopify-account-modal]'
+    );
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (!node) {
+        continue;
+      }
+      if (typeof node.close === 'function') {
+        try {
+          node.close();
+        } catch (closeErr) {
+          void closeErr;
+        }
+      }
+      node.removeAttribute('open');
+      node.setAttribute('aria-hidden', 'true');
+      node.style.display = 'none';
+    }
+  }
+
+  function blockHeaderAccountIconNativeUi(e) {
+    if (window.__approvefyBypassGuestCheckoutGuard) {
+      return;
+    }
+    if (isBenignHeaderNavigationClick(e)) {
+      return;
+    }
+    if (!shouldInterceptHeaderAccountIcon(findHeaderAccountIconClick(e))) {
+      return;
+    }
+    e.preventDefault();
+    if (typeof e.stopImmediatePropagation === 'function') {
+      e.stopImmediatePropagation();
+    }
+    e.stopPropagation();
+    dismissShopifyAccountModalIfOpen();
   }
 
   function redirectHeaderAccountIcon(e) {
@@ -539,11 +975,19 @@
       e.stopImmediatePropagation();
     }
     e.stopPropagation();
-    goToSignInRedirect(signInRedirectDestination());
+    dismissShopifyAccountModalIfOpen();
+    var dest = signInRedirectDestination();
+    if (!dest || isAlreadyOnRedirectDestination(dest)) {
+      return;
+    }
+    go(dest);
   }
 
   function handleHeaderAccountIconClick(e) {
     if (window.__approvefyBypassGuestCheckoutGuard) {
+      return;
+    }
+    if (isBenignHeaderNavigationClick(e)) {
       return;
     }
     var intent = findHeaderAccountIconClick(e);
@@ -567,7 +1011,7 @@
     e.stopPropagation();
     guardReady.then(function () {
       if (shouldInterceptHeaderAccountIcon(intent)) {
-        goToSignInRedirect(signInRedirectDestination());
+        redirectHeaderAccountIcon(e);
         return;
       }
       if (intent.href) {
@@ -576,109 +1020,37 @@
     });
   }
 
-  function handleHeaderAccountIconPointerDown(e) {
-    if (window.__approvefyBypassGuestCheckoutGuard) {
-      return;
-    }
-    if (e && typeof e.button === 'number' && e.button !== 0) {
-      return;
-    }
-    var intent = findHeaderAccountIconClick(e);
-    if (!intent) {
-      return;
-    }
-    if (shouldInterceptHeaderAccountIcon(intent)) {
-      redirectHeaderAccountIcon(e);
-    }
-  }
-
-  var SHOPIFY_ACCOUNT_DRAWER_STYLE_ID = 'approvefy-block-shopify-account-drawer';
-
-  function installShopifyAccountDrawerBlocker() {
-    if (!shouldRedirectSignInLinks()) {
-      var existing = document.getElementById(SHOPIFY_ACCOUNT_DRAWER_STYLE_ID);
-      if (existing && existing.parentNode) {
-        existing.parentNode.removeChild(existing);
-      }
-      return;
-    }
-    if (document.getElementById(SHOPIFY_ACCOUNT_DRAWER_STYLE_ID)) {
-      return;
-    }
-    var style = document.createElement('style');
-    style.id = SHOPIFY_ACCOUNT_DRAWER_STYLE_ID;
-    style.textContent =
-      'shopify-account-modal,shopify-account-dialog,shopify-account-popover,[data-shopify-account-modal],dialog.shopify-account,[class*="account-popover"],[id*="account-popover"]{display:none!important;visibility:hidden!important;pointer-events:none!important}';
-    document.head.appendChild(style);
-  }
-
-  function dismissShopifyAccountDrawers() {
-    if (!shouldRedirectSignInLinks()) {
-      return;
-    }
-    var selectors =
-      'dialog[open],shopify-account-modal,shopify-account-dialog,shopify-account-popover,[data-shopify-account-modal],[class*="account-popover"],[id*="account-popover"]';
-    var nodes = document.querySelectorAll(selectors);
-    var i;
-    for (i = 0; i < nodes.length; i++) {
-      var node = nodes[i];
-      if (!node) {
-        continue;
-      }
-      if (typeof node.close === 'function') {
-        try {
-          node.close();
-        } catch (closeErr) {
-          void closeErr;
-        }
-      }
-      node.removeAttribute('open');
-      node.setAttribute('aria-hidden', 'true');
-      node.style.display = 'none';
-    }
-  }
-
-  function startShopifyAccountDrawerWatcher() {
-    if (window.__approvefyShopifyAccountDrawerWatcher) {
-      return;
-    }
-    window.__approvefyShopifyAccountDrawerWatcher = true;
-    installShopifyAccountDrawerBlocker();
-    dismissShopifyAccountDrawers();
-    if (typeof MutationObserver !== 'function') {
-      return;
-    }
-    var observer = new MutationObserver(function () {
-      if (!shouldRedirectSignInLinks()) {
-        return;
-      }
-      installShopifyAccountDrawerBlocker();
-      dismissShopifyAccountDrawers();
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
-  }
-
   function shouldRedirectGuest() {
     return (
-      !cfg.customerLoggedIn &&
+      !resolveCustomerLoggedIn() &&
       guardConfig &&
       guardConfig.redirectGuestsFromCheckout === true &&
       !!redirectDestination()
     );
   }
 
+  function effectiveCustomerTags() {
+    if (Array.isArray(guardStorefrontCustomerTags)) {
+      return guardStorefrontCustomerTags;
+    }
+    if (Array.isArray(cfg.customerTags)) {
+      return cfg.customerTags;
+    }
+    return [];
+  }
+
   function customerHasApprovedTag() {
     var raw = guardConfig && guardConfig.approvedTag;
     if (!raw || typeof raw !== 'string') {
-      return true;
+      return false;
     }
     var parts = raw.split(',').map(function (s) {
       return String(s || '').trim().toLowerCase();
     }).filter(Boolean);
     if (!parts.length) {
-      return true;
+      return false;
     }
-    var tags = cfg.customerTags;
+    var tags = effectiveCustomerTags();
     if (!Array.isArray(tags)) {
       return false;
     }
@@ -698,7 +1070,7 @@
 
   function shouldBlockLoggedInWithoutTag() {
     return (
-      cfg.customerLoggedIn &&
+      resolveCustomerLoggedIn() &&
       guardConfig &&
       guardConfig.blockLoggedInWithoutApprovedTag === true &&
       !customerHasApprovedTag() &&
@@ -719,6 +1091,68 @@
 
   function shouldInterceptCheckout() {
     return shouldRedirectGuest() || shouldBlockLoggedInWithoutTag();
+  }
+
+  /** Popup only when blocking logged-in customers without the approved tag (not for guest redirect). */
+  function shouldShowCheckoutBlockedModal() {
+    return shouldBlockLoggedInWithoutTag();
+  }
+
+  function checkoutInterceptLockActive() {
+    return !!(
+      window.__approvefyCheckoutInterceptInProgress ||
+      document.getElementById(CHECKOUT_BLOCK_MODAL_ID)
+    );
+  }
+
+  function shouldShowPopupBeforeRedirect() {
+    if (!guardConfig || guardConfig.blockLoggedInWithoutApprovedTag !== true) {
+      return false;
+    }
+    if (!redirectDestination()) {
+      return false;
+    }
+    if (customerHasApprovedTag()) {
+      return false;
+    }
+    return resolveCustomerLoggedIn();
+  }
+
+  function handleCheckoutIntercept() {
+    if (document.getElementById(CHECKOUT_BLOCK_MODAL_ID)) {
+      return;
+    }
+    var dest = redirectDestination();
+    if (!dest) {
+      return;
+    }
+
+    function showModalOrRedirect() {
+      if (document.getElementById(CHECKOUT_BLOCK_MODAL_ID)) {
+        return;
+      }
+      if (shouldShowPopupBeforeRedirect()) {
+        showCheckoutBlockedModal(loggedInBlockedAlertMessage(), dest);
+        return;
+      }
+      window.__approvefyCheckoutInterceptInProgress = false;
+      go(dest);
+    }
+
+    showModalOrRedirect();
+  }
+
+  function guardConfigReadyForFastIntercept() {
+    if (!guardConfig) {
+      return false;
+    }
+    if (guardNeedsCustomerTagsRefresh()) {
+      return false;
+    }
+    if (blockCheckMayNeedCart() && !resolveCustomerLoggedIn() && cartCustomerIdCached === null) {
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -814,10 +1248,32 @@
     return hrefLooksLikeCheckout(rt.value);
   }
 
+  var BUY_IT_NOW_ANCESTOR_SELECTORS =
+    '.shopify-payment-button, shopify-buy-it-now-button, shopify-accelerated-checkout, shopify-accelerated-checkout-button, [data-shopify="payment-button"], .dynamic-checkout__content';
+
+  function isBuyItNowControl(el) {
+    if (!el || el.nodeType !== 1) {
+      return false;
+    }
+    if (isShopifyCheckoutCustomElement(el)) {
+      return true;
+    }
+    if (isDynamicCheckoutNode(el)) {
+      return true;
+    }
+    if (!el.closest) {
+      return false;
+    }
+    return !!el.closest(BUY_IT_NOW_ANCESTOR_SELECTORS);
+  }
+
   /** True when this form submission would send the buyer toward checkout (Buy it now, cart checkout, etc.). */
   function formLeadsToCheckout(form) {
     if (!form || form.nodeName !== 'FORM') {
       return false;
+    }
+    if (form.closest && form.closest(BUY_IT_NOW_ANCESTOR_SELECTORS)) {
+      return true;
     }
     var action = form.getAttribute('action') || form.action || '';
     if (hrefLooksLikeCheckout(action)) {
@@ -839,6 +1295,19 @@
       }
     }
     return false;
+  }
+
+  function submissionLeadsToCheckout(form, submitter) {
+    if (!form || form.nodeName !== 'FORM') {
+      return false;
+    }
+    if (submitter && isBuyItNowControl(submitter)) {
+      return true;
+    }
+    if (submitter && submitter.getAttribute && submitter.getAttribute('name') === 'checkout') {
+      return true;
+    }
+    return formLeadsToCheckout(form);
   }
 
   /* Do not include shopify-accelerated-checkout-cart — it wraps the whole cart drawer ("View cart" lives inside). */
@@ -882,24 +1351,10 @@
     return el.closest(DYNAMIC_CHECKOUT_SELECTORS);
   }
 
-  /**
-   * Dynamic checkout / Buy it now often live in Shadow DOM — event.target.closest() does not cross shadow roots.
-   * composedPath() includes shadow hosts and ancestors.
-   */
-  function composedPathNodes(event) {
-    if (event.composedPath && typeof event.composedPath === 'function') {
-      return event.composedPath();
-    }
-    var out = [];
-    var n = event.target;
-    while (n) {
-      out.push(n);
-      n = n.parentNode || (n.host && n.host);
-    }
-    return out;
-  }
-
   function findCheckoutIntent(event) {
+    if (isStorefrontUiChromeClick(event)) {
+      return null;
+    }
     var cartNav = innermostLinkHref(event);
     if (cartNav && isCartPageNavigationOnly(cartNav)) {
       return null;
@@ -936,6 +1391,11 @@
         if (formLeadsToCheckout(form)) {
           return { kind: 'form', form: form };
         }
+      }
+
+      if ((node.nodeName === 'BUTTON' || node.nodeName === 'INPUT') && isBuyItNowControl(node)) {
+        form = node.closest ? node.closest('form') : null;
+        return { kind: 'dynamic', el: isDynamicCheckoutNode(node) || node, form: form };
       }
 
       if ((node.nodeName === 'BUTTON' || node.nodeName === 'INPUT') && node.getAttribute('name') === 'checkout') {
@@ -1002,6 +1462,7 @@
       document.body.style.overflow = '';
     }
     document.removeEventListener('keydown', onCheckoutBlockedModalEscape, true);
+    window.__approvefyCheckoutInterceptInProgress = false;
   }
 
   function onCheckoutBlockedModalEscape(ke) {
@@ -1012,11 +1473,13 @@
   }
 
   /**
-   * In-page modal (styles in registration-form.css). Continue → redirect; close / backdrop / Esc → dismiss only.
+   * In-page modal (styles in guest-checkout-guard.css). Continue → redirect; close / backdrop / Esc → dismiss only.
    */
   function showCheckoutBlockedModal(message, dest) {
     removeCheckoutBlockedModal();
+    window.__approvefyCheckoutInterceptInProgress = true;
     if (!document.body) {
+      window.__approvefyCheckoutInterceptInProgress = false;
       go(dest);
       return;
     }
@@ -1096,7 +1559,141 @@
     }, 0);
   }
 
+  function resumeCheckoutIntent(intent) {
+    window.__approvefyBypassGuestCheckoutGuard = true;
+    if (intent.kind === 'link' && intent.href) {
+      window.location.href = intent.href;
+      return;
+    }
+    if (intent.kind === 'form' && intent.form) {
+      if (typeof intent.form.requestSubmit === 'function') {
+        intent.form.requestSubmit();
+      } else {
+        intent.form.submit();
+      }
+      return;
+    }
+    if (intent.kind === 'dynamic' && intent.el && typeof intent.el.click === 'function') {
+      intent.el.click();
+      return;
+    }
+    if (intent.kind === 'named-checkout' && intent.el && typeof intent.el.click === 'function') {
+      intent.el.click();
+    }
+  }
+
+  function ensureLoggedInCustomerIdResolved() {
+    var id = resolveLoggedInShopifyCustomerId();
+    if (id) {
+      syncLoggedInCustomerConfig(id);
+      return Promise.resolve(id);
+    }
+    if (cfg.customerLoggedIn === true && cfg.shopifyLoggedInCustomerId) {
+      return Promise.resolve(String(cfg.shopifyLoggedInCustomerId));
+    }
+    if (!blockCheckMayNeedCart()) {
+      return Promise.resolve('');
+    }
+    return probeCartCustomerId();
+  }
+
+  function whenGuardReadyForIntercept() {
+    if (guardConfigReadyForFastIntercept()) {
+      return Promise.resolve(guardConfig);
+    }
+    return guardReady.then(function () {
+      if (guardConfigReadyForFastIntercept()) {
+        return guardConfig;
+      }
+      if (blockCheckMayNeedCart() && !resolveCustomerLoggedIn()) {
+        return probeCartCustomerId().then(function (cartId) {
+          if (cartId && guardNeedsCustomerTagsRefresh()) {
+            return fetchGuardConfigFromNetwork();
+          }
+          return guardConfig;
+        });
+      }
+      if (guardNeedsCustomerTagsRefresh()) {
+        return fetchGuardConfigFromNetwork();
+      }
+      return guardConfig;
+    });
+  }
+
+  function finishCheckoutIntercept(intent) {
+    if (checkoutInterceptLockActive()) {
+      return;
+    }
+    if (shouldInterceptCheckout()) {
+      window.__approvefyCheckoutInterceptInProgress = true;
+      window.__approvefyLastCheckoutIntercept = Date.now();
+      handleCheckoutIntercept();
+      return;
+    }
+    window.__approvefyCheckoutInterceptInProgress = false;
+    resumeCheckoutIntent(intent);
+  }
+
+  function runCheckoutInterceptFlow(intent) {
+    if (guardConfigReadyForFastIntercept()) {
+      finishCheckoutIntercept(intent);
+      return;
+    }
+    whenGuardReadyForIntercept().then(function () {
+      finishCheckoutIntercept(intent);
+    });
+  }
+
+  function blockGuestCheckoutPointerEarly(e) {
+    if (window.__approvefyBypassGuestCheckoutGuard) {
+      return;
+    }
+    if (isStorefrontUiChromeClick(e)) {
+      return;
+    }
+    if (e && typeof e.button === 'number' && e.button !== 0) {
+      return;
+    }
+    if (checkoutInterceptLockActive()) {
+      return;
+    }
+    var intent = findCheckoutIntent(e);
+    if (!intent) {
+      return;
+    }
+    if (!guardConfigReadyForFastIntercept()) {
+      return;
+    }
+    if (!shouldInterceptCheckout()) {
+      return;
+    }
+    e.preventDefault();
+    if (typeof e.stopImmediatePropagation === 'function') {
+      e.stopImmediatePropagation();
+    }
+    e.stopPropagation();
+  }
+
   function handleGuestCheckoutEvent(e) {
+    if (isStorefrontUiChromeClick(e)) {
+      return;
+    }
+    if (checkoutInterceptLockActive()) {
+      if (findCheckoutIntent(e)) {
+        e.preventDefault();
+        if (typeof e.stopImmediatePropagation === 'function') {
+          e.stopImmediatePropagation();
+        }
+        e.stopPropagation();
+      }
+      return;
+    }
+    if (e.type === 'click') {
+      var last = window.__approvefyLastCheckoutIntercept;
+      if (last && Date.now() - last < 600) {
+        return;
+      }
+    }
     if (window.__approvefyBypassGuestCheckoutGuard) {
       window.__approvefyBypassGuestCheckoutGuard = false;
       return;
@@ -1105,68 +1702,34 @@
     if (!intent) {
       return;
     }
-    if (guardConfig !== null) {
-      if (!shouldInterceptCheckout()) {
-        return;
-      }
-      e.preventDefault();
-      if (typeof e.stopImmediatePropagation === 'function') {
-        e.stopImmediatePropagation();
-      }
-      e.stopPropagation();
-      if (shouldBlockLoggedInWithoutTag()) {
-        showCheckoutBlockedModal(loggedInBlockedAlertMessage(), redirectDestination());
-        return;
-      }
-      go(redirectDestination());
-      return;
-    }
     e.preventDefault();
     if (typeof e.stopImmediatePropagation === 'function') {
       e.stopImmediatePropagation();
     }
     e.stopPropagation();
-    guardReady.then(function () {
-      if (shouldInterceptCheckout()) {
-        if (shouldBlockLoggedInWithoutTag()) {
-          showCheckoutBlockedModal(loggedInBlockedAlertMessage(), redirectDestination());
-          return;
-        }
-        go(redirectDestination());
-        return;
-      }
-      window.__approvefyBypassGuestCheckoutGuard = true;
-      if (intent.kind === 'link' && intent.href) {
-        window.location.href = intent.href;
-        return;
-      }
-      if (intent.kind === 'form' && intent.form) {
-        if (typeof intent.form.requestSubmit === 'function') {
-          intent.form.requestSubmit();
-        } else {
-          intent.form.submit();
-        }
-        return;
-      }
-      if (intent.kind === 'dynamic' && intent.el && typeof intent.el.click === 'function') {
-        intent.el.click();
-        return;
-      }
-      if (intent.kind === 'named-checkout' && intent.el && typeof intent.el.click === 'function') {
-        intent.el.click();
-      }
-    });
+    runCheckoutInterceptFlow(intent);
   }
 
+  document.addEventListener('pointerdown', blockHeaderAccountIconNativeUi, true);
+  document.addEventListener('mousedown', blockHeaderAccountIconNativeUi, true);
   document.addEventListener('click', handleHeaderAccountIconClick, true);
-  document.addEventListener('pointerdown', handleHeaderAccountIconPointerDown, true);
-  document.addEventListener('mousedown', handleHeaderAccountIconPointerDown, true);
-  document.addEventListener('touchstart', handleHeaderAccountIconPointerDown, true);
+  document.addEventListener('pointerdown', blockGuestCheckoutPointerEarly, true);
   document.addEventListener('click', handleGuestCheckoutEvent, true);
 
   document.addEventListener(
     'submit',
     function (e) {
+      if (checkoutInterceptLockActive()) {
+        var form = e.target;
+        if (form && form.nodeName === 'FORM' && submissionLeadsToCheckout(form, e.submitter || null)) {
+          e.preventDefault();
+          if (typeof e.stopImmediatePropagation === 'function') {
+            e.stopImmediatePropagation();
+          }
+          e.stopPropagation();
+        }
+        return;
+      }
       if (window.__approvefyBypassGuestCheckoutGuard) {
         window.__approvefyBypassGuestCheckoutGuard = false;
         return;
@@ -1175,23 +1738,8 @@
       if (!form || form.nodeName !== 'FORM') {
         return;
       }
-      if (!formLeadsToCheckout(form)) {
-        return;
-      }
-      if (guardConfig !== null) {
-        if (!shouldInterceptCheckout()) {
-          return;
-        }
-        e.preventDefault();
-        if (typeof e.stopImmediatePropagation === 'function') {
-          e.stopImmediatePropagation();
-        }
-        e.stopPropagation();
-        if (shouldBlockLoggedInWithoutTag()) {
-          showCheckoutBlockedModal(loggedInBlockedAlertMessage(), redirectDestination());
-          return;
-        }
-        go(redirectDestination());
+      var submitter = e.submitter || null;
+      if (!submissionLeadsToCheckout(form, submitter)) {
         return;
       }
       e.preventDefault();
@@ -1199,13 +1747,13 @@
         e.stopImmediatePropagation();
       }
       e.stopPropagation();
-      guardReady.then(function () {
+      whenGuardReadyForIntercept().then(function () {
+        if (checkoutInterceptLockActive()) {
+          return;
+        }
         if (shouldInterceptCheckout()) {
-          if (shouldBlockLoggedInWithoutTag()) {
-            showCheckoutBlockedModal(loggedInBlockedAlertMessage(), redirectDestination());
-            return;
-          }
-          go(redirectDestination());
+          window.__approvefyCheckoutInterceptInProgress = true;
+          handleCheckoutIntercept();
         } else {
           window.__approvefyBypassGuestCheckoutGuard = true;
           if (typeof form.requestSubmit === 'function') {
@@ -1260,7 +1808,7 @@
   }
 
   function hasPendingOrDeniedStatusTag() {
-    var tags = cfg && cfg.customerTags;
+    var tags = effectiveCustomerTags();
     if (!Array.isArray(tags)) {
       return false;
     }
@@ -1290,21 +1838,36 @@
   }
 
   function maybeRedirectUnapprovedFromAccount() {
-    if (!cfg || !cfg.customerLoggedIn) {
+    if (!resolveCustomerLoggedIn()) {
       return;
     }
     if (!isAccountAreaPath()) {
       return;
     }
     guardReady.then(function () {
-      if (shouldRedirectUnapprovedFromAccount()) {
-        go(accountBlockDestination());
+      if (guardNeedsCustomerTagsRefresh()) {
+        return fetchGuardConfigFromNetwork();
       }
+      return guardConfig;
+    }).then(function () {
+      if (!shouldRedirectUnapprovedFromAccount()) {
+        return;
+      }
+      var dest = accountBlockDestination();
+      if (
+        guardConfig &&
+        guardConfig.blockLoggedInWithoutApprovedTag === true &&
+        loggedInBlockedAlertMessage()
+      ) {
+        showCheckoutBlockedModal(loggedInBlockedAlertMessage(), dest);
+        return;
+      }
+      go(dest);
     });
   }
 
   function maybeRedirectGuestFromAccountEntry() {
-    if (!cfg || cfg.customerLoggedIn) {
+    if (!cfg || resolveCustomerLoggedIn()) {
       return;
     }
     if (!pathIsCustomerAccountEntry(window.location.pathname)) {
@@ -1334,9 +1897,19 @@
     }
   }
 
+  function removeLegacyAccountDrawerBlocker() {
+    var legacyStyle = document.getElementById('approvefy-block-shopify-account-drawer');
+    if (legacyStyle && legacyStyle.parentNode) {
+      legacyStyle.parentNode.removeChild(legacyStyle);
+    }
+  }
+
   function runInitialGuardTasks() {
     runGuardIdle(function () {
-      startShopifyAccountDrawerWatcher();
+      removeCheckoutBlockedModal();
+      removeLegacyAccountDrawerBlocker();
+      ensureShopifyAccountModalHidden();
+      dismissShopifyAccountModalIfOpen();
       maybeRedirectGuestFromAccountEntry();
       maybeRedirectUnapprovedFromAccount();
       maybeLeaveDisabledRegistrationPage();

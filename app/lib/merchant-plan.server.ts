@@ -141,7 +141,7 @@ export function mergeIncomingApprovalSettingsForBasicSave<T extends ApprovalLike
     ...incoming,
     approvalMode: "auto",
     approvedTag: "status:approved",
-    showAuthTabsOnRegistration: false,
+    showAuthTabsOnRegistration: true,
     emailOnReject: p.emailOnReject,
     rejectionEmailPresetId: p.rejectionEmailPresetId,
     rejectEmailSubject: p.rejectEmailSubject,

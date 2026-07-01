@@ -70,6 +70,10 @@ import { invalidateCache, shopKey } from "../lib/cache.server";
 import { getCachedAppSettings } from "../lib/cached-settings.server";
 import { ensureRegistrationStorefrontPage, syncRegistrationPageStorefrontVisibility } from "../lib/registration-page.server";
 import { withOnboardingSettingsSaved } from "../lib/onboarding-status.server";
+import {
+    readStorefrontRedirectBooleanSetting,
+    STOREFRONT_REDIRECT_DEFAULTS,
+} from "../lib/storefront-redirect-settings";
 import { toDbJson } from "../lib/prisma-json.server";
 import {
     BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
@@ -317,12 +321,12 @@ const CUSTOMER_APPROVAL_DEFAULTS: CustomerApprovalSettings = {
     approveEmailFooterText: "",
     approveEmailShowPoweredBy: true,
     approvalEmailPresetId: "",
-    redirectGuestsFromCheckout: false,
-    guestCheckoutRedirectUrl: "",
-    blockLoggedInWithoutApprovedTag: false,
+    redirectGuestsFromCheckout: STOREFRONT_REDIRECT_DEFAULTS.redirectGuestsFromCheckout,
+    guestCheckoutRedirectUrl: STOREFRONT_REDIRECT_DEFAULTS.guestCheckoutRedirectUrl,
+    blockLoggedInWithoutApprovedTag: STOREFRONT_REDIRECT_DEFAULTS.blockLoggedInWithoutApprovedTag,
     loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
     showAuthTabsOnRegistration: true,
-    redirectSignInLinksToFormPage: true,
+    redirectSignInLinksToFormPage: STOREFRONT_REDIRECT_DEFAULTS.redirectSignInLinksToFormPage,
 };
 
 type ShopMetaCacheEntry = {
@@ -519,10 +523,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                                 ? o.pendingRegistrationScreenMessage.trim()
                                 : CUSTOMER_APPROVAL_DEFAULTS.pendingRegistrationScreenMessage,
                         appearanceTemplateId: getAppearanceTemplateId(o.appearanceTemplateId),
-                        redirectGuestsFromCheckout: o.redirectGuestsFromCheckout === true,
+                        redirectGuestsFromCheckout: readStorefrontRedirectBooleanSetting(
+                            o,
+                            "redirectGuestsFromCheckout",
+                        ),
                         guestCheckoutRedirectUrl:
                             typeof o.guestCheckoutRedirectUrl === "string" ? o.guestCheckoutRedirectUrl : CUSTOMER_APPROVAL_DEFAULTS.guestCheckoutRedirectUrl,
-                        blockLoggedInWithoutApprovedTag: o.blockLoggedInWithoutApprovedTag === true,
+                        blockLoggedInWithoutApprovedTag: readStorefrontRedirectBooleanSetting(
+                            o,
+                            "blockLoggedInWithoutApprovedTag",
+                        ),
                         loggedInCheckoutBlockedMessage:
                             typeof o.loggedInCheckoutBlockedMessage === "string" && o.loggedInCheckoutBlockedMessage.trim()
                                 ? o.loggedInCheckoutBlockedMessage.trim()
@@ -531,10 +541,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                             typeof o.showAuthTabsOnRegistration === "boolean"
                                 ? o.showAuthTabsOnRegistration
                                 : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
-                        redirectSignInLinksToFormPage:
-                            typeof o.redirectSignInLinksToFormPage === "boolean"
-                                ? o.redirectSignInLinksToFormPage
-                                : CUSTOMER_APPROVAL_DEFAULTS.redirectSignInLinksToFormPage,
+                        redirectSignInLinksToFormPage: readStorefrontRedirectBooleanSetting(
+                            o,
+                            "redirectSignInLinksToFormPage",
+                        ),
                         emailOnReject: o.emailOnReject === true,
                         rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                         // Prefer email_template table for subject/body so reload always shows last-saved template
@@ -692,9 +702,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             ...customerApprovalSettings,
             approvalMode: "auto",
             approvedTag: "status:approved",
-            showAuthTabsOnRegistration: false,
+            showAuthTabsOnRegistration: true,
         };
     }
+
+    customerApprovalSettings = {
+        ...customerApprovalSettings,
+        showAuthTabsOnRegistration: true,
+    };
 
     const allLangs = [...CORE_LANGUAGES];
 
@@ -863,9 +878,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                             ? o.pendingRegistrationScreenMessage.trim()
                             : CUSTOMER_APPROVAL_DEFAULTS.pendingRegistrationScreenMessage,
                     appearanceTemplateId: getAppearanceTemplateId(o.appearanceTemplateId),
-                    redirectGuestsFromCheckout: o.redirectGuestsFromCheckout === true,
-                    guestCheckoutRedirectUrl: typeof o.guestCheckoutRedirectUrl === "string" ? o.guestCheckoutRedirectUrl : "",
-                    blockLoggedInWithoutApprovedTag: o.blockLoggedInWithoutApprovedTag === true,
+                    redirectGuestsFromCheckout: readStorefrontRedirectBooleanSetting(
+                        o,
+                        "redirectGuestsFromCheckout",
+                    ),
+                    guestCheckoutRedirectUrl:
+                        typeof o.guestCheckoutRedirectUrl === "string"
+                            ? o.guestCheckoutRedirectUrl
+                            : CUSTOMER_APPROVAL_DEFAULTS.guestCheckoutRedirectUrl,
+                    blockLoggedInWithoutApprovedTag: readStorefrontRedirectBooleanSetting(
+                        o,
+                        "blockLoggedInWithoutApprovedTag",
+                    ),
                     loggedInCheckoutBlockedMessage:
                         typeof o.loggedInCheckoutBlockedMessage === "string" && o.loggedInCheckoutBlockedMessage.trim()
                             ? o.loggedInCheckoutBlockedMessage.trim()
@@ -874,10 +898,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                         typeof o.showAuthTabsOnRegistration === "boolean"
                             ? o.showAuthTabsOnRegistration
                             : CUSTOMER_APPROVAL_DEFAULTS.showAuthTabsOnRegistration,
-                    redirectSignInLinksToFormPage:
-                        typeof o.redirectSignInLinksToFormPage === "boolean"
-                            ? o.redirectSignInLinksToFormPage
-                            : CUSTOMER_APPROVAL_DEFAULTS.redirectSignInLinksToFormPage,
+                    redirectSignInLinksToFormPage: readStorefrontRedirectBooleanSetting(
+                        o,
+                        "redirectSignInLinksToFormPage",
+                    ),
                     emailOnReject: o.emailOnReject === true,
                     rejectionEmailPresetId: typeof o.rejectionEmailPresetId === "string" ? o.rejectionEmailPresetId.trim() : "",
                     rejectEmailSubject: typeof o.rejectEmailSubject === "string" ? o.rejectEmailSubject : DEFAULT_REJECT_SUBJECT,
@@ -920,7 +944,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             // ignore invalid JSON
         }
     }
-    let settingsToPersist = customerApprovalSettings ?? CUSTOMER_APPROVAL_DEFAULTS;
+    let settingsToPersist = {
+        ...(customerApprovalSettings ?? CUSTOMER_APPROVAL_DEFAULTS),
+        showAuthTabsOnRegistration: true,
+    };
 
     let previousCasForBasic: Record<string, unknown> | null = null;
     const rawPrevCas = existingRow?.customerApprovalSettings;
@@ -1232,6 +1259,9 @@ function ColorPickerField({
 /** Programmatic Save Bar id (do not combine with data-save-bar on the same form). */
 const SETTINGS_SAVE_BAR_ID = "approvefy-settings-save-bar";
 
+/** Settings form id for save handling. */
+const SETTINGS_FORM_ID = "approvefy-settings-form";
+
 type SettingsPageLoaderData = {
     defaultLanguage: string;
     languageOptions: LanguageOption[];
@@ -1306,13 +1336,10 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     const navigation = useNavigation();
     const navigate = useNavigate();
     const location = useLocation();
-    /** Defer Save Bar until after mount effects flush (avoids one-frame false “dirty” in embedded admin). */
-    const [saveBarEligible, setSaveBarEligible] = useState(false);
-    useEffect(() => {
-        setSaveBarEligible(false);
-        const t = window.setTimeout(() => setSaveBarEligible(true), 0);
-        return () => window.clearTimeout(t);
-    }, [location.key]);
+    const isSaving =
+        navigation.state === "submitting" &&
+        navigation.formMethod != null &&
+        String(navigation.formMethod).toLowerCase() === "post";
 
     const [selectedDefault, setSelectedDefault] = useState(() =>
         resolveDefaultLanguageForForm(defaultLanguage, languageOptions),
@@ -1450,7 +1477,6 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
     const [langDropdownActive, setLangDropdownActive] = useState(false);
     const [langSearchQuery, setLangSearchQuery] = useState("");
 
-    const isSaving = navigation.state === "submitting";
     const settingsFormRef = useRef<HTMLFormElement>(null);
 
     useEffect(() => {
@@ -1491,36 +1517,11 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
 
     // After a successful save, don't overwrite form with loader data (revalidation may still have stale data).
     const skipSyncAfterSaveRef = useRef(false);
-    // Sync email/SMTP and rejection-email state from loader so saved data appears on refresh or when not just saved
-    useEffect(() => {
-        const justSaved = actionData && (actionData as { success?: boolean }).success;
-        if (justSaved) {
-            skipSyncAfterSaveRef.current = true;
-            return;
-        }
-        if (skipSyncAfterSaveRef.current) {
-            skipSyncAfterSaveRef.current = false;
-        }
-        if (initialSmtpSettings) {
-            setSmtpHost(initialSmtpSettings.host ?? "");
-            setSmtpPort(String(initialSmtpSettings.port ?? 587));
-            setSmtpSecure(initialSmtpSettings.secure ?? false);
-            setSmtpUser(initialSmtpSettings.user ?? "");
-            setSmtpPassword("");
-            setSmtpFromEmail(initialSmtpSettings.fromEmail ?? "");
-            setSmtpFromName(initialSmtpSettings.fromName ?? "");
-        } else {
-            setSmtpHost("");
-            setSmtpPort("587");
-            setSmtpSecure(false);
-            setSmtpUser("");
-            setSmtpPassword("");
-            setSmtpFromEmail("");
-            setSmtpFromName("");
-        }
-        const approval = initialCustomerApprovalSettings ?? CUSTOMER_APPROVAL_DEFAULTS;
-        setCustomerApprovalSettings((prev) => ({
-            ...prev,
+    const hasUnsavedChangesRef = useRef(false);
+    const syncedServerRevisionRef = useRef<string | null>(null);
+
+    const applyApprovalSettingsFromLoader = useCallback((approval: CustomerApprovalSettings) => {
+        setCustomerApprovalSettings({
             ...approval,
             rejectEmailLogoUrl: approval.rejectEmailLogoUrl ?? "",
             rejectEmailLogoSize: approval.rejectEmailLogoSize ?? "200",
@@ -1550,13 +1551,68 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
             approveEmailButtonAlign: approval.approveEmailButtonAlign ?? "left",
             approveEmailFooterText: approval.approveEmailFooterText ?? "",
             approveEmailShowPoweredBy: approval.approveEmailShowPoweredBy ?? true,
-        }));
+        });
         setSelectedRejectionPresetId((approval.rejectionEmailPresetId ?? "").trim());
         setSelectedApprovalPresetId((approval.approvalEmailPresetId ?? "").trim());
-        // Reload/revalidation: keep template modals closed so "Choose a template" does not appear after refresh
         setRejectionTemplatePopoverActive(false);
         setApprovalTemplatePopoverActive(false);
-    }, [initialSmtpSettings, initialCustomerApprovalSettings, actionData]);
+    }, []);
+
+    // Sync email/SMTP and approval settings from loader on first paint or when server revision changes — never while the user has unsaved edits.
+    useEffect(() => {
+        const justSaved = actionData && (actionData as { success?: boolean }).success;
+        if (justSaved) {
+            skipSyncAfterSaveRef.current = true;
+            const at =
+                (actionData as { settingsUpdatedAt?: string | null }).settingsUpdatedAt ??
+                initialAppSettingsUpdatedAt ??
+                null;
+            syncedServerRevisionRef.current = at ?? "__none__";
+            return;
+        }
+        if (skipSyncAfterSaveRef.current) {
+            skipSyncAfterSaveRef.current = false;
+        }
+
+        const revision = initialAppSettingsUpdatedAt ?? "__none__";
+        const isFirstHydration = syncedServerRevisionRef.current === null;
+        const serverRevisionChanged = syncedServerRevisionRef.current !== revision;
+
+        if (!isFirstHydration && !serverRevisionChanged) {
+            return;
+        }
+        if (!isFirstHydration && hasUnsavedChangesRef.current) {
+            return;
+        }
+
+        syncedServerRevisionRef.current = revision;
+
+        if (initialSmtpSettings) {
+            setSmtpHost(initialSmtpSettings.host ?? "");
+            setSmtpPort(String(initialSmtpSettings.port ?? 587));
+            setSmtpSecure(initialSmtpSettings.secure ?? false);
+            setSmtpUser(initialSmtpSettings.user ?? "");
+            setSmtpPassword("");
+            setSmtpFromEmail(initialSmtpSettings.fromEmail ?? "");
+            setSmtpFromName(initialSmtpSettings.fromName ?? "");
+        } else {
+            setSmtpHost("");
+            setSmtpPort("587");
+            setSmtpSecure(false);
+            setSmtpUser("");
+            setSmtpPassword("");
+            setSmtpFromEmail("");
+            setSmtpFromName("");
+        }
+
+        applyApprovalSettingsFromLoader(initialCustomerApprovalSettings ?? CUSTOMER_APPROVAL_DEFAULTS);
+    }, [
+        initialSmtpSettings,
+        initialCustomerApprovalSettings,
+        initialAppSettingsUpdatedAt,
+        actionData,
+        applyApprovalSettingsFromLoader,
+    ]);
 
     /** After a successful save, we use this as the baseline so Discard hides until the user edits again. */
     const lastSavedBaselineRef = useRef<{
@@ -1668,6 +1724,10 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
         initialSmtpSettings,
         baselineVersion,
     ]);
+
+    useEffect(() => {
+        hasUnsavedChangesRef.current = hasUnsavedChanges;
+    }, [hasUnsavedChanges]);
 
     const handleDiscard = useCallback(() => {
         const base = lastSavedBaselineRef.current;
@@ -1793,9 +1853,8 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
         [isSaving, handleDiscard],
     );
 
-    // Polaris-controlled fields do not reliably trigger the automatic data-save-bar; sync visibility explicitly.
     useEffect(() => {
-        const shouldShow = hasUnsavedChanges && !isSaving && saveBarEligible;
+        const shouldShow = hasUnsavedChanges && !isSaving;
         const saveBar = typeof window !== "undefined" ? window.shopify?.saveBar : undefined;
         if (!saveBar) return;
         let cancelled = false;
@@ -1806,14 +1865,14 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
         };
         sync();
         const raf = requestAnimationFrame(sync);
-        const t = window.setTimeout(sync, 400);
         return () => {
             cancelled = true;
             cancelAnimationFrame(raf);
-            window.clearTimeout(t);
-            void saveBar.hide(SETTINGS_SAVE_BAR_ID).catch(() => {});
+            if (!shouldShow) {
+                void saveBar.hide(SETTINGS_SAVE_BAR_ID).catch(() => {});
+            }
         };
-    }, [hasUnsavedChanges, isSaving, saveBarEligible]);
+    }, [hasUnsavedChanges, isSaving]);
 
     const settingsSidebarNav = useMemo(
         () => [
@@ -1902,8 +1961,6 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                     type="button"
                     onClick={() => {
                         if (isSaving) return;
-                        // Do not use form.reset(): programmatic reset may not fire onReset in embedded admin.
-                        // flushSync so hasUnsavedChanges + save bar update in the same frame.
                         flushSync(() => {
                             handleDiscard();
                         });
@@ -1918,7 +1975,12 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                 subtitle={lastSavedSubtitle}
                 backAction={{ content: "Back", onAction: handleBack }}
             >
-                <form ref={settingsFormRef} onSubmit={handleSaveBarSubmit} onReset={handleSaveBarReset}>
+                <form
+                    id={SETTINGS_FORM_ID}
+                    ref={settingsFormRef}
+                    onSubmit={handleSaveBarSubmit}
+                    onReset={handleSaveBarReset}
+                >
                 {planBasic && (
                     <Box paddingBlockEnd="400">
                         <PlanUpgradeBanner
@@ -3604,18 +3666,6 @@ function SettingsPage({ data }: { data: SettingsPageLoaderData }) {
                                                     }))
                                                 }
                                                 helpText={storeUi.redirectGuestsHelp}
-                                            />
-                                            <Checkbox
-                                                label={storeUi.showAuthTabsLabel}
-                                                checked={customerApprovalSettings.showAuthTabsOnRegistration}
-                                                disabled={planBasic}
-                                                onChange={(checked) =>
-                                                    setCustomerApprovalSettings((prev) => ({
-                                                        ...prev,
-                                                        showAuthTabsOnRegistration: checked,
-                                                    }))
-                                                }
-                                                helpText={storeUi.showAuthTabsHelp}
                                             />
                                         </BlockStack>
                                     </Card>

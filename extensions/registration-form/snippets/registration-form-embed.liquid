@@ -5,6 +5,7 @@
     assign approvefy_load_form = true
   endif
 %}
+{{ 'guest-checkout-guard.css' | asset_url | stylesheet_tag }}
 {% if approvefy_load_form %}
   {{ 'registration-form.css' | asset_url | stylesheet_tag }}
 {% endif %}
@@ -37,29 +38,138 @@ window.__approvefySignInRedirectEnabled = true;
     loc = pathMatch ? pathMatch[1].toLowerCase() : '';
   }
   if (!loc) loc = 'en';
-  var customerShopifyIdParam =
-    cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
-      ? '&customerShopifyId=' + encodeURIComponent(String(cfg.shopifyLoggedInCustomerId).trim())
+  function resolveLoggedInShopifyCustomerId() {
+    if (
+      cfg.shopifyLoggedInCustomerId != null &&
+      String(cfg.shopifyLoggedInCustomerId).trim() !== ''
+    ) {
+      return String(cfg.shopifyLoggedInCustomerId).trim();
+    }
+    try {
+      var stGlobal = typeof __st !== 'undefined' ? __st : window.__st;
+      if (stGlobal && stGlobal.cid != null && String(stGlobal.cid).trim() !== '') {
+        return String(stGlobal.cid).trim();
+      }
+    } catch (eSt) {
+      void eSt;
+    }
+    try {
+      if (window.Shopify && window.Shopify.customer && window.Shopify.customer.id != null) {
+        var shopifyCustomerId = String(window.Shopify.customer.id).trim();
+        if (shopifyCustomerId) {
+          return shopifyCustomerId;
+        }
+      }
+    } catch (eShopifyCustomer) {
+      void eShopifyCustomer;
+    }
+    try {
+      var analyticsId =
+        window.ShopifyAnalytics &&
+        window.ShopifyAnalytics.meta &&
+        window.ShopifyAnalytics.meta.page &&
+        window.ShopifyAnalytics.meta.page.customerId;
+      if (analyticsId != null && String(analyticsId).trim() !== '') {
+        return String(analyticsId).trim();
+      }
+    } catch (eAnalytics) {
+      void eAnalytics;
+    }
+    try {
+      var meta = document.querySelector(
+        'meta[name="shopify-customer-id"], meta[name="customer-id"]'
+      );
+      if (meta) {
+        var metaId = (meta.getAttribute('content') || '').trim();
+        if (metaId) {
+          return metaId;
+        }
+      }
+    } catch (eMeta) {
+      void eMeta;
+    }
+    return '';
+  }
+  function fetchCustomerIdFromCart() {
+    return fetch('/cart.js', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (cart) {
+        if (
+          cart &&
+          cart.customer_id != null &&
+          String(cart.customer_id).trim() !== '' &&
+          Number(cart.customer_id) > 0
+        ) {
+          return String(cart.customer_id).trim();
+        }
+        return '';
+      })
+      .catch(function () {
+        return '';
+      });
+  }
+  function waitForLoggedInCustomerId(maxMs, stepMs) {
+    return new Promise(function (resolve) {
+      var deadline = Date.now() + (maxMs || 3000);
+      function attempt() {
+        var id = resolveLoggedInShopifyCustomerId();
+        if (id) {
+          resolve(id);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          fetchCustomerIdFromCart().then(function (cartId) {
+            resolve(cartId || '');
+          });
+          return;
+        }
+        setTimeout(attempt, stepMs || 50);
+      }
+      attempt();
+    });
+  }
+
+  function buildConfigUrl(resolvedLoggedInCustomerId) {
+    var customerShopifyIdParam = resolvedLoggedInCustomerId
+      ? '&customerShopifyId=' + encodeURIComponent(resolvedLoggedInCustomerId)
       : '';
-  var customerEmailParam =
-    cfg.customerLoggedIn && cfg.customerEmail && String(cfg.customerEmail).trim() !== ''
-      ? '&customerEmail=' + encodeURIComponent(String(cfg.customerEmail).trim())
-      : '';
-  var configUrl =
-    '/apps/customer-approval/config?shop=' +
-    encodeURIComponent(shop) +
-    '&locale=' +
-    encodeURIComponent(loc) +
-    formIdParam +
-    themeEditorPreviewParam +
-    customerShopifyIdParam +
-    customerEmailParam;
-  var loggedInCustIdForCache =
-    cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
-      ? String(cfg.shopifyLoggedInCustomerId).trim()
-      : '0';
-  var cacheSchemaVersion = 'v6';
-  var configCacheKey = 'customer_approval_config_' + cacheSchemaVersion + '_' + shop + '_' + embedFormId + '_' + loc + '_' + loggedInCustIdForCache;
+    var customerEmailParam =
+      resolvedLoggedInCustomerId && cfg.customerEmail && String(cfg.customerEmail).trim() !== ''
+        ? '&customerEmail=' + encodeURIComponent(String(cfg.customerEmail).trim())
+        : '';
+    return (
+      '/apps/customer-approval/config?shop=' +
+      encodeURIComponent(shop) +
+      '&locale=' +
+      encodeURIComponent(loc) +
+      formIdParam +
+      themeEditorPreviewParam +
+      customerShopifyIdParam +
+      customerEmailParam
+    );
+  }
+
+  function configCacheKeyForCustomer(resolvedLoggedInCustomerId, settingsUpdatedAt) {
+    var rev =
+      settingsUpdatedAt && String(settingsUpdatedAt).trim()
+        ? String(settingsUpdatedAt).trim()
+        : '0';
+    return (
+      'customer_approval_config_v13_' +
+      shop +
+      '_' +
+      embedFormId +
+      '_' +
+      loc +
+      '_' +
+      (resolvedLoggedInCustomerId || '0') +
+      '_' +
+      rev
+    );
+  }
+
   function applyThemeCss(cssText) {
     if (typeof cssText !== 'string' || !cssText.trim()) return;
     var existing = document.getElementById('customer-approval-theme-style');
@@ -74,37 +184,54 @@ window.__approvefySignInRedirectEnabled = true;
     styleEl.appendChild(document.createTextNode(cssText));
     document.head.appendChild(styleEl);
   }
-  try {
-    var cachedRaw = null;
-    if (window.sessionStorage) cachedRaw = sessionStorage.getItem(configCacheKey);
-    if (!cachedRaw && window.localStorage) cachedRaw = localStorage.getItem(configCacheKey);
-    if (cachedRaw) {
-      var cachedParsed = JSON.parse(cachedRaw);
-      var cachedCss = cachedParsed && cachedParsed.data && typeof cachedParsed.data.customCss === 'string'
-        ? cachedParsed.data.customCss
-        : '';
-      applyThemeCss(cachedCss);
-    }
-  } catch (e) {
-    void 0;
+
+  function fetchAndCacheConfig(configUrl, fetchOpts) {
+    return fetch(configUrl, fetchOpts)
+      .then(function (r) {
+        if (!r.ok)
+          throw new Error(
+            'Approvefy config failed (HTTP ' + r.status + '). Verify app proxy prefix /apps/customer-approval in Partner Dashboard.'
+          );
+        return r.json();
+      })
+      .then(function (data) {
+        if (data && typeof data.customCss === 'string') applyThemeCss(data.customCss);
+        try {
+          if (data && typeof data === 'object' && window.sessionStorage) {
+            var resolvedId = resolveLoggedInShopifyCustomerId();
+            var rev =
+              data.settingsUpdatedAt && String(data.settingsUpdatedAt).trim()
+                ? String(data.settingsUpdatedAt).trim()
+                : '0';
+            var cacheKey = configCacheKeyForCustomer(resolvedId, rev);
+            sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: data }));
+          }
+        } catch (eStore) {
+          void eStore;
+        }
+        return data;
+      });
   }
-  window.__approvefyConfigPrefetchUrl = configUrl;
-  window.__approvefyConfigPromise = fetch(configUrl, { cache: 'default', credentials: 'same-origin' }).then(function (r) {
-    if (!r.ok)
-      throw new Error('Approvefy config failed (HTTP ' + r.status + '). Verify app proxy prefix /apps/customer-approval in Partner Dashboard.');
-    return r.json();
-  }).then(function (data) {
-    if (data && typeof data.customCss === 'string') applyThemeCss(data.customCss);
-    try {
-      if (data && typeof data === 'object') {
-        var payload = JSON.stringify({ ts: Date.now(), data: data });
-        if (window.sessionStorage) sessionStorage.setItem(configCacheKey, payload);
-        if (window.localStorage) localStorage.setItem(configCacheKey, payload);
+
+  var guestConfigUrl = buildConfigUrl('');
+  window.__approvefyConfigPrefetchUrl = guestConfigUrl;
+  var initialConfigFetch = fetchAndCacheConfig(guestConfigUrl, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+
+  window.__approvefyConfigPromise = waitForLoggedInCustomerId(2000, 50).then(function (resolvedLoggedInCustomerId) {
+    if (resolvedLoggedInCustomerId) {
+      cfg.customerLoggedIn = true;
+      cfg.shopifyLoggedInCustomerId = resolvedLoggedInCustomerId;
+      window.__REGISTRATION_FORM_CONFIG__ = cfg;
+      var loggedInConfigUrl = buildConfigUrl(resolvedLoggedInCustomerId);
+      if (loggedInConfigUrl !== guestConfigUrl) {
+        window.__approvefyConfigPrefetchUrl = loggedInConfigUrl;
+        return fetchAndCacheConfig(loggedInConfigUrl, { credentials: 'same-origin', cache: 'no-store' });
       }
-    } catch (eStore) {
-      void 0;
     }
-    return data;
+    return initialConfigFetch;
   });
 })();
 </script>
@@ -182,84 +309,3 @@ window.__approvefySignInRedirectEnabled = true;
   <script src="{{ 'registration-form.js' | asset_url }}" defer></script>
 {% endif %}
 <script src="{{ 'guest-checkout-guard.js' | asset_url }}" defer></script>
-<script>
-(function () {
-  var cfg = window.__REGISTRATION_FORM_CONFIG__;
-  if (!cfg || cfg.customerLoggedIn) return;
-  var defaultDest = cfg.registrationPagePath || '/pages/customer-registration';
-  function composedPath(ev) {
-    if (ev.composedPath) return ev.composedPath();
-    var out = [];
-    var n = ev.target;
-    while (n) {
-      out.push(n);
-      n = n.parentNode || (n.host && n.host);
-    }
-    return out;
-  }
-  function normalizePath(pathname) {
-    var p = String(pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
-    var m = p.toLowerCase().match(/^(\/[a-z]{2}(?:-[a-z]{2})?)(\/.*|$)/);
-    if (m && m[1] && m[1].length <= 6) {
-      p = m[2] && m[2].length > 0 ? m[2] : '/';
-    }
-    return p.toLowerCase();
-  }
-  function storefrontRoot() {
-    try {
-      if (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) {
-        return window.Shopify.routes.root;
-      }
-    } catch (e) {
-      void e;
-    }
-    return '/';
-  }
-  function goRelative(dest) {
-    var d = String(dest || '').trim();
-    if (!d) return;
-    var root = storefrontRoot();
-    var path = d.indexOf('/') === 0 ? d : '/' + d;
-    var base = root.charAt(root.length - 1) === '/' ? root : root + '/';
-    window.location.href = base + path.replace(/^\//, '');
-  }
-  function isHeaderAccountTarget(el) {
-    if (!el || !el.closest) return false;
-    if (el.closest('.approvefy-auth-tabs')) return false;
-    if (el.nodeType === 1 && String(el.nodeName || '').toLowerCase() === 'shopify-account') return true;
-    if (el.closest('shopify-account')) return true;
-    var headerSel =
-      'header, header-component, sticky-header, .header, #shopify-section-header, [id*="header"], .header__icons, shopify-account';
-    if (!el.closest(headerSel)) return false;
-    var link = el.closest('a[href]');
-    if (!link) return false;
-    var href = (link.getAttribute('href') || link.href || '').toLowerCase();
-    if (!href || href === '#') return !!el.closest('.header__icon--account, .header__icons');
-    return (
-      href.indexOf('/account') !== -1 ||
-      href.indexOf('/customer_authentication') !== -1 ||
-      href.indexOf('shopify.com') !== -1
-    );
-  }
-  function onAccountIcon(e) {
-    if (window.__approvefyBypassGuestCheckoutGuard) return;
-    if (window.__approvefySignInRedirectEnabled === false) return;
-    var path = composedPath(e);
-    var i;
-    for (i = 0; i < path.length; i++) {
-      if (isHeaderAccountTarget(path[i])) {
-        if (normalizePath(window.location.pathname) === normalizePath(defaultDest)) return;
-        e.preventDefault();
-        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-        e.stopPropagation();
-        goRelative(defaultDest);
-        return;
-      }
-    }
-  }
-  document.addEventListener('click', onAccountIcon, true);
-  document.addEventListener('pointerdown', onAccountIcon, true);
-  document.addEventListener('mousedown', onAccountIcon, true);
-  document.addEventListener('touchstart', onAccountIcon, true);
-})();
-</script>

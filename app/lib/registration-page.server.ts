@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { parseCustomerApprovalSettings } from "./customer-approval-settings.server";
+import { STOREFRONT_REDIRECT_DEFAULTS } from "./storefront-redirect-settings";
 import { getOfflineAccessTokenForShop } from "../models/approval.server";
 import {
   cleanRegistrationFormOffDefaultPageTemplate,
@@ -425,11 +426,25 @@ export async function syncRegistrationPageRedirectSettings(shop: string): Promis
   const signInRedirectExplicitlyDisabled = parsed.redirectSignInLinksToFormPage === false;
 
   if (!signInRedirectExplicitlyDisabled) {
-    next.redirectSignInLinksToFormPage = true;
+    next.redirectSignInLinksToFormPage = STOREFRONT_REDIRECT_DEFAULTS.redirectSignInLinksToFormPage;
+  }
+
+  if (typeof parsed.redirectGuestsFromCheckout !== "boolean") {
+    next.redirectGuestsFromCheckout = STOREFRONT_REDIRECT_DEFAULTS.redirectGuestsFromCheckout;
+  }
+  if (typeof parsed.blockLoggedInWithoutApprovedTag !== "boolean") {
+    next.blockLoggedInWithoutApprovedTag = STOREFRONT_REDIRECT_DEFAULTS.blockLoggedInWithoutApprovedTag;
   }
 
   if (!existingRedirect) {
     next.guestCheckoutRedirectUrl = REGISTRATION_PAGE_PATH;
+  }
+
+  const stableJson = (value: Record<string, unknown>) =>
+    JSON.stringify(value, Object.keys(value).sort());
+
+  if (row && stableJson(parsed) === stableJson(next)) {
+    return;
   }
 
   const approvalSettingsJson = next as Prisma.InputJsonValue;
@@ -447,6 +462,7 @@ export async function syncRegistrationPageRedirectSettings(shop: string): Promis
       customerApprovalSettings: approvalSettingsJson,
     },
   });
+  invalidateCache(shopKey(shop, "appSettings"));
 }
 
 export type EnsureRegistrationPageResult = {

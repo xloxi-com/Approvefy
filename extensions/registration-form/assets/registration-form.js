@@ -591,12 +591,38 @@
   const shop = window.Shopify?.shop || (cfg.shop || '');
   var shopCountryCode = (cfg.shopCountryCode || 'US');
 
+  function resolveLoggedInShopifyCustomerIdForConfig() {
+    if (
+      cfg.shopifyLoggedInCustomerId != null &&
+      String(cfg.shopifyLoggedInCustomerId).trim() !== ''
+    ) {
+      return String(cfg.shopifyLoggedInCustomerId).trim();
+    }
+    try {
+      var analyticsId =
+        window.ShopifyAnalytics &&
+        window.ShopifyAnalytics.meta &&
+        window.ShopifyAnalytics.meta.page &&
+        window.ShopifyAnalytics.meta.page.customerId;
+      if (analyticsId != null && String(analyticsId).trim() !== '') {
+        return String(analyticsId).trim();
+      }
+    } catch (eAnalytics) {
+      void eAnalytics;
+    }
+    return '';
+  }
+
+  var resolvedLoggedInCustomerId = resolveLoggedInShopifyCustomerIdForConfig();
+  if (resolvedLoggedInCustomerId) {
+    cfg.customerLoggedIn = true;
+    cfg.shopifyLoggedInCustomerId = resolvedLoggedInCustomerId;
+    window.__REGISTRATION_FORM_CONFIG__ = cfg;
+  }
+
   // Config caching: short TTL so Appearance / form saves show on storefront soon; tab focus still forces refresh.
-  var loggedInCustIdForCache =
-    cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
-      ? String(cfg.shopifyLoggedInCustomerId).trim()
-      : '0';
-  var CACHE_SCHEMA_VERSION = 'v9';
+  var loggedInCustIdForCache = resolvedLoggedInCustomerId || '0';
+  var CACHE_SCHEMA_VERSION = 'v13';
   var CONFIG_CACHE_KEY =
     'customer_approval_config_' + CACHE_SCHEMA_VERSION + '_' + shop + '_' + (embedFormId || '') + '_' + locale + '_' + loggedInCustIdForCache;
   var CONFIG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — fast repeat loads; tab-switch refresh only after long absence (below)
@@ -620,6 +646,24 @@
       if (!parsed.data || typeof parsed.data !== 'object') {
         return null;
       }
+      var cas = parsed.data.customerApprovalSettings;
+      if (cas && typeof cas === 'object' && cas.blockLoggedInWithoutApprovedTag === true) {
+        var storedRev = null;
+        try {
+          if (window.sessionStorage) {
+            storedRev = sessionStorage.getItem('approvefy_settings_revision_' + shop);
+          }
+        } catch (eRev) {
+          void eRev;
+        }
+        var cachedRev =
+          parsed.data.settingsUpdatedAt && String(parsed.data.settingsUpdatedAt).trim()
+            ? String(parsed.data.settingsUpdatedAt).trim()
+            : '';
+        if (storedRev && cachedRev && storedRev !== cachedRev) {
+          return null;
+        }
+      }
       return parsed.data || null;
     } catch (e) {
       return null;
@@ -631,7 +675,6 @@
       var payload = { ts: Date.now(), data: cfg };
       var json = JSON.stringify(payload);
       if (window.sessionStorage) sessionStorage.setItem(CONFIG_CACHE_KEY, json);
-      if (window.localStorage) localStorage.setItem(CONFIG_CACHE_KEY, json);
       if (window.sessionStorage && embedFormId) {
         sessionStorage.setItem('approvefy_config_' + embedFormId, json);
       }
@@ -686,12 +729,11 @@
   }
 
   // Config URL must match inline prefetch in registration-form-embed.liquid when locale/formId/customer id align.
-  var customerShopifyIdParam =
-    cfg.customerLoggedIn && cfg.shopifyLoggedInCustomerId != null && String(cfg.shopifyLoggedInCustomerId).trim() !== ''
-      ? '&customerShopifyId=' + encodeURIComponent(String(cfg.shopifyLoggedInCustomerId).trim())
-      : '';
+  var customerShopifyIdParam = resolvedLoggedInCustomerId
+    ? '&customerShopifyId=' + encodeURIComponent(resolvedLoggedInCustomerId)
+    : '';
   var customerEmailParam =
-    cfg.customerLoggedIn && cfg.customerEmail && String(cfg.customerEmail).trim() !== ''
+    resolvedLoggedInCustomerId && cfg.customerEmail && String(cfg.customerEmail).trim() !== ''
       ? '&customerEmail=' + encodeURIComponent(String(cfg.customerEmail).trim())
       : '';
   var configUrl =
@@ -719,17 +761,28 @@
       return cfg;
     });
   }
-  var seededConfig = readCachedConfig();
-  if (window.__approvefyConfigPrefetchUrl === configUrl && window.__approvefyConfigPromise) {
+  var seededConfig = null;
+  var prefetchHadCustomerId =
+    window.__approvefyConfigPrefetchUrl &&
+    String(window.__approvefyConfigPrefetchUrl).indexOf('customerShopifyId=') !== -1;
+  var canReusePrefetch =
+    window.__approvefyConfigPrefetchUrl === configUrl &&
+    window.__approvefyConfigPromise &&
+    (!resolvedLoggedInCustomerId || prefetchHadCustomerId);
+  if (canReusePrefetch) {
     configPromise = wireConfigPromise(withConfigTimeout(window.__approvefyConfigPromise, CONFIG_FETCH_TIMEOUT_MS));
     window.__approvefyConfigPromise = configPromise;
-  } else if (seededConfig) {
+  } else if (seededConfig && !resolvedLoggedInCustomerId) {
     configPromise = wireConfigPromise(Promise.resolve(seededConfig));
     window.__approvefyConfigPrefetchUrl = configUrl;
     window.__approvefyConfigPromise = configPromise;
   } else {
     configPromise = wireConfigPromise(
-      fetchConfigWithTimeout(configUrl, { cache: 'default', credentials: 'same-origin' }, CONFIG_FETCH_TIMEOUT_MS)
+      fetchConfigWithTimeout(
+        configUrl,
+        { cache: 'no-store', credentials: 'same-origin' },
+        CONFIG_FETCH_TIMEOUT_MS
+      )
     );
     window.__approvefyConfigPrefetchUrl = configUrl;
     window.__approvefyConfigPromise = configPromise;
@@ -832,6 +885,14 @@
         cb.checked = values.indexOf(cb.value) !== -1;
       });
     });
+  }
+
+  function syncRegistrationPageBodyClass(onPage) {
+    if (onPage) {
+      document.body.classList.add('approvefy-registration-page');
+    } else {
+      document.body.classList.remove('approvefy-registration-page');
+    }
   }
 
   function configStructureFingerprint(cfg) {
@@ -1850,6 +1911,7 @@
     var isRegisterPage = window.location.pathname.indexOf('/account/register') !== -1;
     var isInline = !!(inlineRoot && !isRegisterPage);
     var onDedicatedRegistrationPage = isDedicatedRegistrationPagePath(null);
+    syncRegistrationPageBodyClass(onDedicatedRegistrationPage);
     var floatingLoaderId = 'approvefy-inline-floating-loader';
     var clearFloatingInlineLoader = function () {
       var floating = document.getElementById(floatingLoaderId);
@@ -1913,12 +1975,13 @@
       }
     }
 
-    if (!readCachedConfig() && isInline && inlineRoot && !onDedicatedRegistrationPage) {
+    if (isInline && inlineRoot) {
       var cachedFormHtml = readCachedRenderedFormHtml();
       if (cachedFormHtml) {
         var mountCached = inlineRoot.querySelector('.approvefy-registration-mount');
         if (mountCached) {
           mountCached.innerHTML = cachedFormHtml;
+          document.body.classList.add('custom-registration-enabled');
         }
       }
     }
@@ -1995,7 +2058,7 @@
         successMessage: '',
         approvedTag: 'status:approved',
         redirectGuestsFromCheckout: false,
-        guestCheckoutRedirectUrl: '',
+        guestCheckoutRedirectUrl: '/pages/customer-registration',
         blockLoggedInWithoutApprovedTag: false,
         loggedInCheckoutBlockedMessage: '',
         showAuthTabsOnRegistration: true,
@@ -2005,8 +2068,27 @@
         config.customerApprovalSettings = casDefaults;
       } else {
         config.customerApprovalSettings = Object.assign({}, casDefaults, cas0);
+        if (typeof cas0.redirectGuestsFromCheckout === 'boolean') {
+          config.customerApprovalSettings.redirectGuestsFromCheckout = cas0.redirectGuestsFromCheckout;
+        }
+        if (typeof cas0.blockLoggedInWithoutApprovedTag === 'boolean') {
+          config.customerApprovalSettings.blockLoggedInWithoutApprovedTag = cas0.blockLoggedInWithoutApprovedTag;
+        }
+        if (typeof cas0.redirectSignInLinksToFormPage === 'boolean') {
+          config.customerApprovalSettings.redirectSignInLinksToFormPage = cas0.redirectSignInLinksToFormPage;
+        }
         if (!String(config.customerApprovalSettings.approvedTag || '').trim()) {
           config.customerApprovalSettings.approvedTag = casDefaults.approvedTag;
+        }
+      }
+      if (config.settingsUpdatedAt && window.sessionStorage) {
+        try {
+          sessionStorage.setItem(
+            'approvefy_settings_revision_' + shop,
+            String(config.settingsUpdatedAt)
+          );
+        } catch (eStoreRev) {
+          void eStoreRev;
         }
       }
     }
@@ -2343,16 +2425,11 @@
     var authTabsAriaLabel = cfg.customerLoggedIn
       ? escapeHtml(t('myAccount') + ' / ' + t('signUpTab'))
       : escapeHtml(t('logInTab') + ' / ' + t('signUpTab'));
-    var showAuthTabs =
-      config &&
-      config.customerApprovalSettings &&
-      config.customerApprovalSettings.showAuthTabsOnRegistration === true;
-    var authTabsHtml = showAuthTabs
-      ? '<div class="approvefy-auth-tabs" aria-label="' + authTabsAriaLabel + '">' +
-          '<a class="approvefy-auth-tab approvefy-auth-tab--link" href="' + escapeHtml(authTabsNavHref) + '">' + escapeHtml(authTabsNavLabel) + '</a>' +
-          '<span class="approvefy-auth-tab approvefy-auth-tab--active" aria-current="page">' + escapeHtml(t('signUpTab')) + '</span>' +
-        '</div>'
-      : '';
+    var authTabsHtml =
+      '<div class="approvefy-auth-tabs" aria-label="' + authTabsAriaLabel + '">' +
+        '<a class="approvefy-auth-tab approvefy-auth-tab--link" href="' + escapeHtml(authTabsNavHref) + '">' + escapeHtml(authTabsNavLabel) + '</a>' +
+        '<span class="approvefy-auth-tab approvefy-auth-tab--active" aria-current="page">' + escapeHtml(t('signUpTab')) + '</span>' +
+      '</div>';
 
     const formHTML = `
       <div id="custom-registration-container">

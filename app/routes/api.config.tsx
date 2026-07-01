@@ -14,6 +14,11 @@ import {
     sanitizeFormTypeForPlan,
 } from "../lib/merchant-plan.server";
 import { getCachedAppSettings, getCachedFormConfig } from "../lib/cached-settings.server";
+import {
+    readStorefrontRedirectBooleanSetting,
+    STOREFRONT_REDIRECT_DEFAULTS,
+} from "../lib/storefront-redirect-settings";
+import { fetchStorefrontCustomerTags } from "../lib/storefront-customer-tags.server";
 
 /** App proxy JSON — no cache when response includes per-customer pending state. */
 const CONFIG_JSON_NO_CACHE: Record<string, string> = {
@@ -151,6 +156,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 ? customerShopifyIdForPending
                 : "";
         const doPendingRegistrationLookup = !!(pendingCheckDigits || customerEmailForPending);
+        const configNoStore = true;
 
         const pendingRegistrationPromise =
             doPendingRegistrationLookup
@@ -182,6 +188,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                       }
                   })()
                 : Promise.resolve(null);
+
+        const storefrontCustomerTagsPromise = pendingCheckDigits
+            ? fetchStorefrontCustomerTags(shop, pendingCheckDigits, admin ?? null)
+            : Promise.resolve(null);
 
         if (!admin) {
              console.warn(`App Proxy Auth failed for shop ${shop}. Proceeding with public access for config.`);
@@ -237,10 +247,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
         const settingsPromise = shop ? getCachedAppSettings(shop) : Promise.resolve(null);
 
-        const [formConfigResult, settings, pendingForCustomerRow] = await Promise.all([
+        const [formConfigResult, settings, pendingForCustomerRow, storefrontCustomerTags] =
+            await Promise.all([
             formConfigPromise,
             settingsPromise,
             pendingRegistrationPromise,
+            storefrontCustomerTagsPromise,
         ]);
         if (formConfigResult.fields.length > 0) {
             config = formConfigResult;
@@ -397,10 +409,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                                 typeof o.approvedTag === "string" && o.approvedTag.trim()
                                     ? o.approvedTag.trim()
                                     : "status:approved",
-                            redirectGuestsFromCheckout: o.redirectGuestsFromCheckout === true,
+                            redirectGuestsFromCheckout: readStorefrontRedirectBooleanSetting(
+                                o,
+                                "redirectGuestsFromCheckout",
+                            ),
                             guestCheckoutRedirectUrl:
-                                typeof o.guestCheckoutRedirectUrl === "string" ? o.guestCheckoutRedirectUrl : "",
-                            blockLoggedInWithoutApprovedTag: o.blockLoggedInWithoutApprovedTag === true,
+                                typeof o.guestCheckoutRedirectUrl === "string"
+                                    ? o.guestCheckoutRedirectUrl
+                                    : STOREFRONT_REDIRECT_DEFAULTS.guestCheckoutRedirectUrl,
+                            blockLoggedInWithoutApprovedTag: readStorefrontRedirectBooleanSetting(
+                                o,
+                                "blockLoggedInWithoutApprovedTag",
+                            ),
                             loggedInCheckoutBlockedMessage:
                                 typeof o.loggedInCheckoutBlockedMessage === "string" &&
                                 o.loggedInCheckoutBlockedMessage.trim()
@@ -410,10 +430,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                                 typeof o.showAuthTabsOnRegistration === "boolean"
                                     ? o.showAuthTabsOnRegistration
                                     : true,
-                            redirectSignInLinksToFormPage:
-                                typeof o.redirectSignInLinksToFormPage === "boolean"
-                                    ? o.redirectSignInLinksToFormPage
-                                    : true,
+                            redirectSignInLinksToFormPage: readStorefrontRedirectBooleanSetting(
+                                o,
+                                "redirectSignInLinksToFormPage",
+                            ),
                             registrationPagePath:
                                 typeof o.registrationPagePath === "string" && o.registrationPagePath.trim()
                                     ? o.registrationPagePath.trim()
@@ -450,12 +470,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 pendingRegistrationScreenTitle: defaultPendingTitle,
                 pendingRegistrationScreenMessage: defaultPendingMessage,
                 approvedTag: "status:approved",
-                redirectGuestsFromCheckout: false,
-                guestCheckoutRedirectUrl: "",
-                blockLoggedInWithoutApprovedTag: false,
+                redirectGuestsFromCheckout: STOREFRONT_REDIRECT_DEFAULTS.redirectGuestsFromCheckout,
+                guestCheckoutRedirectUrl: STOREFRONT_REDIRECT_DEFAULTS.guestCheckoutRedirectUrl,
+                blockLoggedInWithoutApprovedTag: STOREFRONT_REDIRECT_DEFAULTS.blockLoggedInWithoutApprovedTag,
                 loggedInCheckoutBlockedMessage: BUILTIN_EN_LOGGED_IN_BLOCKED_MESSAGE,
                 showAuthTabsOnRegistration: true,
-                redirectSignInLinksToFormPage: true,
+                redirectSignInLinksToFormPage: STOREFRONT_REDIRECT_DEFAULTS.redirectSignInLinksToFormPage,
                 registrationPagePath: REGISTRATION_PAGE_PATH,
             };
         }
@@ -472,7 +492,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 translations
             );
             if (
-                customerApprovalSettings.redirectSignInLinksToFormPage &&
+                (customerApprovalSettings.redirectSignInLinksToFormPage ||
+                    customerApprovalSettings.redirectGuestsFromCheckout ||
+                    customerApprovalSettings.blockLoggedInWithoutApprovedTag) &&
                 !(customerApprovalSettings.guestCheckoutRedirectUrl || "").trim()
             ) {
                 customerApprovalSettings = {
@@ -516,9 +538,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                     ...customerApprovalSettings,
                     approvalMode: "auto",
                     approvedTag: "status:approved",
-                    showAuthTabsOnRegistration: false,
+                    showAuthTabsOnRegistration: true,
                 };
             }
+        }
+
+        if (customerApprovalSettings) {
+            customerApprovalSettings = {
+                ...customerApprovalSettings,
+                showAuthTabsOnRegistration: true,
+            };
         }
 
         const tierFilteredFields = filterStorefrontFieldsForPlan(fieldsForStorefront, merchantPlan);
@@ -538,6 +567,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                       .catch(() => [])
                 : undefined;
 
+        const settingsUpdatedAt =
+            settings && "updatedAt" in settings && settings.updatedAt instanceof Date
+                ? settings.updatedAt.toISOString()
+                : null;
+
         const payload = {
             ...config,
             formType: resolvedFormType,
@@ -549,19 +583,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             customCss,
             googleFont,
             customerApprovalSettings,
+            settingsUpdatedAt,
             ...(availableForms ? { availableForms } : {}),
             ...(doPendingRegistrationLookup ? { loggedInCustomerHasPendingRegistration } : {}),
+            ...(storefrontCustomerTags !== null ? { storefrontCustomerTags } : {}),
         };
 
-        const settingsUpdatedAt =
-            settings && "updatedAt" in settings && settings.updatedAt instanceof Date
-                ? settings.updatedAt.toISOString()
-                : null;
-        const responseHeaders = doPendingRegistrationLookup
+        const responseHeaders = configNoStore
             ? CONFIG_JSON_NO_CACHE
             : configJsonCacheHeaders(buildConfigEtag(settingsUpdatedAt, formConfigUpdatedAt, merchantPlan));
 
-        if (!doPendingRegistrationLookup) {
+        if (!configNoStore) {
             const ifNoneMatch = request.headers.get("If-None-Match");
             const etag = buildConfigEtag(settingsUpdatedAt, formConfigUpdatedAt, merchantPlan);
             if (ifNoneMatch && ifNoneMatch === etag) {

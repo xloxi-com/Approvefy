@@ -9,8 +9,6 @@ export type SettingsStoreUiStrings = {
     guestCheckoutHeading: string;
     redirectGuestsLabel: string;
     redirectGuestsHelp: string;
-    showAuthTabsLabel: string;
-    showAuthTabsHelp: string;
     redirectSignInLinksLabel: string;
     redirectSignInLinksHelp: string;
     customerAccountHeading: string;
@@ -34,8 +32,6 @@ const EN: SettingsStoreUiStrings = {
     guestCheckoutHeading: "Guest checkout",
     redirectGuestsLabel: "Redirect guests away from checkout and Buy it now",
     redirectGuestsHelp: "Enable the app embed (or Registration Form block) in your theme.",
-    showAuthTabsLabel: "Show Log in / Sign up switch on registration form",
-    showAuthTabsHelp: "Turn off to hide the switch above the signup form in storefront.",
     redirectSignInLinksLabel: "Redirect header customer account icon to registration form page",
     redirectSignInLinksHelp:
         "When enabled, guests who click the customer account icon in the theme header are sent to your registration form page. Other sign-in links are not redirected. When disabled, /pages/customer-registration is not available on the storefront.",
@@ -56,8 +52,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Commande invité",
         redirectGuestsLabel: "Rediriger les invités loin du paiement et de « Acheter maintenant »",
         redirectGuestsHelp: "Activez l’intégration d’application (ou le bloc Formulaire d’inscription) dans votre thème.",
-        showAuthTabsLabel: "Afficher le sélecteur Connexion / Inscription sur le formulaire",
-        showAuthTabsHelp: "Désactivez pour masquer ce sélecteur au-dessus du formulaire d’inscription.",
         redirectSignInLinksLabel: "Rediriger les liens de connexion vers la page du formulaire d’inscription",
         redirectSignInLinksHelp:
             "Si activé, l’icône compte client et les liens Connexion / Inscription envoient les invités vers votre page de formulaire.",
@@ -77,8 +71,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Gast-Checkout",
         redirectGuestsLabel: "Gäste vom Checkout und „Sofort kaufen“ wegleiten",
         redirectGuestsHelp: "App-Einbettung (oder Registrierungsformular-Block) im Theme aktivieren.",
-        showAuthTabsLabel: "Schalter „Anmelden / Registrieren“ im Registrierungsformular anzeigen",
-        showAuthTabsHelp: "Deaktivieren, um den Schalter über dem Formular auszublenden.",
         redirectSignInLinksLabel: "Anmelde-Links zur Registrierungsformular-Seite weiterleiten",
         redirectSignInLinksHelp:
             "Wenn aktiv, leiten Konto-Symbol und Anmelde-Links Gäste zu Ihrer Registrierungsformular-Seite.",
@@ -98,8 +90,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Pago como invitado",
         redirectGuestsLabel: "Redirigir invitados fuera del pago y de Comprar ahora",
         redirectGuestsHelp: "Activa la incrustación de la app (o el bloque Formulario de registro) en tu tema.",
-        showAuthTabsLabel: "Mostrar conmutador Iniciar sesión / Registrarse en el formulario",
-        showAuthTabsHelp: "Desactívalo para ocultar el conmutador sobre el formulario de registro.",
         redirectSignInLinksLabel: "Redirigir enlaces de inicio de sesión a la página del formulario de registro",
         redirectSignInLinksHelp:
             "Si está activado, el icono de cuenta y los enlaces de inicio de sesión envían invitados a su página de formulario.",
@@ -119,8 +109,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Checkout ospite",
         redirectGuestsLabel: "Reindirizza gli ospiti lontano dal checkout e da Compra ora",
         redirectGuestsHelp: "Abilita l’embed dell’app (o il blocco Modulo di registrazione) nel tema.",
-        showAuthTabsLabel: "Mostra selettore Accedi / Registrati nel modulo",
-        showAuthTabsHelp: "Disattiva per nascondere il selettore sopra il modulo di registrazione.",
         redirectSignInLinksLabel: "Reindirizza i link di accesso alla pagina del modulo di registrazione",
         redirectSignInLinksHelp:
             "Se attivo, l’icona account e i link di accesso inviano gli ospiti alla pagina del modulo.",
@@ -140,8 +128,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Gastafrekening",
         redirectGuestsLabel: "Gasten wegsturen van afrekenen en Nu kopen",
         redirectGuestsHelp: "Schakel de app-embed (of het registratieformulierblok) in je thema in.",
-        showAuthTabsLabel: "Toon Inloggen / Registreren-schakelaar op registratieformulier",
-        showAuthTabsHelp: "Zet uit om de schakelaar boven het registratieformulier te verbergen.",
         redirectSignInLinksLabel: "Inloglinks doorsturen naar registratieformulierpagina",
         redirectSignInLinksHelp:
             "Indien ingeschakeld sturen het accountpictogram en inloglinks gasten naar uw registratiepagina.",
@@ -161,8 +147,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Płatność gościa",
         redirectGuestsLabel: "Przekieruj gości z kasy i z opcji Kup teraz",
         redirectGuestsHelp: "Włącz osadzenie aplikacji (lub blok formularza rejestracji) w motywie.",
-        showAuthTabsLabel: "Pokaż przełącznik Logowanie / Rejestracja nad formularzem",
-        showAuthTabsHelp: "Wyłącz, aby ukryć przełącznik nad formularzem rejestracji.",
         redirectSignInLinksLabel: "Przekieruj linki logowania na stronę formularza rejestracji",
         redirectSignInLinksHelp:
             "Po włączeniu ikona konta i linki logowania kierują gości na stronę formularza.",
@@ -182,8 +166,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "Checkout de convidado",
         redirectGuestsLabel: "Redirecionar convidados para fora do checkout e Comprar agora",
         redirectGuestsHelp: "Ative a incorporação da app (ou o bloco Formulário de registo) no tema.",
-        showAuthTabsLabel: "Mostrar alternador Iniciar sessão / Registar no formulário",
-        showAuthTabsHelp: "Desative para ocultar o alternador acima do formulário de registo.",
         redirectSignInLinksLabel: "Redirecionar links de início de sessão para a página do formulário de registo",
         redirectSignInLinksHelp:
             "Se ativo, o ícone de conta e links de início de sessão enviam convidados para a página do formulário.",
@@ -203,8 +185,6 @@ const BY_LANG: Record<string, SettingsStoreUiStrings> = {
         guestCheckoutHeading: "விருந்தினர் பணம் செலுத்தல்",
         redirectGuestsLabel: "விருந்தினர்களை செக் அவுட் மற்றும் «இப்போது வாங்கு» பக்கத்திலிருந்து திருப்பி அனுப்பு",
         redirectGuestsHelp: "தீமில் ஆப் எம்பெட் (அல்லது பதிவுப் படிவத் தொகுதி) இயக்கவும்.",
-        showAuthTabsLabel: "பதிவு படிவத்தின் மேலே Log in / Sign up மாற்றியை காட்டு",
-        showAuthTabsHelp: "இந்த மாற்றியை மறைக்க Off செய்யவும்.",
         redirectSignInLinksLabel: "Header customer account icon-ஐ பதிவுப் படிவப் பக்கத்திற்குத் திருப்பு",
         redirectSignInLinksHelp:
             "இயக்கும்போது, theme header-ல் உள்ள customer account icon-ஐ விருந்தினர் கிளிக் செய்தால் மட்டும் பதிவுப் படிவப் பக்கத்திற்கு அனுப்பப்படுவார்கள். முடக்கும்போது /pages/customer-registration storefront-ல் வேலை செய்யாது.",
